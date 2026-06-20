@@ -403,7 +403,7 @@ window.SOMERSET_FB_CONFIG = {
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6,
-    joinSheet:false, joinError:null
+    joinSheet:false, joinError:null, syncError:null
   };
 
   // ---- History + tournament storage ----
@@ -788,10 +788,12 @@ window.SOMERSET_FB_CONFIG = {
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(code);
       ui.tSetup = null; render();
-    }).catch(function() {
-      // Write failed — fall back to local-only
+    }).catch(function(err) {
+      // Write failed — fall back to local-only (no join code)
       syncStatus = "offline";
-      tourney = t; saveTourney(); ui.tSetup = null; render();
+      tourney = t; saveTourney(); ui.tSetup = null;
+      ui.syncError = "Couldn't start shared tournament — Firebase write failed. The tournament is saved locally only.";
+      render();
     });
   }
 
@@ -2121,6 +2123,14 @@ window.SOMERSET_FB_CONFIG = {
   function renderBracket() {
     var t = tourney;
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Tournament · " + formatName(t.format)]) ]);
+
+    // Sync error banner — shown when startSharedTournament write failed
+    if (ui.syncError) {
+      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
+        el("span", { style:"font-size:13px; color:var(--red); flex:1;" }, [ui.syncError]),
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; render(); } }, ["✕"])
+      ]));
+    }
 
     // Sync bar — shows join code and live status when Firebase is active
     if (syncCode) {
