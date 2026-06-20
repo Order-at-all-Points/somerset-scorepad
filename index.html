@@ -1631,7 +1631,20 @@ window.SOMERSET_FB_CONFIG = {
       } else if (ri >= 1) {
         // WB Rk loser → LB R(2k-1) slot mi as b
         var lbRi = 2 * ri - 1;
-        if (lbRi < t.lBracket.rounds.length) t.lBracket.rounds[lbRi][mi].b = loser;
+        if (lbRi < t.lBracket.rounds.length) {
+          t.lBracket.rounds[lbRi][mi].b = loser;
+          // If the 'a' slot is null and its feeder LB round is a dead bye-pair
+          // (both WB R0 partners were byes so no loser ever arrived), auto-advance
+          // the lone team so the losers bracket can continue.
+          var lbM = t.lBracket.rounds[lbRi][mi];
+          if (lbM.a == null && lbM.winner == null) {
+            var feedRound = t.lBracket.rounds[lbRi - 1];
+            var feedM = feedRound && feedRound[mi];
+            if (feedM && feedM.a == null && feedM.b == null && feedM.winner == null) {
+              setLBWinner(t, lbRi, mi, lbM.b);
+            }
+          }
+        }
       }
     }
   }
