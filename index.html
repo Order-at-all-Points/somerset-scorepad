@@ -1599,6 +1599,17 @@ window.SOMERSET_FB_CONFIG = {
     return t;
   }
 
+  // A WB Round-0 match with no 'b' slot is a bye and never produces a loser.
+  function wbR0IsBye(t, mi) { var m = t.wBracket.rounds[0][mi]; return !m || m.b == null; }
+  // Structurally determine whether an LB match can NEVER produce a winner (a "dead
+  // bye-pair"). This is independent of play order: it depends only on the bye layout.
+  // Odd LB rounds always receive a real WB drop-down, so they are never dead; even
+  // rounds (incl. R0) are dead only when both of their feeders are dead.
+  function lbMatchDead(t, ri, mi) {
+    if (ri === 0) return wbR0IsBye(t, 2 * mi) && wbR0IsBye(t, 2 * mi + 1);
+    if (ri % 2 === 1) return false;
+    return lbMatchDead(t, ri - 1, 2 * mi) && lbMatchDead(t, ri - 1, 2 * mi + 1);
+  }
   function setWBWinner(t, ri, mi, teamIdx) {
     var m = t.wBracket.rounds[ri][mi];
     m.winner = teamIdx;
@@ -1633,16 +1644,14 @@ window.SOMERSET_FB_CONFIG = {
         var lbRi = 2 * ri - 1;
         if (lbRi < t.lBracket.rounds.length) {
           t.lBracket.rounds[lbRi][mi].b = loser;
-          // If the 'a' slot is null and its feeder LB round is a dead bye-pair
-          // (both WB R0 partners were byes so no loser ever arrived), auto-advance
-          // the lone team so the losers bracket can continue.
+          // If the 'a' slot is fed by a structurally dead bye-pair (both WB R0
+          // partners were byes, so no loser will ever arrive), auto-advance the lone
+          // team so the losers bracket can continue. We must test structural deadness,
+          // NOT runtime emptiness: an unplayed-yet feeder is also empty, and treating
+          // that as dead would let a later-round WB loser leapfrog real LB games.
           var lbM = t.lBracket.rounds[lbRi][mi];
-          if (lbM.a == null && lbM.winner == null) {
-            var feedRound = t.lBracket.rounds[lbRi - 1];
-            var feedM = feedRound && feedRound[mi];
-            if (feedM && feedM.a == null && feedM.b == null && feedM.winner == null) {
-              setLBWinner(t, lbRi, mi, lbM.b);
-            }
+          if (lbM.a == null && lbM.winner == null && lbMatchDead(t, lbRi - 1, mi)) {
+            setLBWinner(t, lbRi, mi, lbM.b);
           }
         }
       }
