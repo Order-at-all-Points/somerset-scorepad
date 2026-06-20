@@ -2182,7 +2182,10 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     } else if (t.format === "single") {
       var nx = nextMatch(t);
-      if (nx) card.appendChild(el("p", { class:"tnext disp" }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), " — tap to play"]));
+      if (nx) {
+        var nxRi = nx.ri, nxMi = nx.mi;
+        card.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;", onClick:function(){ ui.matchMenu = { ri:nxRi, mi:nxMi, confirm:null }; render(); } }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), " — tap to play"]));
+      }
     }
     if (t.format === "single") {
       card.appendChild(renderBracketDiagram(t));
