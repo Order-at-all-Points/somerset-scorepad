@@ -403,7 +403,7 @@ window.SOMERSET_FB_CONFIG = {
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6,
-    joinSheet:false, joinError:null, syncError:null
+    joinSheet:false, joinError:null, syncError:null, backConfirm:false
   };
 
   // ---- History + tournament storage ----
@@ -1066,7 +1066,7 @@ window.SOMERSET_FB_CONFIG = {
     } else if (gameOver) {
       pad.appendChild(el("div", { class:"add-wrap" }, [
         isMatch
-          ? el("button", { class:"btn btn-new disp", onClick:recordMatchResult }, ["Record result & advance"])
+          ? el("button", { class:"btn btn-new disp", onClick:recordMatchResult }, ["Save Result"])
           : el("button", { class:"btn btn-new disp", onClick:newGame }, ["New Game"])
       ]));
     } else {
@@ -1189,6 +1189,23 @@ window.SOMERSET_FB_CONFIG = {
       }
       var msheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; render(); } }, [msheet]));
+      return;
+    }
+    if (ui.backConfirm && ui.activeMatch) {
+      var bcAm = ui.activeMatch, bcM = getActiveMatchObj(bcAm);
+      var bcSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Unsaved result"]),
+        el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
+          ["This match has a winner. Save the result before leaving or it will be lost."]),
+        el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; recordMatchResult(); } }, ["Save Result"]),
+        el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
+          ui.backConfirm = false; releaseLock(bcAm);
+          ui.activeMatch = null; ui.showEntry = false;
+          saveTourney(); render();
+        } }, ["Leave without saving"]),
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.backConfirm = false; render(); } }, ["Stay"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.backConfirm = false; render(); } }, [bcSheet]));
       return;
     }
     if (ui.joinSheet) {
@@ -1844,6 +1861,8 @@ window.SOMERSET_FB_CONFIG = {
       el("div", { class:"view-head disp" }, [headLabel]),
       el("div", { class:"match-bar" }, [
         el("button", { class:"link-btn disp", onClick:function(){
+          var hasUnrecordedResult = m.game && (gameWinner(m.game) === 0 || gameWinner(m.game) === 1);
+          if (hasUnrecordedResult) { ui.backConfirm = true; render(); return; }
           if (!isCompleted) releaseLock(am);
           ui.activeMatch = null; ui.showEntry = false;
           if (!isCompleted) saveTourney();
