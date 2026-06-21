@@ -233,8 +233,13 @@
   .hist-entry { border-bottom:1px solid var(--cream-shade); }
   .hist-item { padding:10px 12px; cursor:pointer; }
   .hist-line { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .hist-score { font-size:15px; font-weight:600; color:var(--ink); }
-  .hist-win { font-size:13px; color:var(--brass); font-weight:700; white-space:nowrap; }
+  .hist-line.stack { flex-direction:column; align-items:stretch; gap:2px; }
+  .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px; min-width:0; flex:1 1 auto; }
+  .hist-score .hs-team { white-space:nowrap; }
+  .hist-score .hs-div { color:var(--ink-soft); }
+  .hist-score.wrapped .hs-div { display:none; }
+  .hist-win { font-size:13px; color:var(--brass); font-weight:700; white-space:nowrap; flex:0 0 auto; }
+  .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   .hist-meta { font-size:12px; color:var(--ink-soft); font-style:italic; margin-top:3px; }
   .hist-detail { padding:8px 12px 14px; background:var(--cream-shade); }
   .hist-roster { font-size:13px; color:var(--ink); margin:0 0 6px; }
@@ -1553,6 +1558,36 @@ window.SOMERSET_FB_CONFIG = {
       gameHistory.forEach(function (rec) { card.appendChild(renderHistoryItem(rec)); });
     }
     viewRootEl.appendChild(card);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
+    else applyScoreWrap();
+  }
+
+  // Fix up each history summary line after layout:
+  //  1. When both team names can't share one line, wrap the score at the divider (never
+  //     mid-name) and drop the now-redundant "|".
+  //  2. When the score text would collide with the right-hand "… won" label, stack the
+  //     label onto its own line below the score instead of overlapping it.
+  // Measured in the default (row, divider-shown) layout so detection is consistent.
+  function applyScoreWrap() {
+    var lines = viewRootEl.querySelectorAll(".hist-line");
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var score = line.querySelector(".hist-score");
+      var win = line.querySelector(".hist-win");
+      if (!score) continue;
+      line.classList.remove("stack");
+      score.classList.remove("wrapped");
+
+      var teams = score.querySelectorAll(".hs-team");
+      if (teams.length >= 2 && teams[1].offsetTop > teams[0].offsetTop) score.classList.add("wrapped");
+
+      if (win) {
+        // Compare actual text extents (the team spans), not the flex-grown score box.
+        var contentRight = 0;
+        for (var t = 0; t < teams.length; t++) contentRight = Math.max(contentRight, teams[t].getBoundingClientRect().right);
+        if (contentRight > win.getBoundingClientRect().left - 4) line.classList.add("stack");
+      }
+    }
   }
 
   function renderHistoryItem(rec) {
@@ -1562,7 +1597,11 @@ window.SOMERSET_FB_CONFIG = {
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
-        el("span", { class:"hist-score mono" }, [ rec.teams[0] + " " + rec.totals[0] + "  |  " + rec.teams[1] + " " + rec.totals[1] ]),
+        el("span", { class:"hist-score mono" }, [
+          el("span", { class:"hs-team" }, [ rec.teams[0] + " " + rec.totals[0] ]),
+          el("span", { class:"hs-div" }, ["|"]),
+          el("span", { class:"hs-team" }, [ rec.teams[1] + " " + rec.totals[1] ])
+        ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
       el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? " · tournament match" : "") ])
@@ -2671,6 +2710,10 @@ window.SOMERSET_FB_CONFIG = {
     ui.confirmReset = !ui.confirmReset;
     ui.showSettings = false;
     render();
+  });
+
+  window.addEventListener("resize", function () {
+    if (ui.view === "history") applyScoreWrap();
   });
 
   document.addEventListener("keydown", function (e) {
