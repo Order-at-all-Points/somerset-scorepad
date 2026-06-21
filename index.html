@@ -340,6 +340,21 @@
   .rr-result.set { color:var(--red); }
   .rr-section-head { background:var(--cream-shade); padding:5px 12px; font-size:11px; font-weight:700;
     letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--rule); }
+  .series-score { display:flex; align-items:center; justify-content:center; gap:10px; padding:14px 12px 6px; }
+  .series-side { display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
+  .series-side:first-child { justify-content:flex-end; text-align:right; }
+  .series-side:last-child { justify-content:flex-start; text-align:left; }
+  .series-team-name { font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .series-team-name.champ { color:var(--brass); font-weight:700; }
+  .series-wins { font-family:'IBM Plex Mono',monospace; font-size:30px; font-weight:600; color:var(--ink); flex:none; }
+  .series-wins.champ { color:var(--brass); }
+  .series-dash { font-family:'IBM Plex Mono',monospace; font-size:22px; color:var(--ink-soft); flex:none; }
+  .series-sub { text-align:center; font-size:12px; font-style:italic; color:var(--ink-soft); margin:2px 0 12px; }
+  .series-game-label { flex:1; color:var(--ink); font-size:13px; }
+  .rr-row.series-next { background:rgba(160,124,46,.10); }
+  .rr-row.series-next .rr-result { color:var(--brass); font-style:italic; }
+  .rr-row.series-live { background:rgba(82,168,82,.12); }
+  .rr-result.live { color:#2e7d32; font-weight:600; }
 </style>
 </head>
 <body>
@@ -402,8 +417,8 @@ window.SOMERSET_FB_CONFIG = {
     bidTeam:0, bid:6, trump:"", bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
-    activeMatch:null, matchMenu:null, editNames:false, tCount:6,
-    joinSheet:false, joinError:null, syncError:null, backConfirm:false
+    activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
+    joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false
   };
 
   // ---- History + tournament storage ----
@@ -417,7 +432,16 @@ window.SOMERSET_FB_CONFIG = {
       if (tourney) {
         localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
         if (fb && syncCode) {
-          fb.ref("tournaments/" + syncCode).set(JSON.parse(JSON.stringify(tourney))).catch(function() {
+          // A full .set() replaces the whole record, so it must always carry
+          // _createdAt — the security rules require a recent _createdAt for BOTH
+          // read and write. A rematch/redraw (restartTourney) swaps in a fresh
+          // tourney object that has none, and there's a brief race right after
+          // creation before the first read-back populates it; either case would
+          // otherwise write a record with no _createdAt and brick it (unreadable
+          // and unwritable) for the host and every guest. Re-stamp when missing.
+          var payload = JSON.parse(JSON.stringify(tourney));
+          if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+          fb.ref("tournaments/" + syncCode).set(payload).catch(function() {
             syncStatus = "error"; render();
           });
         }
@@ -497,6 +521,7 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "lb") return "lb_" + am.ri + "_" + am.mi;
     if (am.bracket === "gf") return "gf_" + am.match;
     if (am.bracket === "rr") return "rr_" + am.idx;
+    if (am.bracket === "series") return "series_" + am.gi;
     return am.ri + "_" + am.mi;
   }
   function getActiveMatchObj(am) {
@@ -506,9 +531,9 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "lb") return tourney.lBracket && tourney.lBracket.rounds[am.ri][am.mi];
     if (am.bracket === "gf") return am.match === 2 ? tourney.grandFinal.m2 : tourney.grandFinal.m1;
     if (am.bracket === "rr") return am.isFinal ? tourney.final : tourney.schedule[am.idx];
+    if (am.bracket === "series") return tourney.games && tourney.games[am.gi];
     return null;
   }
-  function lockKey(ri, mi) { return ri + "_" + mi; }
   function claimLock(am) {
     if (!syncCode || !tourney) return;
     if (!tourney.locks) tourney.locks = {};
@@ -651,6 +676,10 @@ window.SOMERSET_FB_CONFIG = {
       if (t.schedule) t.schedule = fbObjToArr(t.schedule).map(normalizeFirebaseMatch);
       if (!t.schedule) t.schedule = [];
       if (t.final) normalizeFirebaseMatch(t.final);
+    } else if (t.format === "series") {
+      // Best-of series — a flat list of games between the two teams
+      t.games = t.games ? fbObjToArr(t.games).map(normalizeFirebaseMatch) : [];
+      if (!t.games.length) t.games = [{ a: 0, b: 1, winner: null, game: null, completedGame: null }];
     } else {
       // Single elimination (default)
       if (t.rounds) t.rounds = normalizeFirebaseMatches(t.rounds);
@@ -794,14 +823,14 @@ window.SOMERSET_FB_CONFIG = {
     if (!fb) return;
     fb.ref("tournaments/" + code).on("value", function(snap) {
       var data = snap.val();
-      if (!data) { syncStatus = "error"; render(); return; }
+      if (!data) { syncStatus = "error"; syncRender(); return; }
       syncStatus = "live";
       var normalized = normalizeFirebaseTourney(data);
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
-      if (changed) render();
-    }, function() { syncStatus = "error"; render(); });
+      if (changed) syncRender();
+    }, function() { syncStatus = "error"; syncRender(); });
   }
 
   function startSharedTournament(t) {
@@ -829,6 +858,22 @@ window.SOMERSET_FB_CONFIG = {
       ui.syncError = "Couldn't start shared tournament — Firebase write failed. The tournament is saved locally only.";
       render();
     });
+  }
+
+  // Host-only: start a fresh bracket (rematch/redraw). For a synced tournament this
+  // overwrites the bracket in place at the same code, so guests follow automatically
+  // via their live subscription — sync is never interrupted and the code is unchanged.
+  function restartTourney(newT) {
+    if (fb && syncCode) {
+      newT._code = syncCode;
+      tourney = newT;
+      saveTourney();   // writes the new bracket to tournaments/<syncCode>; guests pick it up
+      ui.syncNotice = "New Tournament Started";
+    } else {
+      tourney = newT;
+      saveTourney();
+    }
+    render();
   }
 
   function joinTournament(code, onError) {
@@ -982,6 +1027,23 @@ window.SOMERSET_FB_CONFIG = {
   var viewRootEl = document.getElementById("viewRoot");
 
   // ---- Top-level view dispatcher ----
+  // True when an interactive bottom sheet / dialog is on screen. A full render
+  // tears down and rebuilds the modal DOM (renderModal does modalRoot.innerHTML
+  // = ""), so re-rendering while the user is tapping a sheet button (e.g. the
+  // "X won" buttons) replaces the node mid-press and the tap is lost. We use
+  // this to defer *incoming sync* re-renders until the sheet is closed.
+  function sheetOpen() {
+    return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
+           ui.info != null || ui.seatMenu != null;
+  }
+  // Re-render driven by a remote Firebase update. Skipped while a sheet is open
+  // so live updates from other devices never eat the local user's taps; the data
+  // (tourney + localStorage) is still updated, and the next local render — which
+  // every sheet-close path triggers — shows the fresh state.
+  function syncRender() {
+    if (sheetOpen()) return;
+    render();
+  }
   function render() {
     renderNav();
     // point the active game at the right context
@@ -1148,6 +1210,7 @@ window.SOMERSET_FB_CONFIG = {
         else if (mm.bracket === "lb") canClear = canClearLBWinner(tourney, mm.ri, mm.mi);
         else if (mm.bracket === "gf") canClear = canClearGFWinner(tourney, mm.match);
         else if (mm.bracket === "rr") canClear = mm.isFinal ? canClearRRFinalWinner(tourney) : canClearRRWinner(tourney, mm.idx);
+        else if (mm.bracket === "series") canClear = canClearSeriesWinner(tourney, mm.gi);
         if (canClear) {
           var actionBtns = [];
           if (!mm.bracket) {
@@ -1163,6 +1226,7 @@ window.SOMERSET_FB_CONFIG = {
             else if (mm.bracket === "lb") clearLBWinner(tourney, mm.ri, mm.mi);
             else if (mm.bracket === "gf") clearGFWinner(tourney, mm.match);
             else if (mm.bracket === "rr") { if (mm.isFinal) clearRRFinalWinner(tourney); else clearRRWinner(tourney, mm.idx); }
+            else if (mm.bracket === "series") clearSeriesWinner(tourney, mm.gi);
             ui.matchMenu = null; saveTourney(); render();
           } }, ["Clear result"]));
           actionBtns.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Cancel"]));
@@ -1194,6 +1258,7 @@ window.SOMERSET_FB_CONFIG = {
               else if (mm.bracket === "lb") setLBWinner(tourney, mm.ri, mm.mi, wT);
               else if (mm.bracket === "gf") setGFWinner(tourney, mm.match, wT);
               else if (mm.bracket === "rr") { if (mm.isFinal) setRRFinalWinner(tourney, wT); else setRRWinner(tourney, mm.idx, wT); }
+              else if (mm.bracket === "series") setSeriesWinner(tourney, mm.gi, wT);
               ui.matchMenu = null; saveTourney(); render();
             } }, ["Discard & set winner"]),
           el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; render(); } }, ["Cancel"])
@@ -1492,12 +1557,13 @@ window.SOMERSET_FB_CONFIG = {
 
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
+    var isChamp = !!(rec.tournament && rec.tournament.championship);
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
         el("span", { class:"hist-score mono" }, [ rec.teams[0] + " " + rec.totals[0] + "  |  " + rec.teams[1] + " " + rec.totals[1] ]),
-        el("span", { class:"hist-win disp" }, [ winTxt ])
+        el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
       el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? " · tournament match" : "") ])
     ]);
@@ -1517,16 +1583,21 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
     ]);
+    var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
       var r = dealResult(d), isSet = r[2];
+      // Show the score actually credited this hand (delta), so a made moon reads as the
+      // jump to 50 — matching the live pad — instead of the raw 14 points taken.
+      var delta = dealDelta(d, runningScore);
+      runningScore[0] += delta[0]; runningScore[1] += delta[1];
       var dlr = (typeof d.dealer === "number") ? d.dealer : ((rec.dealerStart + idx) % 4 + 4) % 4;
       var dName = (rec.players[dlr] && rec.players[dlr].trim()) ? rec.players[dlr].trim() : ("Seat " + (dlr + 1));
       var bid = rec.teams[d.bidTeam] + (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid));
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(r[0]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(r[1]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
         el("span", { class:"hh-bid disp" }, [ bid + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : "")) ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
@@ -1542,7 +1613,8 @@ window.SOMERSET_FB_CONFIG = {
 
   // ================= TOURNAMENT =================
   function formatName(f) {
-    return f === "single" ? "Single Elimination" : f === "double" ? "Double Elimination" : "Round Robin";
+    return f === "single" ? "Single Elimination" : f === "double" ? "Double Elimination"
+         : f === "series" ? "Best-of Series" : "Round Robin";
   }
   function shuffle(a) {
     a = a.slice();
@@ -1777,6 +1849,49 @@ window.SOMERSET_FB_CONFIG = {
     t.champion = winnerId;
   }
 
+  // ---- Best-of Series (4 players, 2 fixed teams) ----
+  function makeSeries(teams, bestOf) {
+    return {
+      id: Date.now(), createdAt: new Date().toISOString(), format: "series",
+      teams: teams, bestOf: bestOf,
+      games: [ { a: 0, b: 1, winner: null, game: null, completedGame: null } ],
+      champion: null, locks: {}
+    };
+  }
+  function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch
+  function seriesWins(t) {
+    var w = [0, 0];
+    t.games.forEach(function(g) { if (g.winner != null) w[g.winner]++; });
+    return w;
+  }
+  function setSeriesWinner(t, gi, winnerTeamIdx) {
+    t.games[gi].winner = winnerTeamIdx;
+    var w = seriesWins(t), tgt = seriesTarget(t);
+    if (w[0] >= tgt)      t.champion = 0;
+    else if (w[1] >= tgt) t.champion = 1;
+    else {
+      t.champion = null;
+      // No clinch yet — queue the next game if this was the last slot.
+      if (gi === t.games.length - 1) t.games.push({ a: 0, b: 1, winner: null, game: null, completedGame: null });
+    }
+  }
+  function lastDecidedSeriesGame(t) {
+    var last = -1;
+    for (var i = 0; i < t.games.length; i++) if (t.games[i].winner != null) last = i;
+    return last;
+  }
+  // Only the most recent decided game can be undone (mirrors the bracket "undo
+  // subsequent results first" rule), since later games/clinch depend on it.
+  function canClearSeriesWinner(t, gi) {
+    return t.games[gi] && t.games[gi].winner != null && gi === lastDecidedSeriesGame(t);
+  }
+  function clearSeriesWinner(t, gi) {
+    t.games[gi].winner = null;
+    t.games[gi].completedGame = null;
+    t.games = t.games.slice(0, gi + 1);  // drop the now-orphaned pending slot, if any
+    t.champion = null;
+  }
+
   function nextMatch(t) {
     for (var ri = 0; ri < t.rounds.length; ri++) {
       for (var mi = 0; mi < t.rounds[ri].length; mi++) {
@@ -1813,21 +1928,22 @@ window.SOMERSET_FB_CONFIG = {
     t.teams.forEach(function (tm) { (tm.players || []).forEach(function (p) { if (p && p.trim()) names.push(p.trim()); }); });
     return names;
   }
-  function makeTourney(format, teams) {
+  function makeTourney(format, teams, bestOf) {
     return format === "double" ? makeDoubleElim(teams)
          : format === "round"  ? makeRoundRobin(teams)
+         : format === "series" ? makeSeries(teams, bestOf)
          : makeSingleElim(teams);
   }
   function rematchSameTeams() {
-    tourney = makeTourney(tourney.format, shuffle(tourney.teams));
+    var t = makeTourney(tourney.format, shuffle(tourney.teams), tourney.bestOf);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    restartTourney(t);
   }
   function redrawAndReplay() {
     var teams = drawTeams(rosterPlayers(tourney));
-    tourney = makeTourney(tourney.format, teams);
+    var t = makeTourney(tourney.format, teams, tourney.bestOf);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    restartTourney(t);
   }
 
   function startMatchAm(am) {
@@ -1844,14 +1960,12 @@ window.SOMERSET_FB_CONFIG = {
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     saveTourney(); render();
   }
-  function startMatch(ri, mi) { startMatchAm({ ri: ri, mi: mi }); }
 
   function watchMatchAm(am) {
     ui.activeMatch = am;
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     render();
   }
-  function watchMatch(ri, mi) { watchMatchAm({ ri: ri, mi: mi }); }
 
   function matchScoreStr(m) {
     var s = gameTotals(m.game);
@@ -1862,7 +1976,9 @@ window.SOMERSET_FB_CONFIG = {
     var am = ui.activeMatch, m = getActiveMatchObj(am);
     var win = gameWinner(m.game);                 // 0 or 1
     var tournTeam = (win === 0) ? m.a : m.b;
+    var champBefore = tourney.champion;
     archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name] });
+    var justArchived = gameHistory[0];            // archiveCurrentGame unshifts the new record
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
     m.game = null;
@@ -1881,16 +1997,18 @@ window.SOMERSET_FB_CONFIG = {
       } else {
         setRRWinner(tourney, am.idx, tournTeam);
       }
+    } else if (am.bracket === "series") {
+      setSeriesWinner(tourney, am.gi, tournTeam);
+    }
+    // If this game crowned the tournament champion, mark its history record.
+    if (tourney.champion != null && tourney.champion !== champBefore && justArchived && justArchived.tournament) {
+      justArchived.tournament.championship = true;
+      saveHistory();
     }
     ui.activeMatch = null; ui.showEntry = false;
     saveTourney(); render();
   }
 
-  function manualWin(ri, mi, teamIdx) {
-    var m = tourney.rounds[ri][mi];
-    if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); }
-    else { m.game = null; setMatchWinner(tourney, ri, mi, teamIdx); ui.matchMenu = null; saveTourney(); render(); }
-  }
   function manualWinAm(am, teamIdx) {
     var m = getActiveMatchObj(am);
     if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); return; }
@@ -1900,6 +2018,7 @@ window.SOMERSET_FB_CONFIG = {
     else if (am.bracket === "lb") setLBWinner(tourney, am.ri, am.mi, teamIdx);
     else if (am.bracket === "gf") setGFWinner(tourney, am.match, teamIdx);
     else if (am.bracket === "rr") { if (am.isFinal) setRRFinalWinner(tourney, teamIdx); else setRRWinner(tourney, am.idx, teamIdx); }
+    else if (am.bracket === "series") setSeriesWinner(tourney, am.gi, teamIdx);
     ui.matchMenu = null; saveTourney(); render();
   }
 
@@ -1910,6 +2029,7 @@ window.SOMERSET_FB_CONFIG = {
       : am.bracket === "wb" ? ("Winners · Round " + (am.ri + 1))
       : am.bracket === "lb" ? ("Losers · Round " + (am.ri + 1))
       : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " — Reset" : ""))
+      : am.bracket === "series" ? ("Game " + (am.gi + 1) + " of up to " + tourney.bestOf)
       : (am.bracket === "rr" && am.isFinal) ? "Championship Final"
       : "Round Robin";
     var headLabel = isCompleted ? bracketLabel + " — complete" : bracketLabel + " match";
@@ -1932,7 +2052,9 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function renderTournamentSetup() {
-    if (!ui.tSetup) renderCountStep(); else renderNameStep();
+    if (ui.sSetup) renderSeriesSetup();
+    else if (!ui.tSetup) renderCountStep();
+    else renderNameStep();
   }
 
   function renderCountStep() {
@@ -1951,6 +2073,12 @@ window.SOMERSET_FB_CONFIG = {
         var arr = []; for (var i = 0; i < ui.tCount; i++) arr.push("");
         ui.tSetup = { players: arr, format: "single", drawn: null }; render();
       } }, [ "Set up " + ui.tCount + " players" ])
+    ]));
+    card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
+      el("p", { class:"join-divider disp" }, ["Just 4 players? Play a best-of series:"]),
+      el("button", { class:"btn btn-add disp", style:"padding:12px 24px;", onClick:function(){
+        ui.sSetup = { players: ["", "", "", ""], mode: "random", bestOf: 5, teams: null, partner: null }; render();
+      } }, ["Best-of Series"])
     ]));
     card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
       el("p", { class:"join-divider disp" }, ["Already have a tournament? Join it:"]),
@@ -2068,6 +2196,128 @@ window.SOMERSET_FB_CONFIG = {
         } }, [ "Start " + formatName(s.format) ])
       ]));
     }
+
+    recompute();
+    viewRootEl.appendChild(card);
+    suppressFade = false;
+  }
+
+  function renderSeriesSetup() {
+    var s = ui.sSetup;
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Best-of Series"]) ]);
+    card.appendChild(el("div", { style:"padding:6px 6px 0;" }, [
+      el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.sSetup = null; ui.editNames = false; render(); } },
+        [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Back" ])
+    ]));
+
+    function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
+    function mkTeam(a, b) { return { id: "t" + Math.random().toString(36).slice(2, 7), name: a + " & " + b, players: [a, b] }; }
+    function invalidateTeams() { s.teams = null; s.partner = null; }
+
+    var startBtn, msgEl;
+    function recompute() {
+      var ok = namesFilled() && !!s.teams;
+      if (msgEl) {
+        msgEl.textContent = !namesFilled() ? "Enter all 4 player names"
+          : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
+          : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
+        msgEl.className = "tvalid disp" + (ok ? " ok" : "");
+      }
+      if (startBtn) startBtn.disabled = !ok;
+      return ok;
+    }
+
+    // Name inputs (fixed at 4)
+    var inputs = [];
+    var pwrap = el("div", { class:"tplayers" });
+    s.players.forEach(function(nm, i) {
+      var input = el("input", {
+        class:"tinput disp", value:nm, placeholder:"Player " + (i + 1), "aria-label":"Player " + (i + 1) + " name",
+        autocomplete:"off", autocapitalize:"words", enterkeyhint:(i < 3 ? "next" : "done"),
+        onInput:function(e){ s.players[i] = e.target.value; if (s.teams) { invalidateTeams(); softRender(); } else recompute(); },
+        onKeydown:function(e){ if (e.key === "Enter") { e.preventDefault(); if (inputs[i + 1]) inputs[i + 1].focus(); else input.blur(); } }
+      });
+      inputs.push(input);
+      pwrap.appendChild(el("div", { class:"trow" }, [ el("span", { class:"tnum mono" }, [String(i + 1)]), input ]));
+    });
+    card.appendChild(pwrap);
+
+    // Quick add (only while there's an empty slot to fill)
+    var hasEmpty = s.players.some(function(p){ return !p || !p.trim(); });
+    if (nameBook.length && hasEmpty) {
+      var entered = s.players.map(function(p){ return (p || "").trim().toLowerCase(); });
+      var avail = nameBook.filter(function(nm){ return entered.indexOf(nm.toLowerCase()) === -1; });
+      if (avail.length) {
+        var qa = el("div", { class:"quick-add" }, [
+          el("div", { style:"margin:2px 0 6px;" }, [ el("span", { class:"label disp" }, ["Quick add"]) ])
+        ]);
+        qa.appendChild(el("div", { class:"chips" }, avail.slice(0, 40).map(function(nm){
+          return el("button", { class:"chip disp", onClick:function(){
+            for (var i = 0; i < 4; i++) { if (!s.players[i] || !s.players[i].trim()) { s.players[i] = nm; break; } }
+            invalidateTeams(); softRender();
+          } }, [nm]);
+        })));
+        card.appendChild(qa);
+      }
+    }
+
+    // Series length
+    card.appendChild(el("div", { style:"padding:0 12px 6px;" }, [
+      el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Series length"]),
+      el("div", { class:"chips" }, [3, 5, 7].map(function(n){
+        return el("button", { class:"chip disp" + (s.bestOf === n ? " on" : ""),
+          onClick:function(){ s.bestOf = n; softRender(); } }, ["Best of " + n]);
+      }))
+    ]));
+
+    // Teams: random draw vs manual partner pick
+    card.appendChild(el("div", { style:"padding:0 12px 6px;" }, [
+      el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Teams"]),
+      el("div", { class:"chips" }, [["random", "Random"], ["choose", "Choose"]].map(function(mo){
+        return el("button", { class:"chip disp" + (s.mode === mo[0] ? " on" : ""),
+          onClick:function(){ if (s.mode !== mo[0]) { s.mode = mo[0]; invalidateTeams(); softRender(); } } }, [mo[1]]);
+      }))
+    ]));
+
+    if (namesFilled()) {
+      var names = s.players.map(function(p){ return p.trim(); });
+      if (s.mode === "random") {
+        card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
+          el("button", { class:"btn btn-add disp", onClick:function(){ s.teams = drawTeams(names); softRender(); } },
+            [ s.teams ? "Re-draw teams" : "Draw teams" ])
+        ]));
+      } else {
+        card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
+          el("span", { class:"label disp", style:"display:block; margin:4px 0 6px;" }, [names[0] + "'s partner:"]),
+          el("div", { class:"chips" }, [1, 2, 3].map(function(pi){
+            return el("button", { class:"chip disp" + (s.partner === pi ? " on" : ""), onClick:function(){
+              s.partner = pi;
+              var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
+              s.teams = [ mkTeam(names[0], names[pi]), mkTeam(names[rest[0]], names[rest[1]]) ];
+              softRender();
+            } }, [names[pi]]);
+          }))
+        ]));
+      }
+      if (s.teams) {
+        card.appendChild(el("div", { class:"draw-list" }, [
+          el("div", { class:"draw-team disp" }, [ "Team 1: ", el("b", {}, [s.teams[0].players[0]]), " & ", el("b", {}, [s.teams[0].players[1]]) ]),
+          el("div", { class:"draw-team disp" }, [ "Team 2: ", el("b", {}, [s.teams[1].players[0]]), " & ", el("b", {}, [s.teams[1].players[1]]) ])
+        ]));
+      }
+    }
+
+    msgEl = el("p", { class:"tvalid disp" }, [""]);
+    card.appendChild(msgEl);
+
+    startBtn = el("button", { class:"btn btn-new disp", onClick:function(){
+      if (!recompute()) return;
+      rememberNames(s.players.map(function(p){ return p.trim(); }));
+      var t = makeSeries(s.teams, s.bestOf);
+      ui.sSetup = null;
+      startSharedTournament(t);
+    } }, ["Start series"]);
+    card.appendChild(el("div", { style:"padding:8px 12px 16px;" }, [ startBtn ]));
 
     recompute();
     viewRootEl.appendChild(card);
@@ -2195,15 +2445,101 @@ window.SOMERSET_FB_CONFIG = {
     return sections;
   }
 
+  function renderSeries() {
+    var t = tourney, sections = [];
+    var wins = seriesWins(t), tgt = seriesTarget(t);
+    var decided = lastDecidedSeriesGame(t) + 1;
+
+    // Scoreboard
+    var scoreWrap = el("div", { class:"series-score" }, [
+      el("div", { class:"series-side" }, [
+        el("span", { class:"series-team-name" + (t.champion === 0 ? " champ" : "") }, [t.teams[0].name]),
+        el("span", { class:"series-wins" + (t.champion === 0 ? " champ" : "") }, [String(wins[0])])
+      ]),
+      el("div", { class:"series-dash" }, ["–"]),
+      el("div", { class:"series-side" }, [
+        el("span", { class:"series-wins" + (t.champion === 1 ? " champ" : "") }, [String(wins[1])]),
+        el("span", { class:"series-team-name" + (t.champion === 1 ? " champ" : "") }, [t.teams[1].name])
+      ])
+    ]);
+    var sub = t.champion != null
+      ? ("Series over · " + decided + " game" + (decided === 1 ? "" : "s") + " played")
+      : ("Best of " + t.bestOf + " · first to " + tgt + " game wins");
+    var scoreSection = el("div", { class:"bracket-section" }, [
+      el("div", { class:"bracket-section-head" }, ["Series"]),
+      scoreWrap,
+      el("p", { class:"series-sub disp" }, [sub])
+    ]);
+    // helper: does a game have a live, in-progress scorepad?
+    function gameInProgress(g) { return g.winner == null && g.game && g.game.deals && g.game.deals.length > 0; }
+    // Tappable hint so everyone (host and guests) can jump straight to the live/next game.
+    if (t.champion == null) {
+      var ipIdx = -1, nextIdx = -1;
+      for (var hi = 0; hi < t.games.length; hi++) {
+        if (t.games[hi].winner != null) continue;
+        if (gameInProgress(t.games[hi])) { ipIdx = hi; break; }
+        if (nextIdx < 0) nextIdx = hi;
+      }
+      var hintIdx = ipIdx >= 0 ? ipIdx : nextIdx;
+      if (hintIdx >= 0) {
+        var live = ipIdx >= 0, hIdx = hintIdx;
+        scoreSection.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;",
+          onClick:function(){ ui.matchMenu = { bracket: "series", gi: hIdx, confirm: null }; render(); } },
+          [ live ? ("Game " + (hIdx + 1) + " in progress — tap to watch") : ("Next up: Game " + (hIdx + 1) + " — tap to play") ]));
+      }
+    }
+    sections.push(scoreSection);
+
+    // Game-by-game list
+    var gamesDiv = el("div", { class:"bracket-section" }, [el("div", { class:"bracket-section-head" }, ["Games"])]);
+    var list = el("div", { class:"rr-schedule" });
+    t.games.forEach(function(g, gi) {
+      var gdecided = g.winner != null;
+      var inProg = gameInProgress(g);
+      var isNext = !gdecided && !inProg && t.champion == null;
+      var scoreGame = (g.game && g.game.deals && g.game.deals.length) ? g.game
+                    : (g.completedGame && g.completedGame.deals && g.completedGame.deals.length) ? g.completedGame : null;
+      var scores = scoreGame ? gameTotals(scoreGame) : null;
+      var resultEl;
+      if (gdecided) {
+        resultEl = el("span", { class:"rr-result set" }, [t.teams[g.winner].name + " won" + (scores ? " " + scores[g.winner] + "–" + scores[1 - g.winner] : "")]);
+      } else if (inProg) {
+        resultEl = el("span", { class:"rr-result live" }, ["in progress · " + scores[0] + "–" + scores[1]]);
+      } else {
+        resultEl = el("span", { class:"rr-result" }, [isNext ? "tap to play" : "–"]);
+      }
+      var row = el("div", { class:"rr-row" + (isNext ? " series-next" : "") + (inProg ? " series-live" : "") }, [
+        el("span", { class:"series-game-label mono" }, ["Game " + (gi + 1)]),
+        resultEl
+      ]);
+      row.style.cursor = "pointer";
+      row.addEventListener("click", function() { ui.matchMenu = { bracket: "series", gi: gi, confirm: null }; render(); });
+      list.appendChild(row);
+    });
+    gamesDiv.appendChild(list);
+    sections.push(gamesDiv);
+
+    return sections;
+  }
+
   function renderBracket() {
     var t = tourney;
-    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Tournament · " + formatName(t.format)]) ]);
+    var headTitle = t.format === "series" ? ("Best of " + t.bestOf + " Series") : ("Tournament · " + formatName(t.format));
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, [headTitle]) ]);
 
     // Sync error banner — shown when startSharedTournament write failed
     if (ui.syncError) {
       card.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
         el("span", { style:"font-size:13px; color:var(--red); flex:1;" }, [ui.syncError]),
         el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; render(); } }, ["✕"])
+      ]));
+    }
+
+    // Sync notice — e.g. "tournament restarted, new code" after a rematch/redraw
+    if (ui.syncNotice) {
+      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; render(); } }, ["✕"])
       ]));
     }
 
@@ -2231,11 +2567,20 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     if (t.champion != null) {
-      card.appendChild(el("div", { class:"banner disp" }, ["Champion: " + t.teams[t.champion].name]));
-      card.appendChild(el("div", { class:"rematch" }, [
-        el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
-        el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
-      ]));
+      var champMsg = t.format === "series"
+        ? (t.teams[t.champion].name + " win the series " + seriesWins(t)[t.champion] + "–" + seriesWins(t)[1 - t.champion] + "!")
+        : ("Champion: " + t.teams[t.champion].name);
+      card.appendChild(el("div", { class:"banner disp" }, [champMsg]));
+      // In a shared tournament only the host can restart it (it spins up a new synced
+      // session); guests follow automatically. Local tournaments: anyone can restart.
+      if (!syncCode || syncRole === "host") {
+        card.appendChild(el("div", { class:"rematch" }, [
+          el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
+          el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
+        ]));
+      } else {
+        card.appendChild(el("p", { class:"sync-label disp", style:"text-align:center; padding:8px 12px;" }, ["Waiting for the host to start a rematch…"]));
+      }
     } else if (t.format === "single") {
       var nx = nextMatch(t);
       if (nx) {
@@ -2249,11 +2594,14 @@ window.SOMERSET_FB_CONFIG = {
       renderDoubleElim().forEach(function(s) { card.appendChild(s); });
     } else if (t.format === "round") {
       renderRoundRobin().forEach(function(s) { card.appendChild(s); });
+    } else if (t.format === "series") {
+      renderSeries().forEach(function(s) { card.appendChild(s); });
     }
 
+    var isSeries = t.format === "series";
     if (ui.confirmEndT) {
       card.appendChild(el("div", { class:"dealer-confirm fade" }, [
-        el("p", { class:"disp", style:"margin:0 0 10px; font-size:14px; color:var(--ink);" }, ["End this tournament and clear the bracket?"]),
+        el("p", { class:"disp", style:"margin:0 0 10px; font-size:14px; color:var(--ink);" }, [isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?"]),
         el("div", { style:"display:flex; gap:8px;" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; render(); } }, ["Keep it"]),
           el("button", { class:"btn btn-record disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, ["Yes, end it"])
@@ -2261,7 +2609,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     } else {
       card.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; render(); } }, ["End Tournament"])
+        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; render(); } }, [isSeries ? "End Series" : "End Tournament"])
       ]));
     }
     viewRootEl.appendChild(card);
