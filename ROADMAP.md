@@ -11,10 +11,8 @@
   - **Round Robin** format (standings table + schedule grid).
   - Per-match games (concurrent, independent); play/resume a match, winner auto-advances and archives to History.
   - Rematch (same teams) / redraw (same players) at tournament end.
+- **Best-of Series mode (4 players / 2 teams).** A lightweight alternative to a bracket: enter 4 names, split into 2 teams (random draw or pick partners), choose Best of 3 / 5 / 7, and play games until a team clinches the majority. Live scoreboard (game wins + game-by-game list), each game played/resumed in-app and archived to History, undo the most recent game, rematch/redraw at the end. Reuses the tournament match-play, locking, sync, and History machinery (`format: "series"`), so it syncs across devices via the same join-code flow.
 - **Shared backend (multi-device tournaments)** via Firebase Realtime Database — live simultaneous logging across phones, siloed per tournament, joined via a short friendly join code. Per-device name book stays local.
 
 ## Planned — in priority order
 *(nothing currently planned)*
-
-## Future — after all other functionality is complete
-- **Best-of Series mode (for 4 players / 2 teams).** Instead of a bracket, play a best-of-N series (best-of-3/5/7 — any odd number of games); track game wins and declare a series winner. Use case: a 4-player gathering where a full tournament doesn't make sense.

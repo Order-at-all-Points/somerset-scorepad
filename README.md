@@ -86,6 +86,19 @@ Run a tournament for **6 or more players** (even counts; odd team counts get ran
 4. **Play matches** — each match has its own independent game. Play or resume a match; the winner auto‑advances and the completed game is archived to History.
 5. At the end, **Rematch** (same teams) or **Redraw** (same players, new teams).
 
+For a smaller gathering, the Tournament tab also offers a **Best‑of Series** mode (4 players, 2 teams) — see below.
+
+### Best‑of Series
+
+When a full bracket is overkill, run a **best‑of‑N series** between two teams from the same Tournament tab:
+
+1. Enter **4 player names**.
+2. Form the two teams either by **random draw** (re‑drawable) or by **choosing partners** manually.
+3. Pick a length — **Best of 3 / 5 / 7**.
+4. Play games until one team wins the majority (2, 3, or 4). A live scoreboard shows the series score and a game‑by‑game list; the next game is one tap away.
+
+Each game is a full scorepad played/resumed in‑app and archived to History, the most recent game can be undone, and **Rematch / Redraw** restart the series at the end. It runs on the same match‑play, locking, and Firebase sync machinery as the brackets (`format: "series"`), so a series syncs across devices through the same join‑code flow.
+
 ### Shared / multi-device tournaments
 
 Tournaments can be **synced live across phones** via Firebase Realtime Database:
@@ -122,7 +135,7 @@ Client state is kept under `localStorage` keys (all prefixed `somerset:dev-`):
 | `somerset:dev-sync-code` / `somerset:dev-sync-role` | Current tournament join code and host/guest role. |
 | `somerset:dev-device-id` | Random per‑device id used for match locks. |
 
-In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round`) and a `teams` field, and make each record readable/writable only for 48 hours after creation. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
+In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and make each record readable/writable only for 48 hours after creation. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
 
 ---
 
@@ -179,4 +192,4 @@ SomeRSet/
 
 ## Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md) for the full list. Shipped highlights include the single‑game scorepad, game history, all three tournament formats, and the shared multi‑device backend. The main future idea is a **Best‑of Series mode** for a single 4‑player / 2‑team gathering (best‑of‑N games instead of a bracket).
+See [`ROADMAP.md`](ROADMAP.md) for the full list. Shipped highlights include the single‑game scorepad, game history, all three tournament formats, the **Best‑of Series** mode, and the shared multi‑device backend.

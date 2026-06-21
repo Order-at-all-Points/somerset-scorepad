@@ -45,7 +45,7 @@ In Firebase console: **Realtime Database → Rules** tab. Replace the default ru
       "$code": {
         ".read": "data.exists() && (now - data.child('_createdAt').val()) < 172800000",
         ".write": "!data.exists() || (data.exists() && (now - data.child('_createdAt').val()) < 172800000)",
-        ".validate": "newData.hasChildren(['format', 'teams']) && (newData.child('format').val() === 'single' || newData.child('format').val() === 'double' || newData.child('format').val() === 'round')"
+        ".validate": "newData.hasChildren(['format', 'teams']) && (newData.child('format').val() === 'single' || newData.child('format').val() === 'double' || newData.child('format').val() === 'round' || newData.child('format').val() === 'series')"
       }
     }
   }
@@ -56,7 +56,7 @@ In Firebase console: **Realtime Database → Rules** tab. Replace the default ru
 - Tournaments expire automatically after **48 hours** (172,800,000 ms) — unreadable and unwritable after that
 - Any device with the 6-char code can read and write the tournament
 - The 6-char code space (32⁶ ≈ 1 billion) makes brute-force impractical within the 48h window
-- New tournaments must have `format` and `teams`, and `format` must be one of `single`, `double`, or `round`
+- New tournaments must have `format` and `teams`, and `format` must be one of `single`, `double`, `round`, or `series`
 - ⚠️ The old rule required a `rounds` field, which broke Double Elimination (`wBracket`/`lBracket`) and Round Robin (`schedule`) — this is the corrected version
 
 Click **Publish** to save the rules.
