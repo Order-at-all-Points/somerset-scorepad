@@ -403,7 +403,7 @@ window.SOMERSET_FB_CONFIG = {
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6,
-    joinSheet:false, joinError:null, syncError:null, backConfirm:false
+    joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false
   };
 
   // ---- History + tournament storage ----
@@ -417,7 +417,16 @@ window.SOMERSET_FB_CONFIG = {
       if (tourney) {
         localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
         if (fb && syncCode) {
-          fb.ref("tournaments/" + syncCode).set(JSON.parse(JSON.stringify(tourney))).catch(function() {
+          // A full .set() replaces the whole record, so it must always carry
+          // _createdAt — the security rules require a recent _createdAt for BOTH
+          // read and write. A rematch/redraw (restartTourney) swaps in a fresh
+          // tourney object that has none, and there's a brief race right after
+          // creation before the first read-back populates it; either case would
+          // otherwise write a record with no _createdAt and brick it (unreadable
+          // and unwritable) for the host and every guest. Re-stamp when missing.
+          var payload = JSON.parse(JSON.stringify(tourney));
+          if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+          fb.ref("tournaments/" + syncCode).set(payload).catch(function() {
             syncStatus = "error"; render();
           });
         }
@@ -508,7 +517,6 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "rr") return am.isFinal ? tourney.final : tourney.schedule[am.idx];
     return null;
   }
-  function lockKey(ri, mi) { return ri + "_" + mi; }
   function claimLock(am) {
     if (!syncCode || !tourney) return;
     if (!tourney.locks) tourney.locks = {};
@@ -794,14 +802,14 @@ window.SOMERSET_FB_CONFIG = {
     if (!fb) return;
     fb.ref("tournaments/" + code).on("value", function(snap) {
       var data = snap.val();
-      if (!data) { syncStatus = "error"; render(); return; }
+      if (!data) { syncStatus = "error"; syncRender(); return; }
       syncStatus = "live";
       var normalized = normalizeFirebaseTourney(data);
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
-      if (changed) render();
-    }, function() { syncStatus = "error"; render(); });
+      if (changed) syncRender();
+    }, function() { syncStatus = "error"; syncRender(); });
   }
 
   function startSharedTournament(t) {
@@ -829,6 +837,22 @@ window.SOMERSET_FB_CONFIG = {
       ui.syncError = "Couldn't start shared tournament — Firebase write failed. The tournament is saved locally only.";
       render();
     });
+  }
+
+  // Host-only: start a fresh bracket (rematch/redraw). For a synced tournament this
+  // overwrites the bracket in place at the same code, so guests follow automatically
+  // via their live subscription — sync is never interrupted and the code is unchanged.
+  function restartTourney(newT) {
+    if (fb && syncCode) {
+      newT._code = syncCode;
+      tourney = newT;
+      saveTourney();   // writes the new bracket to tournaments/<syncCode>; guests pick it up
+      ui.syncNotice = "New Tournament Started";
+    } else {
+      tourney = newT;
+      saveTourney();
+    }
+    render();
   }
 
   function joinTournament(code, onError) {
@@ -982,6 +1006,23 @@ window.SOMERSET_FB_CONFIG = {
   var viewRootEl = document.getElementById("viewRoot");
 
   // ---- Top-level view dispatcher ----
+  // True when an interactive bottom sheet / dialog is on screen. A full render
+  // tears down and rebuilds the modal DOM (renderModal does modalRoot.innerHTML
+  // = ""), so re-rendering while the user is tapping a sheet button (e.g. the
+  // "X won" buttons) replaces the node mid-press and the tap is lost. We use
+  // this to defer *incoming sync* re-renders until the sheet is closed.
+  function sheetOpen() {
+    return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
+           ui.info != null || ui.seatMenu != null;
+  }
+  // Re-render driven by a remote Firebase update. Skipped while a sheet is open
+  // so live updates from other devices never eat the local user's taps; the data
+  // (tourney + localStorage) is still updated, and the next local render — which
+  // every sheet-close path triggers — shows the fresh state.
+  function syncRender() {
+    if (sheetOpen()) return;
+    render();
+  }
   function render() {
     renderNav();
     // point the active game at the right context
@@ -1492,12 +1533,13 @@ window.SOMERSET_FB_CONFIG = {
 
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
+    var isChamp = !!(rec.tournament && rec.tournament.championship);
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
         el("span", { class:"hist-score mono" }, [ rec.teams[0] + " " + rec.totals[0] + "  |  " + rec.teams[1] + " " + rec.totals[1] ]),
-        el("span", { class:"hist-win disp" }, [ winTxt ])
+        el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
       el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? " · tournament match" : "") ])
     ]);
@@ -1517,16 +1559,21 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
     ]);
+    var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
       var r = dealResult(d), isSet = r[2];
+      // Show the score actually credited this hand (delta), so a made moon reads as the
+      // jump to 50 — matching the live pad — instead of the raw 14 points taken.
+      var delta = dealDelta(d, runningScore);
+      runningScore[0] += delta[0]; runningScore[1] += delta[1];
       var dlr = (typeof d.dealer === "number") ? d.dealer : ((rec.dealerStart + idx) % 4 + 4) % 4;
       var dName = (rec.players[dlr] && rec.players[dlr].trim()) ? rec.players[dlr].trim() : ("Seat " + (dlr + 1));
       var bid = rec.teams[d.bidTeam] + (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid));
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(r[0]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(r[1]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
         el("span", { class:"hh-bid disp" }, [ bid + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : "")) ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
@@ -1819,15 +1866,15 @@ window.SOMERSET_FB_CONFIG = {
          : makeSingleElim(teams);
   }
   function rematchSameTeams() {
-    tourney = makeTourney(tourney.format, shuffle(tourney.teams));
+    var t = makeTourney(tourney.format, shuffle(tourney.teams));
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    restartTourney(t);
   }
   function redrawAndReplay() {
     var teams = drawTeams(rosterPlayers(tourney));
-    tourney = makeTourney(tourney.format, teams);
+    var t = makeTourney(tourney.format, teams);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    restartTourney(t);
   }
 
   function startMatchAm(am) {
@@ -1844,14 +1891,12 @@ window.SOMERSET_FB_CONFIG = {
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     saveTourney(); render();
   }
-  function startMatch(ri, mi) { startMatchAm({ ri: ri, mi: mi }); }
 
   function watchMatchAm(am) {
     ui.activeMatch = am;
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     render();
   }
-  function watchMatch(ri, mi) { watchMatchAm({ ri: ri, mi: mi }); }
 
   function matchScoreStr(m) {
     var s = gameTotals(m.game);
@@ -1862,7 +1907,9 @@ window.SOMERSET_FB_CONFIG = {
     var am = ui.activeMatch, m = getActiveMatchObj(am);
     var win = gameWinner(m.game);                 // 0 or 1
     var tournTeam = (win === 0) ? m.a : m.b;
+    var champBefore = tourney.champion;
     archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name] });
+    var justArchived = gameHistory[0];            // archiveCurrentGame unshifts the new record
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
     m.game = null;
@@ -1882,15 +1929,15 @@ window.SOMERSET_FB_CONFIG = {
         setRRWinner(tourney, am.idx, tournTeam);
       }
     }
+    // If this game crowned the tournament champion, mark its history record.
+    if (tourney.champion != null && tourney.champion !== champBefore && justArchived && justArchived.tournament) {
+      justArchived.tournament.championship = true;
+      saveHistory();
+    }
     ui.activeMatch = null; ui.showEntry = false;
     saveTourney(); render();
   }
 
-  function manualWin(ri, mi, teamIdx) {
-    var m = tourney.rounds[ri][mi];
-    if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); }
-    else { m.game = null; setMatchWinner(tourney, ri, mi, teamIdx); ui.matchMenu = null; saveTourney(); render(); }
-  }
   function manualWinAm(am, teamIdx) {
     var m = getActiveMatchObj(am);
     if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); return; }
@@ -2207,6 +2254,14 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
+    // Sync notice — e.g. "tournament restarted, new code" after a rematch/redraw
+    if (ui.syncNotice) {
+      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; render(); } }, ["✕"])
+      ]));
+    }
+
     // Sync bar — shows join code and live status when Firebase is active
     if (syncCode) {
       var dotEl = el("span", { class:"sync-dot " + syncStatus });
@@ -2232,10 +2287,16 @@ window.SOMERSET_FB_CONFIG = {
 
     if (t.champion != null) {
       card.appendChild(el("div", { class:"banner disp" }, ["Champion: " + t.teams[t.champion].name]));
-      card.appendChild(el("div", { class:"rematch" }, [
-        el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
-        el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
-      ]));
+      // In a shared tournament only the host can restart it (it spins up a new synced
+      // session); guests follow automatically. Local tournaments: anyone can restart.
+      if (!syncCode || syncRole === "host") {
+        card.appendChild(el("div", { class:"rematch" }, [
+          el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
+          el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
+        ]));
+      } else {
+        card.appendChild(el("p", { class:"sync-label disp", style:"text-align:center; padding:8px 12px;" }, ["Waiting for the host to start a rematch…"]));
+      }
     } else if (t.format === "single") {
       var nx = nextMatch(t);
       if (nx) {
