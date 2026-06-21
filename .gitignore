@@ -1,3 +1,8 @@
 .vercel
 .env*
 .DS_Store
+
+# Node / Playwright (dev-only, used for bracket screenshot testing)
+node_modules/
+package.json
+package-lock.json

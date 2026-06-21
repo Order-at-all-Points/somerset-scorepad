@@ -590,6 +590,40 @@ window.SOMERSET_FB_CONFIG = {
     if (m.completedGame) m.completedGame = normalizeFirebaseGame(m.completedGame);
     return m;
   }
+  // Firebase drops all-null matches and empty trailing rounds, which collapses
+  // sparse round arrays (and can leave null holes where a middle match was empty).
+  // These rebuild rounds to their exact expected shape so winner advancement never
+  // lands on a missing/null slot. Round 0 is always intact (its matches hold real
+  // teams), so its length is a reliable basis for reconstructing the rest.
+  function padRoundsToLens(rounds, lens) {
+    var out = [];
+    for (var ri = 0; ri < lens.length; ri++) {
+      var src = (rounds && rounds[ri]) || [];
+      var round = [];
+      for (var mi = 0; mi < lens[ri]; mi++) {
+        var m = src[mi];
+        round.push((m && typeof m === "object") ? m : { a: null, b: null, winner: null });
+      }
+      out.push(round);
+    }
+    return out;
+  }
+  function elimRoundLens(r0len) {            // single-elim / winners bracket: halve until 1
+    var lens = [], len = r0len;
+    while (len >= 1) { lens.push(len); if (len === 1) break; len = Math.floor(len / 2); }
+    return lens;
+  }
+  function lbRoundLens(wbR0count, wbLen) {   // losers bracket: mirrors makeDoubleElim
+    var lens = [];
+    if (wbLen >= 2) {
+      var prev = Math.floor(wbR0count / 2); lens.push(prev);
+      for (var wbRi = 1; wbRi < wbLen; wbRi++) {
+        lens.push(prev);
+        if (wbRi < wbLen - 1) { prev = Math.floor(prev / 2); lens.push(prev); }
+      }
+    }
+    return lens;
+  }
   function normalizeFirebaseTourney(t) {
     if (!t || typeof t !== "object") return t;
     if (t.teams)  t.teams  = fbObjToArr(t.teams);
@@ -601,6 +635,12 @@ window.SOMERSET_FB_CONFIG = {
       if (t.lBracket && t.lBracket.rounds) t.lBracket.rounds = normalizeFirebaseMatches(t.lBracket.rounds);
       if (!t.wBracket) t.wBracket = { rounds: [] };
       if (!t.lBracket) t.lBracket = { rounds: [] };
+      // Firebase may have collapsed empty/partial rounds — rebuild to exact shape.
+      if (t.wBracket.rounds.length > 0) {
+        var wbR0count = t.wBracket.rounds[0].length, wbLens = elimRoundLens(wbR0count);
+        t.wBracket.rounds = padRoundsToLens(t.wBracket.rounds, wbLens);
+        t.lBracket.rounds = padRoundsToLens(t.lBracket.rounds, lbRoundLens(wbR0count, wbLens.length));
+      }
       if (!t.grandFinal) t.grandFinal = { m1: { a: null, b: null, winner: null }, m2: null };
       else {
         if (t.grandFinal.m1) normalizeFirebaseMatch(t.grandFinal.m1);
@@ -614,16 +654,10 @@ window.SOMERSET_FB_CONFIG = {
     } else {
       // Single elimination (default)
       if (t.rounds) t.rounds = normalizeFirebaseMatches(t.rounds);
-      // Re-pad to expected depth
+      // Firebase may have collapsed empty/partial rounds — rebuild to exact shape so
+      // every match slot exists (fixes winners that couldn't advance after a sync).
       if (t.rounds && t.rounds.length > 0) {
-        var expectedRounds = 0, sz = t.rounds[0].length;
-        while (sz >= 1) { expectedRounds++; sz = Math.floor(sz / 2); }
-        while (t.rounds.length < expectedRounds) {
-          var prevLen = t.rounds[t.rounds.length - 1].length;
-          var newRound = [];
-          for (var k = 0; k < Math.ceil(prevLen / 2); k++) newRound.push({ a: null, b: null, winner: null });
-          t.rounds.push(newRound);
-        }
+        t.rounds = padRoundsToLens(t.rounds, elimRoundLens(t.rounds[0].length));
       }
     }
     return t;
@@ -1599,6 +1633,17 @@ window.SOMERSET_FB_CONFIG = {
     return t;
   }
 
+  // A WB Round-0 match with no 'b' slot is a bye and never produces a loser.
+  function wbR0IsBye(t, mi) { var m = t.wBracket.rounds[0][mi]; return !m || m.b == null; }
+  // Structurally determine whether an LB match can NEVER produce a winner (a "dead
+  // bye-pair"). This is independent of play order: it depends only on the bye layout.
+  // Odd LB rounds always receive a real WB drop-down, so they are never dead; even
+  // rounds (incl. R0) are dead only when both of their feeders are dead.
+  function lbMatchDead(t, ri, mi) {
+    if (ri === 0) return wbR0IsBye(t, 2 * mi) && wbR0IsBye(t, 2 * mi + 1);
+    if (ri % 2 === 1) return false;
+    return lbMatchDead(t, ri - 1, 2 * mi) && lbMatchDead(t, ri - 1, 2 * mi + 1);
+  }
   function setWBWinner(t, ri, mi, teamIdx) {
     var m = t.wBracket.rounds[ri][mi];
     m.winner = teamIdx;
@@ -1631,7 +1676,18 @@ window.SOMERSET_FB_CONFIG = {
       } else if (ri >= 1) {
         // WB Rk loser → LB R(2k-1) slot mi as b
         var lbRi = 2 * ri - 1;
-        if (lbRi < t.lBracket.rounds.length) t.lBracket.rounds[lbRi][mi].b = loser;
+        if (lbRi < t.lBracket.rounds.length) {
+          t.lBracket.rounds[lbRi][mi].b = loser;
+          // If the 'a' slot is fed by a structurally dead bye-pair (both WB R0
+          // partners were byes, so no loser will ever arrive), auto-advance the lone
+          // team so the losers bracket can continue. We must test structural deadness,
+          // NOT runtime emptiness: an unplayed-yet feeder is also empty, and treating
+          // that as dead would let a later-round WB loser leapfrog real LB games.
+          var lbM = t.lBracket.rounds[lbRi][mi];
+          if (lbM.a == null && lbM.winner == null && lbMatchDead(t, lbRi - 1, mi)) {
+            setLBWinner(t, lbRi, mi, lbM.b);
+          }
+        }
       }
     }
   }
@@ -2182,7 +2238,10 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     } else if (t.format === "single") {
       var nx = nextMatch(t);
-      if (nx) card.appendChild(el("p", { class:"tnext disp" }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), " — tap to play"]));
+      if (nx) {
+        var nxRi = nx.ri, nxMi = nx.mi;
+        card.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;", onClick:function(){ ui.matchMenu = { ri:nxRi, mi:nxMi, confirm:null }; render(); } }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), " — tap to play"]));
+      }
     }
     if (t.format === "single") {
       card.appendChild(renderBracketDiagram(t));
