@@ -1596,22 +1596,22 @@ window.SOMERSET_FB_CONFIG = {
     var isChamp = !!(rec.tournament && rec.tournament.championship);
     var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
-    var detail = manual ? "winner entered manually" : (rec.deals.length + " hands");
+    // Manual entries have no score; otherwise append each team's total. Either way the
+    // teams share one "|"-divided line, and applyScoreWrap stacks them (hiding the "|")
+    // when they don't fit.
+    var t0 = manual ? rec.teams[0] : (rec.teams[0] + " " + rec.totals[0]);
+    var t1 = manual ? rec.teams[1] : (rec.teams[1] + " " + rec.totals[1]);
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
-        el("span", { class:"hist-score mono" }, manual ? [
-          el("span", { class:"hs-team" }, [ rec.teams[0] ]),
-          el("span", { class:"hs-div" }, ["vs"]),
-          el("span", { class:"hs-team" }, [ rec.teams[1] ])
-        ] : [
-          el("span", { class:"hs-team" }, [ rec.teams[0] + " " + rec.totals[0] ]),
+        el("span", { class:"hist-score mono" }, [
+          el("span", { class:"hs-team" }, [ t0 ]),
           el("span", { class:"hs-div" }, ["|"]),
-          el("span", { class:"hs-team" }, [ rec.teams[1] + " " + rec.totals[1] ])
+          el("span", { class:"hs-team" }, [ t1 ])
         ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
-      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + detail + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
+      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + (manual ? "" : (" · " + rec.deals.length + " hands")) + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
     ]);
     var entry = el("div", { class:"hist-entry" }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
@@ -1631,7 +1631,7 @@ window.SOMERSET_FB_CONFIG = {
     ]);
     if (rec.tournament && rec.tournament.manual) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"font-style:italic; color:var(--ink-soft);" },
-        ["Winner entered manually — no hands recorded."]));
+        ["No hands recorded."]));
     }
     var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
