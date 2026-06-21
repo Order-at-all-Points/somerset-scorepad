@@ -1621,7 +1621,10 @@ window.SOMERSET_FB_CONFIG = {
   function rosterLine(rec, teamIdx) {
     var a = rec.players[teamIdx], b = rec.players[teamIdx + 2];   // seats teamIdx & teamIdx+2 share a team
     var names = [a, b].filter(function (x) { return x && x.trim(); });
-    return rec.teams[teamIdx] + (names.length ? (": " + names.join(" & ")) : "");
+    var roster = names.join(" & ");
+    // Tournament teams are named after their players (e.g. "A & B"), so the roster
+    // would just repeat the team name — only append it when it adds something.
+    return rec.teams[teamIdx] + (roster && roster !== rec.teams[teamIdx] ? (": " + roster) : "");
   }
 
   function renderHistoryDetail(rec) {
