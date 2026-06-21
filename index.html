@@ -1604,7 +1604,7 @@ window.SOMERSET_FB_CONFIG = {
         ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
-      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? " · tournament match" : "") ])
+      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
     ]);
     var entry = el("div", { class:"hist-entry" }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
