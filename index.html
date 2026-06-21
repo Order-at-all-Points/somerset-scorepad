@@ -417,7 +417,16 @@ window.SOMERSET_FB_CONFIG = {
       if (tourney) {
         localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
         if (fb && syncCode) {
-          fb.ref("tournaments/" + syncCode).set(JSON.parse(JSON.stringify(tourney))).catch(function() {
+          // A full .set() replaces the whole record, so it must always carry
+          // _createdAt — the security rules require a recent _createdAt for BOTH
+          // read and write. A rematch/redraw (restartTourney) swaps in a fresh
+          // tourney object that has none, and there's a brief race right after
+          // creation before the first read-back populates it; either case would
+          // otherwise write a record with no _createdAt and brick it (unreadable
+          // and unwritable) for the host and every guest. Re-stamp when missing.
+          var payload = JSON.parse(JSON.stringify(tourney));
+          if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+          fb.ref("tournaments/" + syncCode).set(payload).catch(function() {
             syncStatus = "error"; render();
           });
         }
@@ -508,7 +517,6 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "rr") return am.isFinal ? tourney.final : tourney.schedule[am.idx];
     return null;
   }
-  function lockKey(ri, mi) { return ri + "_" + mi; }
   function claimLock(am) {
     if (!syncCode || !tourney) return;
     if (!tourney.locks) tourney.locks = {};
@@ -1551,16 +1559,21 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
     ]);
+    var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
       var r = dealResult(d), isSet = r[2];
+      // Show the score actually credited this hand (delta), so a made moon reads as the
+      // jump to 50 — matching the live pad — instead of the raw 14 points taken.
+      var delta = dealDelta(d, runningScore);
+      runningScore[0] += delta[0]; runningScore[1] += delta[1];
       var dlr = (typeof d.dealer === "number") ? d.dealer : ((rec.dealerStart + idx) % 4 + 4) % 4;
       var dName = (rec.players[dlr] && rec.players[dlr].trim()) ? rec.players[dlr].trim() : ("Seat " + (dlr + 1));
       var bid = rec.teams[d.bidTeam] + (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid));
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(r[0]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(r[1]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
         el("span", { class:"hh-bid disp" }, [ bid + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : "")) ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
@@ -1878,14 +1891,12 @@ window.SOMERSET_FB_CONFIG = {
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     saveTourney(); render();
   }
-  function startMatch(ri, mi) { startMatchAm({ ri: ri, mi: mi }); }
 
   function watchMatchAm(am) {
     ui.activeMatch = am;
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     render();
   }
-  function watchMatch(ri, mi) { watchMatchAm({ ri: ri, mi: mi }); }
 
   function matchScoreStr(m) {
     var s = gameTotals(m.game);
@@ -1927,11 +1938,6 @@ window.SOMERSET_FB_CONFIG = {
     saveTourney(); render();
   }
 
-  function manualWin(ri, mi, teamIdx) {
-    var m = tourney.rounds[ri][mi];
-    if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); }
-    else { m.game = null; setMatchWinner(tourney, ri, mi, teamIdx); ui.matchMenu = null; saveTourney(); render(); }
-  }
   function manualWinAm(am, teamIdx) {
     var m = getActiveMatchObj(am);
     if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); return; }
