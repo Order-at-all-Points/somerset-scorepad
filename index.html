@@ -403,7 +403,7 @@ window.SOMERSET_FB_CONFIG = {
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6,
-    joinSheet:false, joinError:null, syncError:null, backConfirm:false
+    joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false
   };
 
   // ---- History + tournament storage ----
@@ -790,18 +790,31 @@ window.SOMERSET_FB_CONFIG = {
     t.champion = null;
   }
 
+  // The host's rematch/redraw starts a NEW shared session (new code/node) and leaves
+  // a redirect pointer on the old node. Guests still listening follow it automatically.
+  function migrateToCode(newCode, oldCode) {
+    if (!newCode || newCode === syncCode) return;
+    if (oldCode && fb) fb.ref("tournaments/" + oldCode).off();
+    syncCode = newCode;
+    localStorage.setItem(SYNC_CODE_KEY, newCode);
+    ui.syncNotice = "Tournament restarted — now following code " + newCode;
+    subscribeToTourney(newCode);
+    render();
+  }
+
   function subscribeToTourney(code) {
     if (!fb) return;
     fb.ref("tournaments/" + code).on("value", function(snap) {
       var data = snap.val();
-      if (!data) { syncStatus = "error"; render(); return; }
+      if (!data) { syncStatus = "error"; syncRender(); return; }
+      if (data._movedTo) { migrateToCode(data._movedTo, code); return; }
       syncStatus = "live";
       var normalized = normalizeFirebaseTourney(data);
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
-      if (changed) render();
-    }, function() { syncStatus = "error"; render(); });
+      if (changed) syncRender();
+    }, function() { syncStatus = "error"; syncRender(); });
   }
 
   function startSharedTournament(t) {
@@ -831,12 +844,42 @@ window.SOMERSET_FB_CONFIG = {
     });
   }
 
+  // Host-only: end the current shared session and start a fresh one (rematch/redraw).
+  // Writes the new bracket to a brand-new code/node and drops a redirect on the old node
+  // so guests migrate automatically.
+  function restartSharedTournament(newT) {
+    var oldCode = syncCode;
+    var newCode = genCode();
+    if (oldCode) fb.ref("tournaments/" + oldCode).off();   // stop following the old session
+    tourney = newT; tourney._code = newCode;
+    syncCode = newCode; syncStatus = "connecting";
+    localStorage.setItem(SYNC_CODE_KEY, newCode);
+    localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+    render();   // optimistic: show the new bracket while the write lands
+    var payload = JSON.parse(JSON.stringify(newT));
+    payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+    payload._code = newCode;
+    fb.ref("tournaments/" + newCode).set(payload).then(function() {
+      syncRole = "host";
+      localStorage.setItem(SYNC_ROLE_KEY, "host");
+      subscribeToTourney(newCode);
+      if (oldCode) fb.ref("tournaments/" + oldCode).set({ _movedTo: newCode });   // redirect guests
+      ui.syncNotice = "New tournament started — share code " + newCode;
+      render();
+    }).catch(function() {
+      syncStatus = "error";
+      ui.syncError = "Couldn't start the new shared tournament — it's saved on this device only.";
+      render();
+    });
+  }
+
   function joinTournament(code, onError) {
     if (!initFb()) { onError("Firebase is not configured on this device."); return; }
     syncStatus = "connecting"; render();
     fb.ref("tournaments/" + code).once("value").then(function(snap) {
       var data = snap.val();
       if (!data) { syncStatus = "offline"; onError("No tournament found with that code."); return; }
+      if (data._movedTo) { joinTournament(data._movedTo, onError); return; }
       syncCode = code; syncRole = "guest";
       localStorage.setItem(SYNC_CODE_KEY, syncCode);
       localStorage.setItem(SYNC_ROLE_KEY, "guest");
@@ -982,6 +1025,23 @@ window.SOMERSET_FB_CONFIG = {
   var viewRootEl = document.getElementById("viewRoot");
 
   // ---- Top-level view dispatcher ----
+  // True when an interactive bottom sheet / dialog is on screen. A full render
+  // tears down and rebuilds the modal DOM (renderModal does modalRoot.innerHTML
+  // = ""), so re-rendering while the user is tapping a sheet button (e.g. the
+  // "X won" buttons) replaces the node mid-press and the tap is lost. We use
+  // this to defer *incoming sync* re-renders until the sheet is closed.
+  function sheetOpen() {
+    return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
+           ui.info != null || ui.seatMenu != null;
+  }
+  // Re-render driven by a remote Firebase update. Skipped while a sheet is open
+  // so live updates from other devices never eat the local user's taps; the data
+  // (tourney + localStorage) is still updated, and the next local render — which
+  // every sheet-close path triggers — shows the fresh state.
+  function syncRender() {
+    if (sheetOpen()) return;
+    render();
+  }
   function render() {
     renderNav();
     // point the active game at the right context
@@ -1819,15 +1879,17 @@ window.SOMERSET_FB_CONFIG = {
          : makeSingleElim(teams);
   }
   function rematchSameTeams() {
-    tourney = makeTourney(tourney.format, shuffle(tourney.teams));
+    var t = makeTourney(tourney.format, shuffle(tourney.teams));
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    if (fb && syncCode) { restartSharedTournament(t); }
+    else { tourney = t; saveTourney(); render(); }
   }
   function redrawAndReplay() {
     var teams = drawTeams(rosterPlayers(tourney));
-    tourney = makeTourney(tourney.format, teams);
+    var t = makeTourney(tourney.format, teams);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
-    saveTourney(); render();
+    if (fb && syncCode) { restartSharedTournament(t); }
+    else { tourney = t; saveTourney(); render(); }
   }
 
   function startMatchAm(am) {
@@ -2207,6 +2269,14 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
+    // Sync notice — e.g. "tournament restarted, new code" after a rematch/redraw
+    if (ui.syncNotice) {
+      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; render(); } }, ["✕"])
+      ]));
+    }
+
     // Sync bar — shows join code and live status when Firebase is active
     if (syncCode) {
       var dotEl = el("span", { class:"sync-dot " + syncStatus });
@@ -2232,10 +2302,16 @@ window.SOMERSET_FB_CONFIG = {
 
     if (t.champion != null) {
       card.appendChild(el("div", { class:"banner disp" }, ["Champion: " + t.teams[t.champion].name]));
-      card.appendChild(el("div", { class:"rematch" }, [
-        el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
-        el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
-      ]));
+      // In a shared tournament only the host can restart it (it spins up a new synced
+      // session); guests follow automatically. Local tournaments: anyone can restart.
+      if (!syncCode || syncRole === "host") {
+        card.appendChild(el("div", { class:"rematch" }, [
+          el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
+          el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
+        ]));
+      } else {
+        card.appendChild(el("p", { class:"sync-label disp", style:"text-align:center; padding:8px 12px;" }, ["Waiting for the host to start a rematch…"]));
+      }
     } else if (t.format === "single") {
       var nx = nextMatch(t);
       if (nx) {
