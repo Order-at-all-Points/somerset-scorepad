@@ -1252,20 +1252,19 @@ window.SOMERSET_FB_CONFIG = {
         }
       } else if (mm.confirm != null) {
         var wT = mm.confirm;
+        var cMatch = getActiveMatchObj(mm);
+        var cWin = cMatch && cMatch.game ? gameWinner(cMatch.game) : null;
+        var cComplete = cWin === 0 || cWin === 1;   // a finished game is saved, not discarded
         mkids = [
-          el("h3", { class:"disp" }, ["Discard game?"]),
+          el("h3", { class:"disp" }, [ cComplete ? "Save game & set winner?" : "Discard game?" ]),
           el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink);" },
-            ["This match has a game in progress. Discard it and set " + tourney.teams[wT].name + " as the winner?"]),
+            [ cComplete
+                ? ("This finished game will be saved to History and " + tourney.teams[wT].name + " set as the winner.")
+                : ("This match has an unfinished game. Discard it and set " + tourney.teams[wT].name + " as the winner?") ]),
           el("button", { class:"sheet-btn primary disp", onClick:function(){
-              var _m = getActiveMatchObj(mm); _m.game = null;
-              if (!mm.bracket) setMatchWinner(tourney, mm.ri, mm.mi, wT);
-              else if (mm.bracket === "wb") setWBWinner(tourney, mm.ri, mm.mi, wT);
-              else if (mm.bracket === "lb") setLBWinner(tourney, mm.ri, mm.mi, wT);
-              else if (mm.bracket === "gf") setGFWinner(tourney, mm.match, wT);
-              else if (mm.bracket === "rr") { if (mm.isFinal) setRRFinalWinner(tourney, wT); else setRRWinner(tourney, mm.idx, wT); }
-              else if (mm.bracket === "series") setSeriesWinner(tourney, mm.gi, wT);
+              recordManualMatchWin(mm, getActiveMatchObj(mm), wT);
               ui.matchMenu = null; saveTourney(); render();
-            } }, ["Discard & set winner"]),
+            } }, [ cComplete ? "Save & set winner" : "Discard & set winner" ]),
           el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; render(); } }, ["Cancel"])
         ];
       } else {
@@ -2013,6 +2012,38 @@ window.SOMERSET_FB_CONFIG = {
     return s[0] + "–" + s[1];
   }
 
+  // Record the winner into whichever bracket/series this match belongs to.
+  function routeMatchWinner(am, teamIdx) {
+    if (!am.bracket) setMatchWinner(tourney, am.ri, am.mi, teamIdx);
+    else if (am.bracket === "wb") setWBWinner(tourney, am.ri, am.mi, teamIdx);
+    else if (am.bracket === "lb") setLBWinner(tourney, am.ri, am.mi, teamIdx);
+    else if (am.bracket === "gf") setGFWinner(tourney, am.match, teamIdx);
+    else if (am.bracket === "rr") { if (am.isFinal) setRRFinalWinner(tourney, teamIdx); else setRRWinner(tourney, am.idx, teamIdx); }
+    else if (am.bracket === "series") setSeriesWinner(tourney, am.gi, teamIdx);
+  }
+
+  // Finish a match from the bracket menu (manual "[Team] won"). If a game was
+  // actually played to a finish, archive it to History — mirroring the in-app
+  // "Save Result" path — so menu-entered results aren't lost. Then record the
+  // winner and, if this clinched the title, badge the history record.
+  function recordManualMatchWin(am, m, teamIdx) {
+    var champBefore = tourney.champion;
+    var before = gameHistory.length;
+    if (m && m.game && m.game.deals.length) {
+      var prevGame = game; game = m.game;   // archiveCurrentGame reads the global game pointer
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name] });
+      game = prevGame;
+    }
+    var archived = gameHistory.length > before ? gameHistory[0] : null;  // null if the game wasn't complete
+    if (archived) m.completedGame = JSON.parse(JSON.stringify(m.game));  // keep the score on the bracket
+    if (m) m.game = null;
+    routeMatchWinner(am, teamIdx);
+    if (tourney.champion != null && tourney.champion !== champBefore && archived && archived.tournament) {
+      archived.tournament.championship = true;
+      saveHistory();
+    }
+  }
+
   function recordMatchResult() {
     var am = ui.activeMatch, m = getActiveMatchObj(am);
     var win = gameWinner(m.game);                 // 0 or 1
@@ -2023,24 +2054,7 @@ window.SOMERSET_FB_CONFIG = {
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
     m.game = null;
-    // Route result based on bracket
-    if (!am.bracket) {
-      setMatchWinner(tourney, am.ri, am.mi, tournTeam);
-    } else if (am.bracket === "wb") {
-      setWBWinner(tourney, am.ri, am.mi, tournTeam);
-    } else if (am.bracket === "lb") {
-      setLBWinner(tourney, am.ri, am.mi, tournTeam);
-    } else if (am.bracket === "gf") {
-      setGFWinner(tourney, am.match, tournTeam);
-    } else if (am.bracket === "rr") {
-      if (am.isFinal) {
-        setRRFinalWinner(tourney, tournTeam);
-      } else {
-        setRRWinner(tourney, am.idx, tournTeam);
-      }
-    } else if (am.bracket === "series") {
-      setSeriesWinner(tourney, am.gi, tournTeam);
-    }
+    routeMatchWinner(am, tournTeam);
     // If this game crowned the tournament champion, mark its history record.
     if (tourney.champion != null && tourney.champion !== champBefore && justArchived && justArchived.tournament) {
       justArchived.tournament.championship = true;
@@ -2053,13 +2067,7 @@ window.SOMERSET_FB_CONFIG = {
   function manualWinAm(am, teamIdx) {
     var m = getActiveMatchObj(am);
     if (m.game && m.game.deals.length) { ui.matchMenu.confirm = teamIdx; render(); return; }
-    m.game = null;
-    if (!am.bracket) setMatchWinner(tourney, am.ri, am.mi, teamIdx);
-    else if (am.bracket === "wb") setWBWinner(tourney, am.ri, am.mi, teamIdx);
-    else if (am.bracket === "lb") setLBWinner(tourney, am.ri, am.mi, teamIdx);
-    else if (am.bracket === "gf") setGFWinner(tourney, am.match, teamIdx);
-    else if (am.bracket === "rr") { if (am.isFinal) setRRFinalWinner(tourney, teamIdx); else setRRWinner(tourney, am.idx, teamIdx); }
-    else if (am.bracket === "series") setSeriesWinner(tourney, am.gi, teamIdx);
+    recordManualMatchWin(am, m, teamIdx);
     ui.matchMenu = null; saveTourney(); render();
   }
 
