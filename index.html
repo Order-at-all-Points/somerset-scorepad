@@ -1594,18 +1594,24 @@ window.SOMERSET_FB_CONFIG = {
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
     var isChamp = !!(rec.tournament && rec.tournament.championship);
+    var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
+    var detail = manual ? "winner entered manually" : (rec.deals.length + " hands");
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
-        el("span", { class:"hist-score mono" }, [
+        el("span", { class:"hist-score mono" }, manual ? [
+          el("span", { class:"hs-team" }, [ rec.teams[0] ]),
+          el("span", { class:"hs-div" }, ["vs"]),
+          el("span", { class:"hs-team" }, [ rec.teams[1] ])
+        ] : [
           el("span", { class:"hs-team" }, [ rec.teams[0] + " " + rec.totals[0] ]),
           el("span", { class:"hs-div" }, ["|"]),
           el("span", { class:"hs-team" }, [ rec.teams[1] + " " + rec.totals[1] ])
         ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
-      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + rec.deals.length + " hands" + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
+      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + " · " + detail + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
     ]);
     var entry = el("div", { class:"hist-entry" }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
@@ -1623,6 +1629,10 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
     ]);
+    if (rec.tournament && rec.tournament.manual) {
+      wrap.appendChild(el("p", { class:"hist-roster disp", style:"font-style:italic; color:var(--ink-soft);" },
+        ["Winner entered manually — no hands recorded."]));
+    }
     var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
       var r = dealResult(d), isSet = r[2];
@@ -2022,20 +2032,46 @@ window.SOMERSET_FB_CONFIG = {
     else if (am.bracket === "series") setSeriesWinner(tourney, am.gi, teamIdx);
   }
 
-  // Finish a match from the bracket menu (manual "[Team] won"). If a game was
-  // actually played to a finish, archive it to History — mirroring the in-app
-  // "Save Result" path — so menu-entered results aren't lost. Then record the
-  // winner and, if this clinched the title, badge the history record.
+  // Log a tournament result whose winner was picked by hand (no full in-app
+  // game): no deals or score, just the matchup and who won.
+  function archiveManualWin(m, teamIdx) {
+    var A = tourney.teams[m.a], B = tourney.teams[m.b];
+    var ap = A.players || [], bp = B.players || [];
+    var rec = {
+      id: Date.now(),
+      date: new Date().toISOString(),
+      teams: [A.name, B.name],
+      players: [ ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || "" ],   // seats 0&2 = A, 1&3 = B
+      dealerStart: 0,
+      target: (m.game && m.game.target) || 50,
+      totals: null,                          // no score — winner was entered manually
+      winner: (teamIdx === m.a) ? 0 : 1,     // index into the record's teams array
+      deals: [],
+      tournament: { format: tourney.format, teams: [A.name, B.name], manual: true }
+    };
+    gameHistory.unshift(rec);
+    saveHistory();
+    return rec;
+  }
+
+  // Finish a match from the bracket menu (manual "[Team] won"). A game played to
+  // a finish is archived just like the in-app "Save Result" path; otherwise the
+  // hand-picked winner is still logged as a manual result. Either way, badge the
+  // record if this clinched the title.
   function recordManualMatchWin(am, m, teamIdx) {
     var champBefore = tourney.champion;
-    var before = gameHistory.length;
-    if (m && m.game && m.game.deals.length) {
+    var played = m && m.game && m.game.deals.length;
+    var complete = played && (gameWinner(m.game) === 0 || gameWinner(m.game) === 1);
+    var archived;
+    if (complete) {
       var prevGame = game; game = m.game;   // archiveCurrentGame reads the global game pointer
       archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name] });
       game = prevGame;
+      m.completedGame = JSON.parse(JSON.stringify(m.game));   // keep the score on the bracket
+      archived = gameHistory[0];
+    } else {
+      archived = archiveManualWin(m, teamIdx);                // no full game — log a manual result
     }
-    var archived = gameHistory.length > before ? gameHistory[0] : null;  // null if the game wasn't complete
-    if (archived) m.completedGame = JSON.parse(JSON.stringify(m.game));  // keep the score on the bracket
     if (m) m.game = null;
     routeMatchWinner(am, teamIdx);
     if (tourney.champion != null && tourney.champion !== champBefore && archived && archived.tournament) {
