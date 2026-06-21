@@ -1544,7 +1544,9 @@ window.SOMERSET_FB_CONFIG = {
   function fmtDate(iso) {
     try {
       var d = new Date(iso);
-      return d.toLocaleDateString(undefined, { month:"short", day:"numeric", year:"numeric" }) +
+      var mm = String(d.getMonth() + 1).padStart(2, "0");
+      var dd = String(d.getDate()).padStart(2, "0");
+      return mm + "/" + dd + "/" + d.getFullYear() +
         " · " + d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
     } catch (e) { return ""; }
   }
