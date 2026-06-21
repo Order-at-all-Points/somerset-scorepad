@@ -353,6 +353,8 @@
   .series-game-label { flex:1; color:var(--ink); font-size:13px; }
   .rr-row.series-next { background:rgba(160,124,46,.10); }
   .rr-row.series-next .rr-result { color:var(--brass); font-style:italic; }
+  .rr-row.series-live { background:rgba(82,168,82,.12); }
+  .rr-result.live { color:#2e7d32; font-weight:600; }
 </style>
 </head>
 <body>
@@ -2463,25 +2465,50 @@ window.SOMERSET_FB_CONFIG = {
     var sub = t.champion != null
       ? ("Series over · " + decided + " game" + (decided === 1 ? "" : "s") + " played")
       : ("Best of " + t.bestOf + " · first to " + tgt + " game wins");
-    sections.push(el("div", { class:"bracket-section" }, [
+    var scoreSection = el("div", { class:"bracket-section" }, [
       el("div", { class:"bracket-section-head" }, ["Series"]),
       scoreWrap,
       el("p", { class:"series-sub disp" }, [sub])
-    ]));
+    ]);
+    // helper: does a game have a live, in-progress scorepad?
+    function gameInProgress(g) { return g.winner == null && g.game && g.game.deals && g.game.deals.length > 0; }
+    // Tappable hint so everyone (host and guests) can jump straight to the live/next game.
+    if (t.champion == null) {
+      var ipIdx = -1, nextIdx = -1;
+      for (var hi = 0; hi < t.games.length; hi++) {
+        if (t.games[hi].winner != null) continue;
+        if (gameInProgress(t.games[hi])) { ipIdx = hi; break; }
+        if (nextIdx < 0) nextIdx = hi;
+      }
+      var hintIdx = ipIdx >= 0 ? ipIdx : nextIdx;
+      if (hintIdx >= 0) {
+        var live = ipIdx >= 0, hIdx = hintIdx;
+        scoreSection.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;",
+          onClick:function(){ ui.matchMenu = { bracket: "series", gi: hIdx, confirm: null }; render(); } },
+          [ live ? ("Game " + (hIdx + 1) + " in progress — tap to watch") : ("Next up: Game " + (hIdx + 1) + " — tap to play") ]));
+      }
+    }
+    sections.push(scoreSection);
 
     // Game-by-game list
     var gamesDiv = el("div", { class:"bracket-section" }, [el("div", { class:"bracket-section-head" }, ["Games"])]);
     var list = el("div", { class:"rr-schedule" });
     t.games.forEach(function(g, gi) {
       var gdecided = g.winner != null;
-      var isNext = !gdecided && t.champion == null;
+      var inProg = gameInProgress(g);
+      var isNext = !gdecided && !inProg && t.champion == null;
       var scoreGame = (g.game && g.game.deals && g.game.deals.length) ? g.game
                     : (g.completedGame && g.completedGame.deals && g.completedGame.deals.length) ? g.completedGame : null;
       var scores = scoreGame ? gameTotals(scoreGame) : null;
-      var resultEl = gdecided
-        ? el("span", { class:"rr-result set" }, [t.teams[g.winner].name + " won" + (scores ? " " + scores[g.winner] + "–" + scores[1 - g.winner] : "")])
-        : el("span", { class:"rr-result" }, [isNext ? "tap to play" : "–"]);
-      var row = el("div", { class:"rr-row" + (isNext ? " series-next" : "") }, [
+      var resultEl;
+      if (gdecided) {
+        resultEl = el("span", { class:"rr-result set" }, [t.teams[g.winner].name + " won" + (scores ? " " + scores[g.winner] + "–" + scores[1 - g.winner] : "")]);
+      } else if (inProg) {
+        resultEl = el("span", { class:"rr-result live" }, ["in progress · " + scores[0] + "–" + scores[1]]);
+      } else {
+        resultEl = el("span", { class:"rr-result" }, [isNext ? "tap to play" : "–"]);
+      }
+      var row = el("div", { class:"rr-row" + (isNext ? " series-next" : "") + (inProg ? " series-live" : "") }, [
         el("span", { class:"series-game-label mono" }, ["Game " + (gi + 1)]),
         resultEl
       ]);
