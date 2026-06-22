@@ -1065,6 +1065,10 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
   function render() {
+    // Capture the fade-suppression flag before the view renderers consume/reset
+    // it, so the modal layer can honor softRender() too (sheets otherwise replay
+    // their fade-in animation on every in-sheet re-render — the name-edit judder).
+    var modalNoFade = suppressFade;
     renderNav();
     // point the active game at the right context
     if (ui.view === "tournament" && ui.activeMatch && tourney) {
@@ -1079,7 +1083,7 @@ window.SOMERSET_FB_CONFIG = {
     if (inGame) { viewRootEl.innerHTML = ""; padEl.innerHTML = ""; renderScorePad(padEl, "solo"); renderSettings(); }
     else if (ui.view === "history") renderHistory();
     else if (ui.view === "tournament") renderTournament();
-    renderModal();
+    renderModal(modalNoFade);
   }
 
   function renderNav() {
@@ -1218,10 +1222,11 @@ window.SOMERSET_FB_CONFIG = {
     else { ui.pendingDealer = i; render(); }                            // mid-game needs confirm
   }
 
-  function renderModal() {
+  function renderModal(noFade) {
     modalRoot.innerHTML = "";
+    var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
     if (ui.info) {
-      var infoSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
+      var infoSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Set"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" }, [ui.info]),
@@ -1319,13 +1324,13 @@ window.SOMERSET_FB_CONFIG = {
           ];
         }
       }
-      var msheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
+      var msheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; render(); } }, [msheet]));
       return;
     }
     if (ui.backConfirm && ui.activeMatch) {
       var bcAm = ui.activeMatch, bcM = getActiveMatchObj(bcAm);
-      var bcSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
+      var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Unsaved result"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
           ["This match has a winner. Save the result before leaving or it will be lost."]),
@@ -1362,7 +1367,7 @@ window.SOMERSET_FB_CONFIG = {
         joinTournament(code, function(msg){ ui.joinError = msg; render(); });
       } }, ["Join →"]));
       jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, ["Cancel"]));
-      var jSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
+      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
@@ -1417,7 +1422,7 @@ window.SOMERSET_FB_CONFIG = {
       ];
     }
 
-    var sheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Seat options",
+    var sheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Seat options",
       onClick:function(e){ e.stopPropagation(); } }, sheetKids);
     var overlay = el("div", { class:"overlay", onClick:closeSeatMenu }, [sheet]);
     modalRoot.appendChild(overlay);
