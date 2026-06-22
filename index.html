@@ -1173,7 +1173,7 @@ window.SOMERSET_FB_CONFIG = {
         if (isOpen) {
           var trumpVal = d.trump ? (d.trump === "No trump" ? "None" : d.trump) : "not recorded";
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
-            el("span", {}, ["Trump", el("b", {}, [trumpVal])]),
+            el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])])
           ]));
         }
