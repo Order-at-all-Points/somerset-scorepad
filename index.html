@@ -1503,7 +1503,7 @@ window.SOMERSET_FB_CONFIG = {
     } else if (moonBid && ui.bidderPts === POINTS_PER_DEAL) {
       kids.push(el("p", { class:"warn strong disp" }, [
         preTotal >= 0
-          ? (game.teams[ui.bidTeam] + " shot the moon! They win the game!")
+          ? (game.teams[ui.bidTeam] + " shot the MOON! " + game.teams[ui.bidTeam] + " win the game!")
           : (game.teams[ui.bidTeam] + " take all 14, but are below zero \u2014 no moon, no win.")
       ]));
     }
