@@ -83,7 +83,7 @@ Run a tournament for **6 or more players** (even counts; odd team counts get ran
    - **Single Elimination** — flowchart bracket; pick winners manually or play each match in‑app.
    - **Double Elimination** — winners + losers brackets with a grand final (handles the tricky 5‑ and 6‑team losers‑bracket cases).
    - **Round Robin** — standings table plus a schedule grid.
-4. **Play matches** — each match has its own independent game. Play or resume a match; the winner auto‑advances and the completed game is archived to History.
+4. **Play matches** — each match has its own independent game. Play or resume a match; the winner auto‑advances and the completed game is archived to History. The match scoreboard shows each team's combined player‑pair name (e.g. *Ted & Dan*); long names wrap onto two balanced lines so the two scores stay aligned.
 5. At the end, **Rematch** (same teams) or **Redraw** (same players, new teams).
 
 For a smaller gathering, the Tournament tab also offers a **Best‑of Series** mode (4 players, 2 teams) — see below.

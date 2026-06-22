@@ -18,7 +18,7 @@
 1. In Firebase console: **Project settings (gear icon) → Your apps → SDK setup & configuration**
 2. If no app exists, click the **</>** (Web) icon to register one
 3. Copy the `firebaseConfig` object values
-4. Open `dev/index.html` and find the `SOMERSET_FB_CONFIG` block near the top:
+4. Open `index.html` and find the `SOMERSET_FB_CONFIG` block near the top:
 
 ```js
 window.SOMERSET_FB_CONFIG = {
@@ -63,7 +63,7 @@ Click **Publish** to save the rules.
 
 ## 5. Done
 
-Deploy `dev/index.html` to Vercel (`cd ~/Desktop/SomeRSet/dev && npx vercel --prod`).
+Deploy `index.html` to Vercel (`cd ~/Desktop/SomeRSet && npx vercel --prod`).
 
 When you start a tournament, the app automatically:
 - Generates a join code (e.g. `K7MXQ2`)
