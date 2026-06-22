@@ -63,6 +63,12 @@
     font-family:'Old Standard TT',Georgia,serif; font-size:18px; font-weight:700; color:var(--ink);
     width:90%; letter-spacing:.06em; padding:0 0 2px; }
   .team-name:focus { outline:2px solid var(--brass); outline-offset:2px; }
+  /* Read-only match names ("A & B") render as a div so long names wrap across
+     lines instead of clipping; inline-block keeps it centered like the input. */
+  .team-name-ro { display:inline-block; white-space:normal; overflow-wrap:anywhere;
+    line-height:1.2; cursor:default; }
+  /* When one team's name wraps, both stack the partner onto its own line. */
+  .team-name-ro.tn-stack .tn-b { display:block; }
   .score { font-size:52px; font-weight:600; line-height:1.1; margin-top:4px; }
   .track { height:6px; background:var(--cream-shade); border-radius:3px; margin:8px 10px 0; overflow:hidden; }
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
@@ -209,6 +215,10 @@
     padding:24px max(24px, env(safe-area-inset-left)); z-index:60; }
   .sheet { background:var(--cream); border-radius:10px; width:100%; max-width:320px; padding:18px 16px 14px;
     box-shadow:0 18px 44px rgba(0,0,0,.45); }
+  /* Centered modals fade opacity-only: the .fade translateY would make the
+     auto-selected name's blue highlight visibly slide as the sheet settles. */
+  .sheet.fade { animation:sheet-in .35s ease both; }
+  @keyframes sheet-in { from { opacity:0; } to { opacity:1; } }
   .sheet h3 { margin:0; font-family:'Old Standard TT',Georgia,serif; font-size:20px; font-weight:700; color:var(--ink); text-align:center; }
   .sheet .sub { text-align:center; color:var(--ink-soft); font-size:12px; font-style:italic; margin:2px 0 14px; }
   .sheet-btn { display:block; width:100%; min-height:48px; padding:12px 0; margin-bottom:8px; border-radius:6px;
@@ -1065,6 +1075,10 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
   function render() {
+    // Capture the fade-suppression flag before the view renderers consume/reset
+    // it, so the modal layer can honor softRender() too (sheets otherwise replay
+    // their fade-in animation on every in-sheet re-render — the name-edit judder).
+    var modalNoFade = suppressFade;
     renderNav();
     // point the active game at the right context
     if (ui.view === "tournament" && ui.activeMatch && tourney) {
@@ -1079,7 +1093,7 @@ window.SOMERSET_FB_CONFIG = {
     if (inGame) { viewRootEl.innerHTML = ""; padEl.innerHTML = ""; renderScorePad(padEl, "solo"); renderSettings(); }
     else if (ui.view === "history") renderHistory();
     else if (ui.view === "tournament") renderTournament();
-    renderModal();
+    renderModal(modalNoFade);
   }
 
   function renderNav() {
@@ -1112,11 +1126,26 @@ window.SOMERSET_FB_CONFIG = {
 
     // Totals
     var totalsGrid = el("div", { class:"totals" });
+    var teamNameEls = [];   // read-only match names — heights equalized below so scores stay aligned
     [0,1].forEach(function (i) {
-      var nameProps = { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name" };
-      if (isMatch) nameProps.readOnly = true;
-      else nameProps.onChange = function(e){ game.teams[i] = e.target.value; persist(); };
-      var nameInput = el("input", nameProps);
+      var nameInput;
+      if (isMatch) {
+        // Combined "A & B" names can be long; an <input> can't wrap so it clips.
+        // Render the two players as separate spans so the name can wrap between
+        // them (each full name kept intact). "&" is bound to the first name with
+        // a non-breaking space. equalizeTeamNames() decides below whether to
+        // stack the partner onto its own line so both teams match.
+        var parts = game.teams[i].split(" & ");
+        var kids = parts.length === 2
+          ? [ el("span", { class:"tn-a" }, [parts[0] + String.fromCharCode(160) + "&"]),
+              el("span", { class:"tn-b" }, [" " + parts[1]]) ]
+          : [ game.teams[i] ];
+        nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, kids);
+        teamNameEls.push(nameInput);
+      } else {
+        nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
+          onChange:function(e){ game.teams[i] = e.target.value; persist(); } });
+      }
       var scoreColor = (win === i) ? "var(--brass)" : "var(--ink)";
       var bar = el("div", { class:"track", role:"img",
         "aria-label":game.teams[i]+": "+t[i]+" of "+game.target+" points" }, [
@@ -1207,6 +1236,27 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     target.appendChild(pad);
+
+    // Stash the read-only match names so the caller can equalize their heights
+    // once the pad is attached to the document (match mode appends `target`
+    // after this returns, so measuring here would read 0). Solo mode's target
+    // is already attached, so equalize now; it's a no-op without match names.
+    target.__teamNameEls = teamNameEls;
+    if (target.isConnected) equalizeTeamNames(teamNameEls);
+  }
+
+  // If one match name wraps to two lines, stack the other team's partner onto
+  // its own line too (so the two teams look balanced) and reserve matching
+  // height, keeping the scores below vertically aligned.
+  function equalizeTeamNames(els) {
+    if (!els || els.length !== 2) return;
+    els.forEach(function (e) { e.style.minHeight = ""; e.classList.remove("tn-stack"); });
+    // If the names rendered at different heights, one wrapped — force both to stack.
+    if (els[0].offsetHeight !== els[1].offsetHeight) {
+      els.forEach(function (e) { e.classList.add("tn-stack"); });
+    }
+    var h = Math.max(els[0].offsetHeight, els[1].offsetHeight);
+    els.forEach(function (e) { e.style.minHeight = h + "px"; });
   }
 
   function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; render(); }
@@ -1218,10 +1268,11 @@ window.SOMERSET_FB_CONFIG = {
     else { ui.pendingDealer = i; render(); }                            // mid-game needs confirm
   }
 
-  function renderModal() {
+  function renderModal(noFade) {
     modalRoot.innerHTML = "";
+    var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
     if (ui.info) {
-      var infoSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
+      var infoSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Set"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" }, [ui.info]),
@@ -1319,13 +1370,13 @@ window.SOMERSET_FB_CONFIG = {
           ];
         }
       }
-      var msheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
+      var msheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; render(); } }, [msheet]));
       return;
     }
     if (ui.backConfirm && ui.activeMatch) {
       var bcAm = ui.activeMatch, bcM = getActiveMatchObj(bcAm);
-      var bcSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
+      var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Unsaved result"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
           ["This match has a winner. Save the result before leaving or it will be lost."]),
@@ -1362,7 +1413,7 @@ window.SOMERSET_FB_CONFIG = {
         joinTournament(code, function(msg){ ui.joinError = msg; render(); });
       } }, ["Join →"]));
       jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, ["Cancel"]));
-      var jSheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
+      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
@@ -1417,7 +1468,7 @@ window.SOMERSET_FB_CONFIG = {
       ];
     }
 
-    var sheet = el("div", { class:"sheet fade", role:"dialog", "aria-modal":"true", "aria-label":"Seat options",
+    var sheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Seat options",
       onClick:function(e){ e.stopPropagation(); } }, sheetKids);
     var overlay = el("div", { class:"overlay", onClick:closeSeatMenu }, [sheet]);
     modalRoot.appendChild(overlay);
@@ -2190,6 +2241,7 @@ window.SOMERSET_FB_CONFIG = {
     ]);
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
+    equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
   }
 
   function renderTournamentSetup() {
