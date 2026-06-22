@@ -125,6 +125,8 @@
     color:var(--cream);
     box-shadow:0 1px 2px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.07); }
   .chip.on:active { transform:scale(.93); box-shadow:none; }
+  .chip[disabled] { opacity:.45; cursor:default; box-shadow:none; }
+  .chip[disabled]:active { transform:none; }
 
   .check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-soft); margin-bottom:10px; }
   .warn { color:var(--red); font-size:13px; font-style:italic; margin:0 0 8px; }
@@ -2309,16 +2311,29 @@ window.SOMERSET_FB_CONFIG = {
     function mkTeam(a, b) { return { id: "t" + Math.random().toString(36).slice(2, 7), name: a + " & " + b, players: [a, b] }; }
     function invalidateTeams() { s.teams = null; s.partner = null; }
 
-    var startBtn, msgEl;
+    var startBtn, msgEl, drawBtn = null, partnerBtns = [], partnerLabelEl = null;
     function recompute() {
-      var ok = namesFilled() && !!s.teams;
+      var filled = namesFilled();
+      var ok = filled && !!s.teams;
       if (msgEl) {
-        msgEl.textContent = !namesFilled() ? "Enter all 4 player names"
+        msgEl.textContent = !filled ? "Enter all 4 player names"
           : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
           : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
         msgEl.className = "tvalid disp" + (ok ? " ok" : "");
       }
       if (startBtn) startBtn.disabled = !ok;
+      // The Teams controls are always in the DOM; keep their enabled state and
+      // labels in sync as names are typed, without a focus-stealing re-render.
+      if (drawBtn) drawBtn.disabled = !filled;
+      partnerBtns.forEach(function(b){
+        b.disabled = !filled;
+        var v = s.players[b._pi] && s.players[b._pi].trim();
+        b.textContent = v || ("Player " + (b._pi + 1));
+      });
+      if (partnerLabelEl) {
+        var p0 = s.players[0] && s.players[0].trim();
+        partnerLabelEl.textContent = (p0 || "Player 1") + "'s partner:";
+      }
       return ok;
     }
 
@@ -2374,32 +2389,45 @@ window.SOMERSET_FB_CONFIG = {
       }))
     ]));
 
-    if (namesFilled()) {
-      var names = s.players.map(function(p){ return p.trim(); });
-      if (s.mode === "random") {
-        card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
-          el("button", { class:"btn btn-add disp", onClick:function(){ s.teams = drawTeams(names); softRender(); } },
-            [ s.teams ? "Re-draw teams" : "Draw teams" ])
-        ]));
-      } else {
-        card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
-          el("span", { class:"label disp", style:"display:block; margin:4px 0 6px;" }, [names[0] + "'s partner:"]),
-          el("div", { class:"chips" }, [1, 2, 3].map(function(pi){
-            return el("button", { class:"chip disp" + (s.partner === pi ? " on" : ""), onClick:function(){
-              s.partner = pi;
-              var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
-              s.teams = [ mkTeam(names[0], names[pi]), mkTeam(names[rest[0]], names[rest[1]]) ];
-              softRender();
-            } }, [names[pi]]);
-          }))
-        ]));
-      }
-      if (s.teams) {
-        card.appendChild(el("div", { class:"draw-list" }, [
-          el("div", { class:"draw-team disp" }, [ "Team 1: ", el("b", {}, [s.teams[0].players[0]]), " & ", el("b", {}, [s.teams[0].players[1]]) ]),
-          el("div", { class:"draw-team disp" }, [ "Team 2: ", el("b", {}, [s.teams[1].players[0]]), " & ", el("b", {}, [s.teams[1].players[1]]) ])
-        ]));
-      }
+    // Teams controls render unconditionally so the button is present from the
+    // start; recompute() enables them once all names are filled. (Building them
+    // only when namesFilled() left the button missing until the next full
+    // render, since typing a name runs recompute() rather than a re-render.)
+    var names = s.players.map(function(p){ return p.trim(); });
+    var filledNow = namesFilled();
+    if (s.mode === "random") {
+      drawBtn = el("button", { class:"btn btn-add disp", onClick:function(){
+        if (!namesFilled()) return;
+        s.teams = drawTeams(s.players.map(function(p){ return p.trim(); })); softRender();
+      } }, [ s.teams ? "Re-draw teams" : "Draw teams" ]);
+      drawBtn.disabled = !filledNow;
+      card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [ drawBtn ]));
+    } else {
+      partnerLabelEl = el("span", { class:"label disp", style:"display:block; margin:4px 0 6px;" },
+        [ (names[0] || "Player 1") + "'s partner:" ]);
+      card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
+        partnerLabelEl,
+        el("div", { class:"chips" }, [1, 2, 3].map(function(pi){
+          var b = el("button", { class:"chip disp" + (s.partner === pi ? " on" : ""), onClick:function(){
+            if (!namesFilled()) return;
+            var nm = s.players.map(function(p){ return p.trim(); });
+            s.partner = pi;
+            var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
+            s.teams = [ mkTeam(nm[0], nm[pi]), mkTeam(nm[rest[0]], nm[rest[1]]) ];
+            softRender();
+          } }, [ names[pi] || ("Player " + (pi + 1)) ]);
+          b._pi = pi;
+          b.disabled = !filledNow;
+          partnerBtns.push(b);
+          return b;
+        }))
+      ]));
+    }
+    if (s.teams) {
+      card.appendChild(el("div", { class:"draw-list" }, [
+        el("div", { class:"draw-team disp" }, [ "Team 1: ", el("b", {}, [s.teams[0].players[0]]), " & ", el("b", {}, [s.teams[0].players[1]]) ]),
+        el("div", { class:"draw-team disp" }, [ "Team 2: ", el("b", {}, [s.teams[1].players[0]]), " & ", el("b", {}, [s.teams[1].players[1]]) ])
+      ]));
     }
 
     msgEl = el("p", { class:"tvalid disp" }, [""]);
