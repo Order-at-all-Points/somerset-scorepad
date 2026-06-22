@@ -1040,6 +1040,7 @@ window.SOMERSET_FB_CONFIG = {
   var padEl = document.getElementById("pad");
   var subtitleEl = document.getElementById("subtitle");
   var settingsPanelEl = document.getElementById("settingsPanel");
+  var settingsToggleEl = document.getElementById("settingsToggle");
   var modalRoot = document.getElementById("modalRoot");
   var navEl = document.getElementById("nav");
   var gameViewEl = document.getElementById("gameView");
@@ -1183,6 +1184,8 @@ window.SOMERSET_FB_CONFIG = {
 
     // Entry or Add button
     var gameOver = (win === 0 || win === 1);
+    // Hide the bottom "New Game" text link once the main button becomes "New Game"
+    if (!isMatch) settingsToggleEl.style.display = gameOver ? "none" : "";
     if (isReadOnly) {
       var viewBarText = gameOver
         ? ("Match complete \u2014 " + (win === "tie" ? "Tied" : (game.teams[win] + " won")))
