@@ -67,6 +67,8 @@
      lines instead of clipping; inline-block keeps it centered like the input. */
   .team-name-ro { display:inline-block; white-space:normal; overflow-wrap:anywhere;
     line-height:1.2; cursor:default; }
+  /* When one team's name wraps, both stack the partner onto its own line. */
+  .team-name-ro.tn-stack .tn-b { display:block; }
   .score { font-size:52px; font-weight:600; line-height:1.1; margin-top:4px; }
   .track { height:6px; background:var(--cream-shade); border-radius:3px; margin:8px 10px 0; overflow:hidden; }
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
@@ -1129,11 +1131,16 @@ window.SOMERSET_FB_CONFIG = {
       var nameInput;
       if (isMatch) {
         // Combined "A & B" names can be long; an <input> can't wrap so it clips.
-        // Render as a wrapping element, binding "&" to the first name with a
-        // non-breaking space so it wraps between the two players (each full
-        // name kept intact) rather than breaking mid-name.
-        var label = game.teams[i].replace(" & ", " & ");
-        nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, [label]);
+        // Render the two players as separate spans so the name can wrap between
+        // them (each full name kept intact). "&" is bound to the first name with
+        // a non-breaking space. equalizeTeamNames() decides below whether to
+        // stack the partner onto its own line so both teams match.
+        var parts = game.teams[i].split(" & ");
+        var kids = parts.length === 2
+          ? [ el("span", { class:"tn-a" }, [parts[0] + String.fromCharCode(160) + "&"]),
+              el("span", { class:"tn-b" }, [" " + parts[1]]) ]
+          : [ game.teams[i] ];
+        nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, kids);
         teamNameEls.push(nameInput);
       } else {
         nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
@@ -1238,11 +1245,16 @@ window.SOMERSET_FB_CONFIG = {
     if (target.isConnected) equalizeTeamNames(teamNameEls);
   }
 
-  // If one match name wraps to two lines, reserve the same height for the other
-  // so the two scores below stay vertically aligned.
+  // If one match name wraps to two lines, stack the other team's partner onto
+  // its own line too (so the two teams look balanced) and reserve matching
+  // height, keeping the scores below vertically aligned.
   function equalizeTeamNames(els) {
     if (!els || els.length !== 2) return;
-    els.forEach(function (e) { e.style.minHeight = ""; });   // reset before measuring
+    els.forEach(function (e) { e.style.minHeight = ""; e.classList.remove("tn-stack"); });
+    // If the names rendered at different heights, one wrapped — force both to stack.
+    if (els[0].offsetHeight !== els[1].offsetHeight) {
+      els.forEach(function (e) { e.classList.add("tn-stack"); });
+    }
     var h = Math.max(els[0].offsetHeight, els[1].offsetHeight);
     els.forEach(function (e) { e.style.minHeight = h + "px"; });
   }
