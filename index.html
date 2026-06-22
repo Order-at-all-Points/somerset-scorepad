@@ -63,6 +63,10 @@
     font-family:'Old Standard TT',Georgia,serif; font-size:18px; font-weight:700; color:var(--ink);
     width:90%; letter-spacing:.06em; padding:0 0 2px; }
   .team-name:focus { outline:2px solid var(--brass); outline-offset:2px; }
+  /* Read-only match names ("A & B") render as a div so long names wrap across
+     lines instead of clipping; inline-block keeps it centered like the input. */
+  .team-name-ro { display:inline-block; white-space:normal; overflow-wrap:anywhere;
+    line-height:1.2; cursor:default; }
   .score { font-size:52px; font-weight:600; line-height:1.1; margin-top:4px; }
   .track { height:6px; background:var(--cream-shade); border-radius:3px; margin:8px 10px 0; overflow:hidden; }
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
@@ -1121,10 +1125,18 @@ window.SOMERSET_FB_CONFIG = {
     // Totals
     var totalsGrid = el("div", { class:"totals" });
     [0,1].forEach(function (i) {
-      var nameProps = { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name" };
-      if (isMatch) nameProps.readOnly = true;
-      else nameProps.onChange = function(e){ game.teams[i] = e.target.value; persist(); };
-      var nameInput = el("input", nameProps);
+      var nameInput;
+      if (isMatch) {
+        // Combined "A & B" names can be long; an <input> can't wrap so it clips.
+        // Render as a wrapping element, binding "&" to the first name with a
+        // non-breaking space so it wraps between the two players (each full
+        // name kept intact) rather than breaking mid-name.
+        var label = game.teams[i].replace(" & ", " & ");
+        nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, [label]);
+      } else {
+        nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
+          onChange:function(e){ game.teams[i] = e.target.value; persist(); } });
+      }
       var scoreColor = (win === i) ? "var(--brass)" : "var(--ink)";
       var bar = el("div", { class:"track", role:"img",
         "aria-label":game.teams[i]+": "+t[i]+" of "+game.target+" points" }, [
