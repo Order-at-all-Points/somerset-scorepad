@@ -1372,15 +1372,28 @@ window.SOMERSET_FB_CONFIG = {
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
     if (ui.seatMenuMode === "edit") {
+      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); ui.seatMenu = null; ui.seatMenuMode = "menu"; persist(); };
       var input = el("input", { class:"sheet-input disp", type:"text", value:game.players[i] || "",
         placeholder:"Player name", maxlength:24, "aria-label":"Player name",
-        onKeydown:function(e){ if (e.key === "Enter") { game.players[i] = input.value.trim(); ui.seatMenu = null; ui.seatMenuMode = "menu"; persist(); } } });
+        onKeydown:function(e){ if (e.key === "Enter") { saveName(input.value); } } });
       sheetKids = [
         el("h3", { class:"disp" }, ["Edit name"]),
-        input,
-        el("button", { class:"sheet-btn primary disp", onClick:function(){ game.players[i] = input.value.trim(); ui.seatMenu = null; ui.seatMenuMode = "menu"; persist(); } }, ["Save"]),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; render(); } }, ["Cancel"])
+        input
       ];
+      if (nameBook.length) {
+        var used = game.players.map(function (p) { return (p || "").trim().toLowerCase(); });
+        var avail = nameBook.filter(function (nm) { return used.indexOf(nm.toLowerCase()) === -1; });
+        if (avail.length) {
+          sheetKids.push(el("div", { class:"quick-add", style:"padding:0 0 6px;" }, [
+            el("span", { class:"label disp", style:"display:block; margin:2px 0 6px;" }, ["Recent names"]),
+            el("div", { class:"chips" }, avail.slice(0, 40).map(function (nm) {
+              return el("button", { class:"chip disp", onClick:function(){ saveName(nm); } }, [nm]);
+            }))
+          ]));
+        }
+      }
+      sheetKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ saveName(input.value); } }, ["Save"]));
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; render(); } }, ["Cancel"]));
       setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
     } else {
       sheetKids = [
