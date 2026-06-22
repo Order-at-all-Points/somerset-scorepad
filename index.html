@@ -23,6 +23,9 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
+  /* Root background matches the gradient's deep edge (and theme-color) so the iOS
+     standalone bottom safe-area never flashes white before the first scroll repaint. */
+  html { background: var(--felt-deep); }
   body {
     background: radial-gradient(ellipse at 50% 18%, var(--felt) 0%, var(--felt-deep) 100%);
     background-attachment: fixed;
