@@ -596,8 +596,17 @@ window.SOMERSET_FB_CONFIG = {
 
   var CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   function genCode() {
-    var c = "";
-    for (var i = 0; i < 6; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    // The code is the only thing protecting a tournament, so generate it with a
+    // cryptographic RNG. CODE_CHARS has 32 entries and 256 % 32 === 0, so masking
+    // each byte to 5 bits is unbiased. Fall back to Math.random on ancient browsers.
+    var c = "", i;
+    if (window.crypto && window.crypto.getRandomValues) {
+      var buf = new Uint8Array(6);
+      window.crypto.getRandomValues(buf);
+      for (i = 0; i < 6; i++) c += CODE_CHARS[buf[i] & 31];
+    } else {
+      for (i = 0; i < 6; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    }
     return c;
   }
 
