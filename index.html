@@ -1124,6 +1124,7 @@ window.SOMERSET_FB_CONFIG = {
 
     // Totals
     var totalsGrid = el("div", { class:"totals" });
+    var teamNameEls = [];   // read-only match names — heights equalized below so scores stay aligned
     [0,1].forEach(function (i) {
       var nameInput;
       if (isMatch) {
@@ -1133,6 +1134,7 @@ window.SOMERSET_FB_CONFIG = {
         // name kept intact) rather than breaking mid-name.
         var label = game.teams[i].replace(" & ", " & ");
         nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, [label]);
+        teamNameEls.push(nameInput);
       } else {
         nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
           onChange:function(e){ game.teams[i] = e.target.value; persist(); } });
@@ -1227,6 +1229,22 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     target.appendChild(pad);
+
+    // Stash the read-only match names so the caller can equalize their heights
+    // once the pad is attached to the document (match mode appends `target`
+    // after this returns, so measuring here would read 0). Solo mode's target
+    // is already attached, so equalize now; it's a no-op without match names.
+    target.__teamNameEls = teamNameEls;
+    if (target.isConnected) equalizeTeamNames(teamNameEls);
+  }
+
+  // If one match name wraps to two lines, reserve the same height for the other
+  // so the two scores below stay vertically aligned.
+  function equalizeTeamNames(els) {
+    if (!els || els.length !== 2) return;
+    els.forEach(function (e) { e.style.minHeight = ""; });   // reset before measuring
+    var h = Math.max(els[0].offsetHeight, els[1].offsetHeight);
+    els.forEach(function (e) { e.style.minHeight = h + "px"; });
   }
 
   function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; render(); }
@@ -2211,6 +2229,7 @@ window.SOMERSET_FB_CONFIG = {
     ]);
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
+    equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
   }
 
   function renderTournamentSetup() {
