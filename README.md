@@ -51,7 +51,7 @@ Some‑R‑Set is played by **4 players in two fixed partnerships**, seated alte
 - **Set penalty:** if the bidding team falls short, it is *set* — it **loses its bid** (the bid is subtracted from its score). Scores can go **negative**.
 - **Shoot the moon:** bidding the full **14** and taking all **14** jumps the bidding team straight to **50** (an instant win) — but only if its running score was **≥ 0** before the hand. If the team was negative, the moon is scored as ordinary points instead.
 - **Trump:** entered per hand as *No trump* or **1–6** (a two‑step bid → trump entry flow).
-- **Dealer rotation:** the dealer advances one seat clockwise every deal; a seat diagram shows whose turn it is. Player and seat names are editable.
+- **Dealer rotation:** the dealer advances one seat clockwise every deal; a seat diagram shows whose turn it is. Player and seat names are editable, with one‑tap quick‑add from the per‑device name book.
 
 Scoring is computed by threading the running total through every deal (`gameTotals` / `gameWinner`), so moon and set outcomes always reflect the score *at that moment*.
 
@@ -64,7 +64,7 @@ Scoring is computed by threading the running total through every deal (`gameTota
 - Two‑step hand entry: pick the bidding team and bid, then enter trump and points taken.
 - Automatic set handling (bid subtracted, may go negative) and shoot‑the‑moon win detection.
 - Live running totals with progress bars toward 50.
-- Clockwise dealer rotation with a seat diagram; tap to edit player/seat names.
+- Clockwise dealer rotation with a seat diagram; tap a seat → **Edit name** to type a name or **quick‑add** one from the per‑device name book (with an **Edit/Done** toggle to delete saved names). Names saved here are remembered for next time.
 - **New Game** resets the pad; a finished game is offered for archiving to History.
 
 ### History tab

@@ -1,7 +1,7 @@
 # Some-R-Set — Development Roadmap
 
 ## Shipped (production: somerset-scorepad.vercel.app)
-- Single-game score pad: bidding/trump entry (two-step), set penalty (subtract bid, can go negative), shoot-the-moon win rule, clockwise dealer rotation with seat diagram, editable player/seat names, New Game.
+- Single-game score pad: bidding/trump entry (two-step), set penalty (subtract bid, can go negative), shoot-the-moon win rule, clockwise dealer rotation with seat diagram, editable player/seat names with quick-add from the (editable) per-device name book, New Game.
 - **Game History** — completed games archived with rosters, winner, score, date; tap to expand the hand-by-hand log; delete entries.
 - **Tournament mode**
   - Player-count picker (even players, min 6) → name entry with Quick-add name book (per device, editable, deduped).
