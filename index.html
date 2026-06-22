@@ -68,7 +68,8 @@
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
 
   .empty { text-align:center; color:var(--ink-soft); font-style:italic; padding:20px 16px; margin:0; }
-  .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); }
+  .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
+  .deal-row.open { border-bottom-color:transparent; }
   .deal-no { color:var(--ink-soft); font-size:12px; width:22px; }
   .score-cell { display:inline-flex; align-items:baseline; font-size:16px; font-weight:600; color:var(--ink); }
   .score-sign { width:0.75ch; text-align:right; }
@@ -77,7 +78,10 @@
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); font-style:italic; text-align:center; }
   .set-flag { color:var(--red); font-style:normal; margin-left:6px; letter-spacing:.08em; font-weight:700; }
-  .deal-dealer { flex:none; width:96px; text-align:right; font-size:12px; color:var(--brass); font-style:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass); font-style:normal; white-space:nowrap; }
+  .deal-row.open .deal-dealer { font-weight:700; }
+  .deal-detail { display:flex; justify-content:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
+  .deal-detail b { font-weight:700; color:var(--brass); margin-left:4px; }
   .del { background:none; border:none; color:var(--ink-soft); font-size:16px; cursor:pointer; padding:4px; border-radius:4px; transition:color .08s, background .08s; }
   .del:active { color:var(--red); background:rgba(155,34,38,.1); }
 
@@ -432,7 +436,8 @@ window.SOMERSET_FB_CONFIG = {
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
-    joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false
+    joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
+    openDeal:null
   };
 
   // ---- History + tournament storage ----
@@ -1023,7 +1028,7 @@ window.SOMERSET_FB_CONFIG = {
     var props = { class:"score-cell mono" + (setMsg ? " score-set" : "") };
     if (setMsg) {
       props.role = "button"; props.tabindex = "0"; props["aria-label"] = setMsg;
-      props.onClick = function(){ ui.info = setMsg; render(); };
+      props.onClick = function(e){ if (e) e.stopPropagation(); ui.info = setMsg; render(); };
     }
     return el("span", props, [
       el("span", { class:"score-sign" }, [val < 0 ? "−" : ""]),
@@ -1145,21 +1150,33 @@ window.SOMERSET_FB_CONFIG = {
         if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass);" }, ["MOON"]));
         var setMsg = isSet ? (game.teams[d.bidTeam] + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
-        var dlrNm = (game.players[dlr] && game.players[dlr].trim()) ? (" " + game.players[dlr].trim()) : "";
         // arrow points toward the seat (0 bottom, 1 left, 2 top, 3 right); ︎ forces plain text, not emoji
         var seatArrow = ["↓", "←", "↑", "→"][dlr] + "︎";
-        var dealerTag = el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow + dlrNm]);
-        history.appendChild(el("div", { class:"deal-row" + (noFade ? "" : " fade") }, [
+        var isOpen = ui.openDeal === d.id;
+        history.appendChild(el("div", {
+          class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
+          role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
+          "aria-label":"Deal " + (idx+1) + " \u2014 show dealer and trump",
+          onClick:function(){ ui.openDeal = isOpen ? null : d.id; render(); }
+        }, [
           el("span", { class:"deal-no mono" }, [(idx+1)+"."]),
           scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null),
           el("span", { class:"dash" }, ["|"]),
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null),
           el("span", { class:"deal-desc disp" }, descKids),
-          dealerTag,
-          isReadOnly ? null : el("button", { class:"del", "aria-label":"Remove deal "+(idx+1), onClick:function(){
+          el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow]),
+          isReadOnly ? null : el("button", { class:"del", "aria-label":"Remove deal "+(idx+1), onClick:function(e){
+            e.stopPropagation();
             game.deals = game.deals.filter(function(x){ return x.id !== d.id; }); persist();
           } }, ["\u2715"])
         ]));
+        if (isOpen) {
+          var trumpVal = d.trump ? (d.trump === "No trump" ? "None" : d.trump) : "not recorded";
+          history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
+            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
+            el("span", {}, ["Trump", el("b", {}, [trumpVal])])
+          ]));
+        }
       });
     }
     pad.appendChild(history);
