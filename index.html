@@ -1209,7 +1209,7 @@ window.SOMERSET_FB_CONFIG = {
     target.appendChild(pad);
   }
 
-  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; render(); }
+  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; render(); }
 
   function chooseDealerFromMenu(i) {
     if (dealerSeat() === i) { closeSeatMenu(); return; }   // already dealing
@@ -1372,7 +1372,7 @@ window.SOMERSET_FB_CONFIG = {
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
     if (ui.seatMenuMode === "edit") {
-      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); ui.seatMenu = null; ui.seatMenuMode = "menu"; persist(); };
+      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
       var input = el("input", { class:"sheet-input disp", type:"text", value:game.players[i] || "",
         placeholder:"Player name", maxlength:24, "aria-label":"Player name",
         onKeydown:function(e){ if (e.key === "Enter") { saveName(input.value); } } });
@@ -1383,23 +1383,34 @@ window.SOMERSET_FB_CONFIG = {
       if (nameBook.length) {
         var used = game.players.map(function (p) { return (p || "").trim().toLowerCase(); });
         var avail = nameBook.filter(function (nm) { return used.indexOf(nm.toLowerCase()) === -1; });
-        if (avail.length) {
-          sheetKids.push(el("div", { class:"quick-add", style:"padding:0 0 6px;" }, [
-            el("span", { class:"label disp", style:"display:block; margin:2px 0 6px;" }, ["Recent names"]),
-            el("div", { class:"chips" }, avail.slice(0, 40).map(function (nm) {
-              return el("button", { class:"chip disp", onClick:function(){ saveName(nm); } }, [nm]);
-            }))
-          ]));
+        var listNames = ui.editNames ? nameBook : avail;
+        var qa = el("div", { class:"quick-add", style:"padding:0 0 6px;" }, [
+          el("div", { style:"display:flex; justify-content:space-between; align-items:center; margin:2px 0 6px;" }, [
+            el("span", { class:"label disp" }, ["Recent names"]),
+            el("button", { class:"link-btn disp", onClick:function(){ ui.editNames = !ui.editNames; softRender(); } }, [ ui.editNames ? "Done" : "Edit" ])
+          ])
+        ]);
+        if (!listNames.length) {
+          qa.appendChild(el("span", { class:"disp", style:"font-size:12px; font-style:italic; color:var(--ink-soft);" },
+            [ ui.editNames ? "No saved names." : "All saved names are already added." ]));
+        } else {
+          qa.appendChild(el("div", { class:"chips" }, listNames.slice(0, 40).map(function (nm) {
+            if (ui.editNames) {
+              return el("button", { class:"chip disp del-chip", "aria-label":"Delete " + nm, onClick:function(){ deleteName(nm); } }, [ nm + "  ✕" ]);
+            }
+            return el("button", { class:"chip disp", onClick:function(){ saveName(nm); } }, [nm]);
+          })));
         }
+        sheetKids.push(qa);
       }
       sheetKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ saveName(input.value); } }, ["Save"]));
-      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; render(); } }, ["Cancel"]));
-      setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; render(); } }, ["Cancel"]));
+      if (!ui.editNames) setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
     } else {
       sheetKids = [
         el("h3", { class:"disp" }, [seatName(i)]),
         el("p", { class:"sub disp" }, [game.teams[i % 2] + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; render(); } }, ["Edit name"]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; render(); } }, ["Edit name"]),
         el("button", { class:"sheet-btn primary disp", disabled:isDealer, onClick:function(){ chooseDealerFromMenu(i); } },
           [ isDealer ? "Already dealing" : "Set as dealer" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:closeSeatMenu }, ["Cancel"])
