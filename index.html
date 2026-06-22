@@ -40,7 +40,7 @@
 
   header { text-align:center; margin-bottom:16px; }
   .eyebrow { color:var(--rule); letter-spacing:.35em; font-size:11px; margin:0; text-transform:uppercase; }
-  .eyebrow .rule-dash { color:var(--brass); letter-spacing:0; margin:0 .5em; }
+  .eyebrow .rule-dash { display:inline-block; width:30px; height:1px; background:var(--brass); vertical-align:middle; margin:0 .6em; }
   h1 { color:var(--cream); font-size:34px; margin:2px 0 0; font-weight:700; letter-spacing:.04em; }
   .subtitle { color:var(--rule); font-style:italic; font-size:13px; margin:2px 0 0; }
 
@@ -368,7 +368,7 @@
 <div class="wrap">
   <header>
     <h1 class="disp">SOME-R-SET</h1>
-    <p class="eyebrow disp"><span class="rule-dash">———</span>Scorepad<span class="rule-dash">———</span></p>
+    <p class="eyebrow disp"><span class="rule-dash"></span>Scorepad<span class="rule-dash"></span></p>
     <p class="subtitle disp" id="subtitle"></p>
   </header>
   <nav class="nav" id="nav"></nav>
