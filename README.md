@@ -11,6 +11,7 @@ The entire application is a single, dependency‑free `index.html` file: vanilla
 ## Table of contents
 
 - [What it does](#what-it-does)
+- [Install on your phone (add to Home Screen)](#install-on-your-phone-add-to-home-screen)
 - [The game & scoring rules](#the-game--scoring-rules)
 - [Features](#features)
   - [Game tab](#game-tab)
@@ -38,6 +39,30 @@ Three top‑level tabs:
 | **Game** | A single casual game between two teams of two. |
 | **History** | An archive of completed games (rosters, winner, score, hand log). |
 | **Tournament** | Multi‑team brackets and round robins, optionally synced across devices. |
+
+---
+
+## Install on your phone (add to Home Screen)
+
+There's nothing to download from an app store — SomeRSet is a Progressive Web App. Adding it to your Home Screen gives you a full‑screen, app‑like icon (no browser chrome), and solo games keep working offline.
+
+### iOS / iPadOS (Safari)
+
+> Use **Safari** — the Add to Home Screen option isn't available in Chrome or other browsers on iOS.
+
+1. Open **[somerset-scorepad.vercel.app](https://somerset-scorepad.vercel.app)** in Safari.
+2. Tap the **Share** button — the square with an upward arrow (in the bottom toolbar on iPhone, the top bar on iPad).
+3. Scroll down in the share sheet and tap **Add to Home Screen**.
+4. Optionally edit the name, then tap **Add** (top‑right).
+5. Launch SomeRSet from the new Home Screen icon. It opens full‑screen, like a native app.
+
+### Android (Chrome)
+
+1. Open **[somerset-scorepad.vercel.app](https://somerset-scorepad.vercel.app)** in Chrome.
+2. Tap the **⋮** menu (top‑right).
+3. Tap **Add to Home screen** (or **Install app**), then confirm.
+
+> Once installed, the app runs in standalone mode. Solo games and history are stored on the device and work with no connection; shared tournaments still need network access to sync.
 
 ---
 
