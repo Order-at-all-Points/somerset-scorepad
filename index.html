@@ -1331,7 +1331,7 @@ window.SOMERSET_FB_CONFIG = {
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
     if (game.deals.length === 0) {
-      history.appendChild(el("p", { class:"empty disp" }, ["A fresh pad. Record your first deal below."]));
+      history.appendChild(el("p", { class:"empty disp" }, ["No deals recorded yet."]));
     } else {
       var runningScore = [0, 0];
       game.deals.forEach(function (d, idx) {
@@ -1915,7 +1915,7 @@ window.SOMERSET_FB_CONFIG = {
       ])
     ]);
     if (!gameHistory.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Completed games appear here once you start a new game."]));
+      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
     } else {
       var groups = buildHistoryGroups();
       card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
