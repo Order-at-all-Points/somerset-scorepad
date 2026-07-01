@@ -1976,36 +1976,42 @@ window.SOMERSET_FB_CONFIG = {
     dg.items.forEach(function (it) { if (it.record) out.push(it.record); else out = out.concat(it.records); });
     return out;
   }
-  // Per-team win/loss tally for a set of records, plus the tournament champion (if
-  // any) — the "summary" shown when a date/tournament group is collapsed.
+  // The tournament champion (if any) for a set of records — used for the 🏆
+  // badge shown when a tournament group is collapsed.
   function groupStats(records) {
-    var wins = {}, champion = null, ties = 0;
+    var champion = null;
     records.forEach(function (rec) {
-      if (rec.winner === "tie") { ties++; return; }
-      var w = rec.teams[rec.winner], l = rec.teams[1 - rec.winner];
-      if (!wins[w]) wins[w] = { w:0, l:0 };
-      if (!wins[l]) wins[l] = { w:0, l:0 };
-      wins[w].w++; wins[l].l++;
-      if (rec.tournament && rec.tournament.championship) champion = w;
+      if (rec.tournament && rec.tournament.championship) champion = rec.teams[rec.winner];
     });
-    return { count: records.length, wins: wins, champion: champion, ties: ties };
+    return { champion: champion };
   }
-  function statsSummaryText(stats) {
-    var names = Object.keys(stats.wins).sort(function (a, b) { return stats.wins[b].w - stats.wins[a].w; });
-    var txt = stats.count + (stats.count === 1 ? " game" : " games");
-    if (names.length) txt += " · " + names.map(function (n) { return n + " " + stats.wins[n].w + "-" + stats.wins[n].l; }).join(", ");
-    if (stats.ties) txt += " · " + stats.ties + (stats.ties > 1 ? " ties" : " tie");
+  // "Standard game", "Best of 5 Series", "Double Elimination Tournament", etc.
+  function modeLabel(rec) {
+    var t = rec.tournament;
+    if (!t) return "Standard game";
+    if (t.format === "series") return "Best of " + (t.bestOf || "?") + " Series";
+    return formatName(t.format) + " Tournament";
+  }
+  // "N games · Mode" (or a comma-joined list of modes when a group mixes them),
+  // no per-team win/loss breakdown — that detail lives in the expanded items.
+  function statsSummaryText(records) {
+    var txt = records.length + (records.length === 1 ? " game" : " games");
+    var modes = [], seen = {};
+    records.forEach(function (rec) {
+      var lbl = modeLabel(rec);
+      if (!seen[lbl]) { seen[lbl] = true; modes.push(lbl); }
+    });
+    if (modes.length) txt += " · " + modes.join(", ");
     return txt;
   }
   function renderDateGroup(dg) {
     var recs = flattenGroupRecords(dg);
-    var stats = groupStats(recs);
     var open = ui.historyGroupOpen[dg.key] === true;   // default collapsed
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[dg.key] = !open; render();
     } }, [
       el("span", { class:"hist-date-title disp" }, [ (open ? "▾ " : "▸ ") + dateHeading(recs[0].date) ]),
-      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(stats) ])
+      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
     if (open) dg.items.forEach(function (it) { wrap.appendChild(it.record ? renderHistoryItem(it.record) : renderTournamentGroup(it)); });
@@ -2019,7 +2025,7 @@ window.SOMERSET_FB_CONFIG = {
       ui.historyGroupOpen[tg.key] = !open; render();
     } }, [
       el("span", { class:"hist-t-title disp" }, [ (open ? "▾ " : "▸ ") + formatName(tg.tournament.format) ]),
-      el("span", { class:"hist-t-sum disp" }, [ statsSummaryText(stats) + champBadge ])
+      el("span", { class:"hist-t-sum disp" }, [ statsSummaryText(tg.records) + champBadge ])
     ]);
     var wrap = el("div", { class:"hist-t-group" }, [ head ]);
     if (open) tg.records.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
@@ -2513,7 +2519,7 @@ window.SOMERSET_FB_CONFIG = {
       totals: null,                          // no score — winner was entered manually
       winner: (teamIdx === m.a) ? 0 : 1,     // index into the record's teams array
       deals: [],
-      tournament: { format: tourney.format, teams: [A.name, B.name], manual: true, id: tourney.id }
+      tournament: { format: tourney.format, teams: [A.name, B.name], manual: true, id: tourney.id, bestOf: tourney.bestOf }
     };
     gameHistory.unshift(rec);
     saveHistory();
@@ -2531,7 +2537,7 @@ window.SOMERSET_FB_CONFIG = {
     var archived;
     if (complete) {
       var prevGame = game; game = m.game;   // archiveCurrentGame reads the global game pointer
-      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id });
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
       game = prevGame;
       m.completedGame = JSON.parse(JSON.stringify(m.game));   // keep the score on the bracket
       archived = gameHistory[0];
@@ -2552,7 +2558,7 @@ window.SOMERSET_FB_CONFIG = {
     var win = gameWinner(m.game);                 // 0 or 1
     var tournTeam = (win === 0) ? m.a : m.b;
     var champBefore = tourney.champion;
-    archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id });
+    archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
     var justArchived = gameHistory[0];            // archiveCurrentGame unshifts the new record
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
