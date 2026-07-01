@@ -1,1 +1,4 @@
 *.md
+.env*
+.vercel
+.DS_Store

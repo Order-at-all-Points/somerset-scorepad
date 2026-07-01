@@ -45,7 +45,7 @@ In Firebase console: **Realtime Database → Rules** tab. Replace the default ru
       "$code": {
         ".read": "data.exists() && (now - data.child('_createdAt').val()) < 172800000",
         ".write": "!data.exists() || (data.exists() && (now - data.child('_createdAt').val()) < 172800000)",
-        ".validate": "newData.hasChildren(['format', 'teams']) && (newData.child('format').val() === 'single' || newData.child('format').val() === 'double' || newData.child('format').val() === 'round' || newData.child('format').val() === 'series')"
+        ".validate": "newData.hasChildren(['format', 'teams', '_createdAt']) && (newData.child('format').val() === 'single' || newData.child('format').val() === 'double' || newData.child('format').val() === 'round' || newData.child('format').val() === 'series') && newData.child('_createdAt').val() <= now && (!data.exists() ? newData.child('_createdAt').val() > now - 60000 : (newData.child('_createdAt').val() === data.child('_createdAt').val() || newData.child('_createdAt').val() > now - 60000))"
       }
     }
   }
@@ -56,7 +56,8 @@ In Firebase console: **Realtime Database → Rules** tab. Replace the default ru
 - Tournaments expire automatically after **48 hours** (172,800,000 ms) — unreadable and unwritable after that
 - Any device with the 6-char code can read and write the tournament
 - The 6-char code space (32⁶ ≈ 1 billion) makes brute-force impractical within the 48h window
-- New tournaments must have `format` and `teams`, and `format` must be one of `single`, `double`, `round`, or `series`
+- New tournaments must have `format`, `teams`, and `_createdAt`, and `format` must be one of `single`, `double`, `round`, or `series`
+- `_createdAt` can **never be set in the future** (`<= now`) on any write — this is the key protection: it stops a client from forging a future timestamp to make a tournament never expire (the 48h window is anchored to `_createdAt`). On a **new** record it must be the current server time; on an **update** it must either keep the existing value (normal score sync) or be re-stamped to the current server time (rematch/redraw). The worst an attacker can do is refresh the 48h clock by writing — they can never push expiry past 48h from the last write.
 - ⚠️ The old rule required a `rounds` field, which broke Double Elimination (`wBracket`/`lBracket`) and Round Robin (`schedule`) — this is the corrected version
 
 Click **Publish** to save the rules.

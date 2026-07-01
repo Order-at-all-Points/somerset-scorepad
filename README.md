@@ -134,6 +134,7 @@ Tournaments can be **synced live across phones** via Firebase Realtime Database:
 - Per‑match **locks** prevent two devices from editing the same game at once.
 - Tournaments **auto‑expire after 48 hours** (enforced by Firebase security rules).
 - The name book stays **local** to each device.
+- **"Which player are you?"** — after starting or joining a synced tournament, tag yourself with your name from the roster (or set it later via **Playing as → Change** in the sync bar). Every match you're in then lands in *your own* History automatically as it's completed — even ones a teammate enters the score for — with no duplicate entries if you also played/recorded it yourself.
 
 ---
 
@@ -159,6 +160,8 @@ Client state is kept under `localStorage` keys (all prefixed `somerset:dev-`):
 | `somerset:dev-names` | Per‑device Quick‑add name book (max 60). |
 | `somerset:dev-sync-code` / `somerset:dev-sync-role` | Current tournament join code and host/guest role. |
 | `somerset:dev-device-id` | Random per‑device id used for match locks. |
+| `somerset:dev-my-name` | Which roster name is "me" for the active join code, so tournament matches auto‑archive to History. |
+| `somerset:dev-archived-matches` | Set of match ids already archived to this device's History, so auto‑sync never double‑adds one. |
 
 In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and make each record readable/writable only for 48 hours after creation. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
 
