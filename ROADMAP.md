@@ -13,6 +13,7 @@
   - Rematch (same teams) / redraw (same players) at tournament end.
 - **Best-of Series mode (4 players / 2 teams).** A lightweight alternative to a bracket: enter 4 names, split into 2 teams (random draw or pick partners), choose Best of 3 / 5 / 7, and play games until a team clinches the majority. Live scoreboard (game wins + game-by-game list), each game played/resumed in-app and archived to History, undo the most recent game, rematch/redraw at the end. Reuses the tournament match-play, locking, sync, and History machinery (`format: "series"`), so it syncs across devices via the same join-code flow.
 - **Shared backend (multi-device tournaments)** via Firebase Realtime Database — live simultaneous logging across phones, siloed per tournament, joined via a short friendly join code. Per-device name book stays local.
+- **Self-identify as a player.** After starting/joining a synced tournament, tag yourself with your roster name (or change it later from the sync bar). Every match you're part of is auto-archived to your own device's History as it completes, even matches a teammate plays/records — deduped so it's never added twice.
 
 ## Planned — in priority order
 *(nothing currently planned)*

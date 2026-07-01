@@ -447,7 +447,7 @@ window.SOMERSET_FB_CONFIG = {
     view:"game", historyOpen:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
-    openDeal:null
+    openDeal:null, whoSheet:false
   };
 
   // ---- History + tournament storage ----
@@ -514,6 +514,135 @@ window.SOMERSET_FB_CONFIG = {
   var gameHistory = loadHistory();
   var tourney = loadTourney();
   var nameBook = loadNames();
+
+  // ---- "Which player am I?" identity, for auto-saving tournament games to my History ----
+  var MY_NAME_KEY = "somerset:dev-my-name";         // { code, name } — which roster name is "me" for the active join code
+  var ARCHIVED_KEY = "somerset:dev-archived-matches"; // map of matchUid -> true, so auto-sync never double-archives a match
+  function loadMyName() { try { var r = localStorage.getItem(MY_NAME_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
+  function loadArchivedMatches() { try { var r = localStorage.getItem(ARCHIVED_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
+  function saveArchivedMatches() { try { localStorage.setItem(ARCHIVED_KEY, JSON.stringify(archivedMatches)); } catch (e) {} }
+  var myIdentity = loadMyName();           // {code, name} or null
+  var archivedMatches = loadArchivedMatches();
+  function myNameForCurrentTourney() {
+    if (!myIdentity || !syncCode || myIdentity.code !== syncCode) return null;
+    return myIdentity.name;
+  }
+  function identifyAs(name) {
+    myIdentity = { code: syncCode, name: name };
+    try { localStorage.setItem(MY_NAME_KEY, JSON.stringify(myIdentity)); } catch (e) {}
+    ui.whoSheet = false;
+    syncMyHistoryFromTourney();
+    render();
+  }
+  function clearIdentity() {
+    myIdentity = null;
+    try { localStorage.removeItem(MY_NAME_KEY); } catch (e) {}
+    ui.whoSheet = false; render();
+  }
+  // Stable id for a match within a synced tournament, so a completed match is
+  // archived to a player's History at most once even as snapshots re-arrive.
+  function matchUid(am) { return syncCode + ":" + tourney.id + ":" + amKey(am); }
+  function markMatchArchived(am) {
+    if (!syncCode) return;
+    archivedMatches[matchUid(am)] = true;
+    saveArchivedMatches();
+  }
+  // Walk every match slot across whichever bracket shape this tournament format uses.
+  function allMatches(t) {
+    var out = [];
+    if (!t) return out;
+    if (t.format === "double") {
+      (t.wBracket.rounds || []).forEach(function (round, ri) {
+        round.forEach(function (m, mi) { out.push({ am:{ bracket:"wb", ri:ri, mi:mi }, m:m }); });
+      });
+      (t.lBracket.rounds || []).forEach(function (round, ri) {
+        round.forEach(function (m, mi) { out.push({ am:{ bracket:"lb", ri:ri, mi:mi }, m:m }); });
+      });
+      if (t.grandFinal && t.grandFinal.m1) out.push({ am:{ bracket:"gf", match:1 }, m:t.grandFinal.m1 });
+      if (t.grandFinal && t.grandFinal.m2) out.push({ am:{ bracket:"gf", match:2 }, m:t.grandFinal.m2 });
+    } else if (t.format === "round") {
+      (t.schedule || []).forEach(function (m, idx) { out.push({ am:{ bracket:"rr", idx:idx }, m:m }); });
+      if (t.final) out.push({ am:{ bracket:"rr", isFinal:true }, m:t.final });
+    } else if (t.format === "series") {
+      (t.games || []).forEach(function (m, gi) { out.push({ am:{ bracket:"series", gi:gi }, m:m }); });
+    } else {
+      (t.rounds || []).forEach(function (round, ri) {
+        round.forEach(function (m, mi) { out.push({ am:{ bracket:null, ri:ri, mi:mi }, m:m }); });
+      });
+    }
+    return out;
+  }
+  // Was this match the one that actually crowned the tournament/series champion?
+  function isClinchingMatch(t, am) {
+    if (t.champion == null) return false;
+    if (!am.bracket) return am.ri === t.rounds.length - 1;
+    if (am.bracket === "gf") return t.grandFinal.m2 ? am.match === 2 : am.match === 1;
+    if (am.bracket === "rr") return !!am.isFinal;
+    if (am.bracket === "series") return am.gi === t.games.length - 1;
+    return false;
+  }
+  // Build a History record for a completed match exactly like the in-app
+  // recording paths (archiveCurrentGame / archiveManualWin) do, so a teammate who
+  // didn't personally enter the score still gets a matching record in their History.
+  function buildHistoryRecordForMatch(t, am, m) {
+    var A = t.teams[m.a], B = t.teams[m.b];
+    if (!A || !B) return null;
+    var ap = A.players || [], bp = B.players || [];
+    var winnerIdx = (m.winner === m.a) ? 0 : 1;
+    var champ = isClinchingMatch(t, am);
+    var g = m.completedGame;
+    if (g && g.deals && g.deals.length) {
+      return {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        date: new Date().toISOString(),
+        teams: [A.name, B.name],
+        players: (g.players && g.players.length) ? g.players.slice() : [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
+        dealerStart: g.dealerStart || 0,
+        target: g.target || 50,
+        totals: gameTotals(g),
+        winner: winnerIdx,
+        deals: JSON.parse(JSON.stringify(g.deals)),
+        tournament: { format: t.format, teams: [A.name, B.name], championship: champ }
+      };
+    }
+    return {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      date: new Date().toISOString(),
+      teams: [A.name, B.name],
+      players: [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
+      dealerStart: 0,
+      target: 50,
+      totals: null,
+      winner: winnerIdx,
+      deals: [],
+      tournament: { format: t.format, teams: [A.name, B.name], manual:true, championship: champ }
+    };
+  }
+  // Scan the synced tournament for completed matches that include "me" (the
+  // identified roster name) and aren't archived to this device's History yet.
+  function syncMyHistoryFromTourney() {
+    if (!tourney || !syncCode) return;
+    var me = myNameForCurrentTourney();
+    if (!me) return;
+    var meLc = me.trim().toLowerCase();
+    var changed = false;
+    allMatches(tourney).forEach(function (entry) {
+      var am = entry.am, m = entry.m;
+      if (!m || m.a == null || m.b == null || m.winner == null) return;
+      var uid = matchUid(am);
+      if (archivedMatches[uid]) return;
+      var A = tourney.teams[m.a], B = tourney.teams[m.b];
+      if (!A || !B) return;
+      var names = (A.players || []).concat(B.players || []).map(function (n) { return (n || "").trim().toLowerCase(); });
+      if (names.indexOf(meLc) === -1) return;   // not a match this device's identified player was in
+      var rec = buildHistoryRecordForMatch(tourney, am, m);
+      if (!rec) return;
+      gameHistory.unshift(rec);
+      archivedMatches[uid] = true;
+      changed = true;
+    });
+    if (changed) { saveHistory(); saveArchivedMatches(); }
+  }
 
   // Reconnect to an in-progress shared tournament on page load
   (function() {
@@ -867,6 +996,7 @@ window.SOMERSET_FB_CONFIG = {
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+      syncMyHistoryFromTourney();   // pick up any newly-completed matches I played in
       if (changed) syncRender();
     }, function() { syncStatus = "error"; syncRender(); });
   }
@@ -888,7 +1018,9 @@ window.SOMERSET_FB_CONFIG = {
       tourney = t; tourney._code = code;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(code);
-      ui.tSetup = null; render();
+      ui.tSetup = null;
+      if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt the host to tag themselves too
+      render();
     }).catch(function(err) {
       // Write failed — fall back to local-only (no join code)
       syncStatus = "offline";
@@ -926,7 +1058,9 @@ window.SOMERSET_FB_CONFIG = {
       tourney = normalizeFirebaseTourney(data);
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(syncCode);
-      ui.view = "tournament"; ui.tSetup = null; ui.joinSheet = false; ui.joinError = null; render();
+      ui.view = "tournament"; ui.tSetup = null; ui.joinSheet = false; ui.joinError = null;
+      if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt new joiners to tag themselves
+      render();
     }).catch(function() {
       syncStatus = "offline"; onError("Couldn't connect — check your internet connection.");
     });
@@ -1073,7 +1207,7 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null;
+           ui.info != null || ui.seatMenu != null || ui.whoSheet;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -1426,6 +1560,25 @@ window.SOMERSET_FB_CONFIG = {
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
+      return;
+    }
+    if (ui.whoSheet && tourney) {
+      var roster = dedupeNames(rosterPlayers(tourney));
+      var meNow = myNameForCurrentTourney();
+      var wKids = [
+        el("h3", { class:"disp" }, ["Which player are you?"]),
+        el("p", { class:"sub disp" }, ["Tag yourself so matches you play in this tournament are saved to your own History — even ones a teammate records."])
+      ];
+      roster.forEach(function (nm) {
+        wKids.push(el("button", { class:"sheet-btn" + (nm === meNow ? " primary" : "") + " disp", onClick:function(){ identifyAs(nm); } }, [nm]));
+      });
+      if (meNow) {
+        wKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:clearIdentity }, ["Not playing / clear"]));
+      }
+      wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.whoSheet = false; render(); } }, ["Cancel"]));
+      var wSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Identify yourself",
+        onClick:function(e){ e.stopPropagation(); } }, wKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; render(); } }, [wSheet]));
       return;
     }
     if (ui.seatMenu === null) return;
@@ -2194,6 +2347,7 @@ window.SOMERSET_FB_CONFIG = {
       archived.tournament.championship = true;
       saveHistory();
     }
+    markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
   }
 
   function recordMatchResult() {
@@ -2212,6 +2366,7 @@ window.SOMERSET_FB_CONFIG = {
       justArchived.tournament.championship = true;
       saveHistory();
     }
+    markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
     ui.activeMatch = null; ui.showEntry = false;
     saveTourney(); render();
   }
@@ -2791,6 +2946,11 @@ window.SOMERSET_FB_CONFIG = {
           codeBtn,
           el("span", { class:"sync-copy-hint" }, [" tap to copy"])
         ])
+      ]));
+      var meNow = myNameForCurrentTourney();
+      card.appendChild(el("div", { class:"sync-bar", style:"padding-top:0;" }, [
+        el("span", { class:"sync-label disp" }, [ meNow ? ("Playing as: " + meNow) : "Not tagged as a player" ]),
+        el("button", { class:"link-btn disp", onClick:function(){ ui.whoSheet = true; render(); } }, [ meNow ? "Change" : "I'm playing as…" ])
       ]));
     }
 
