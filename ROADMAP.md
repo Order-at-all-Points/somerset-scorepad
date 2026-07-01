@@ -15,5 +15,5 @@
 - **Shared backend (multi-device tournaments)** via Firebase Realtime Database — live simultaneous logging across phones, siloed per tournament, joined via a short friendly join code. Per-device name book stays local.
 - **Self-identify as a player.** After starting/joining a synced tournament, tag yourself with your roster name (or change it later from the sync bar). Every match you're part of is auto-archived to your own device's History as it completes, even matches a teammate plays/records — deduped so it's never added twice.
 
-## Planned — in priority order
-*(nothing currently planned)*
+## Ideas — not yet planned, no commitment to build
+- **Account-based cloud sync for Game History.** Add Firebase Authentication (either real accounts, or a lighter "device-link code" pattern similar to the existing tournament join-codes) and store History under a per-user path in the Realtime Database, so it automatically stays in sync across a player's devices instead of relying on manual export/import. Would require moving the DB from open/no-auth to per-user security rules — a real change to the current trust model, not just an addition.
