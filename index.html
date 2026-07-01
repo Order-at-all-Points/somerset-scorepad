@@ -453,7 +453,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- State ----
   function freshGame() {
-    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[] };
+    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[], archivedId:null };
   }
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
@@ -1101,6 +1101,7 @@ window.SOMERSET_FB_CONFIG = {
     if (typeof g.dealerStart !== "number") g.dealerStart = 0;
     g.target = 50;
     if (!Array.isArray(g.deals)) g.deals = [];
+    if (!("archivedId" in g)) g.archivedId = null;
     return g;
   }
   function persist() {
@@ -1330,7 +1331,7 @@ window.SOMERSET_FB_CONFIG = {
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
     if (game.deals.length === 0) {
-      history.appendChild(el("p", { class:"empty disp" }, ["A fresh pad. Record your first deal below."]));
+      history.appendChild(el("p", { class:"empty disp" }, ["No deals recorded yet."]));
     } else {
       var runningScore = [0, 0];
       game.deals.forEach(function (d, idx) {
@@ -1360,7 +1361,16 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow]),
           isReadOnly ? null : el("button", { class:"del", "aria-label":"Remove deal "+(idx+1), onClick:function(e){
             e.stopPropagation();
-            game.deals = game.deals.filter(function(x){ return x.id !== d.id; }); persist();
+            game.deals = game.deals.filter(function(x){ return x.id !== d.id; });
+            if (game.archivedId) {
+              // Deleting a deal after auto-archiving can change or undo the
+              // result, so drop the now-stale entry; it'll re-archive if the
+              // game reaches a win again.
+              gameHistory = gameHistory.filter(function(h){ return h.id !== game.archivedId; });
+              saveHistory();
+              game.archivedId = null;
+            }
+            persist();
           } }, ["\u2715"])
         ]));
         if (isOpen) {
@@ -1784,6 +1794,14 @@ window.SOMERSET_FB_CONFIG = {
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
     ui.bid = 6; ui.trump = ""; ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
+    // Solo games archive themselves the moment they're won, so a game is never
+    // lost to history just because the player didn't tap "New Game" (matches
+    // stay excluded — they archive explicitly via "Save Result", which also
+    // advances the tournament bracket).
+    if (!ui.activeMatch && !game.archivedId) {
+      var win = winner();
+      if (win === 0 || win === 1) game.archivedId = archiveCurrentGame() || null;
+    }
     persist();
   }
 
@@ -1791,8 +1809,9 @@ window.SOMERSET_FB_CONFIG = {
     if (!game.deals.length) return;
     var win = winner();
     if (win === null) return;   // only archive completed games
+    var id = Date.now();
     gameHistory.unshift({
-      id: Date.now(),
+      id: id,
       date: new Date().toISOString(),
       teams: game.teams.slice(),
       players: game.players.slice(),
@@ -1804,10 +1823,11 @@ window.SOMERSET_FB_CONFIG = {
       tournament: meta || null
     });
     saveHistory();
+    return id;
   }
 
   function newGame() {
-    archiveCurrentGame();
+    if (!soloGame.archivedId) archiveCurrentGame();   // safety net — normally already auto-archived on completion
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
     soloGame = freshGame();
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
@@ -1895,96 +1915,112 @@ window.SOMERSET_FB_CONFIG = {
       ])
     ]);
     if (!gameHistory.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Completed games appear here once you start a new game."]));
+      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
     } else {
-      buildHistoryGroups().forEach(function (dg) { card.appendChild(renderDateGroup(dg)); });
+      var groups = buildHistoryGroups();
+      // Expand all / Collapse all — hidden until the UI is polished; see setAllHistoryGroupsOpen.
+      // card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
+      //   el("div", {}, [
+      //     el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
+      //     el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
+      //   ])
+      // ]));
+      groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
     }
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
     else applyScoreWrap();
   }
 
-  // Bucket history into calendar-day sections, and within each day further bucket
-  // tournament matches by tournament (via the id stamped on rec.tournament) so a
-  // whole bracket/series collapses to one summarized row instead of cluttering the
-  // list with every match. Standalone (non-tournament) games stay as plain leaves.
+  // Bucket history into top-level sections: standalone (non-tournament) games
+  // group by calendar day, while tournament matches group by tournament (via
+  // the id stamped on rec.tournament) regardless of day, so two different
+  // tournaments played the same day render as two separate collapsible
+  // entries instead of being nested under one shared date header.
   // gameHistory is already newest-first, so first-seen order gives newest-first groups too.
   function dateKey(iso) {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
   }
   function dateHeading(iso) {
-    try { return new Date(iso).toLocaleDateString(undefined, { weekday:"long", month:"long", day:"numeric", year:"numeric" }); }
-    catch (e) { return ""; }
+    try {
+      var d = new Date(iso);
+      var dd = String(d.getDate()).padStart(2, "0");
+      var mm = String(d.getMonth() + 1).padStart(2, "0");
+      return mm + "/" + dd + "/" + d.getFullYear();
+    } catch (e) { return ""; }
   }
   function buildHistoryGroups() {
-    var dateGroups = [], byDate = {};
+    var groups = [], byKey = {};
     gameHistory.forEach(function (rec) {
-      var dk = dateKey(rec.date);
-      var dg = byDate[dk];
-      if (!dg) { dg = { key:"d:" + dk, items:[], byT:{} }; byDate[dk] = dg; dateGroups.push(dg); }
-      if (rec.tournament && rec.tournament.id != null) {
-        var tk = "t:" + rec.tournament.id;
-        var tg = dg.byT[tk];
-        if (!tg) { tg = { key: dg.key + "/" + tk, tournament: rec.tournament, records:[] }; dg.byT[tk] = tg; dg.items.push(tg); }
-        tg.records.push(rec);
-      } else {
-        dg.items.push({ record: rec });
+      var isTournament = rec.tournament && rec.tournament.id != null;
+      var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
+      var g = byKey[key];
+      if (!g) {
+        g = isTournament
+          ? { key:key, isTournament:true, tournament:rec.tournament, records:[] }
+          : { key:key, isTournament:false, records:[] };
+        byKey[key] = g;
+        groups.push(g);
       }
+      g.records.push(rec);
     });
-    return dateGroups;
+    return groups;
   }
-  function flattenGroupRecords(dg) {
-    var out = [];
-    dg.items.forEach(function (it) { if (it.record) out.push(it.record); else out = out.concat(it.records); });
-    return out;
+  function setAllHistoryGroupsOpen(groups, openVal) {
+    groups.forEach(function (g) { ui.historyGroupOpen[g.key] = openVal; });
+    render();
   }
-  // Per-team win/loss tally for a set of records, plus the tournament champion (if
-  // any) — the "summary" shown when a date/tournament group is collapsed.
+  // The tournament champion (if any) for a set of records — used for the 🏆
+  // badge shown when a tournament group is collapsed.
   function groupStats(records) {
-    var wins = {}, champion = null, ties = 0;
+    var champion = null;
     records.forEach(function (rec) {
-      if (rec.winner === "tie") { ties++; return; }
-      var w = rec.teams[rec.winner], l = rec.teams[1 - rec.winner];
-      if (!wins[w]) wins[w] = { w:0, l:0 };
-      if (!wins[l]) wins[l] = { w:0, l:0 };
-      wins[w].w++; wins[l].l++;
-      if (rec.tournament && rec.tournament.championship) champion = w;
+      if (rec.tournament && rec.tournament.championship) champion = rec.teams[rec.winner];
     });
-    return { count: records.length, wins: wins, champion: champion, ties: ties };
+    return { champion: champion };
   }
-  function statsSummaryText(stats) {
-    var names = Object.keys(stats.wins).sort(function (a, b) { return stats.wins[b].w - stats.wins[a].w; });
-    var txt = stats.count + (stats.count === 1 ? " game" : " games");
-    if (names.length) txt += " · " + names.map(function (n) { return n + " " + stats.wins[n].w + "-" + stats.wins[n].l; }).join(", ");
-    if (stats.ties) txt += " · " + stats.ties + (stats.ties > 1 ? " ties" : " tie");
+  // "Standard game", "Best of 5 Series", "Double Elimination Tournament", etc.
+  function modeLabel(rec) {
+    var t = rec.tournament;
+    if (!t) return "Standard game";
+    if (t.format === "series") return "Best of " + (t.bestOf || "?") + " Series";
+    return formatName(t.format) + " Tournament";
+  }
+  // "N games · Mode" (or a comma-joined list of modes when a group mixes them),
+  // no per-team win/loss breakdown — that detail lives in the expanded items.
+  function statsSummaryText(records) {
+    var txt = records.length + (records.length === 1 ? " game" : " games");
+    var modes = [], seen = {};
+    records.forEach(function (rec) {
+      var lbl = modeLabel(rec);
+      if (!seen[lbl]) { seen[lbl] = true; modes.push(lbl); }
+    });
+    if (modes.length) txt += " · " + modes.join(", ");
     return txt;
   }
-  function renderDateGroup(dg) {
-    var recs = flattenGroupRecords(dg);
-    var stats = groupStats(recs);
-    var open = ui.historyGroupOpen[dg.key] !== false;   // default open, matching prior always-expanded behavior
+  // "Best of 5", "Double Elimination", etc. — short form for the group header title.
+  function tournamentTitleLabel(t) {
+    return t.format === "series" ? ("Best of " + t.bestOf) : formatName(t.format);
+  }
+  function renderHistoryGroup(g) {
+    var recs = g.records;
+    var open = ui.historyGroupOpen[g.key] === true;   // default collapsed
+    var titleText = g.isTournament
+      ? (dateHeading(recs[0].date) + " · " + tournamentTitleLabel(g.tournament))
+      : dateHeading(recs[0].date);
+    var champBadge = "";
+    if (g.isTournament) {
+      var stats = groupStats(recs);
+      champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
+    }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
-      ui.historyGroupOpen[dg.key] = !open; render();
+      ui.historyGroupOpen[g.key] = !open; render();
     } }, [
-      el("span", { class:"hist-date-title disp" }, [ (open ? "▾ " : "▸ ") + dateHeading(recs[0].date) ]),
-      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(stats) ])
+      el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
+      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) + champBadge ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
-    if (open) dg.items.forEach(function (it) { wrap.appendChild(it.record ? renderHistoryItem(it.record) : renderTournamentGroup(it)); });
-    return wrap;
-  }
-  function renderTournamentGroup(tg) {
-    var stats = groupStats(tg.records);
-    var open = ui.historyGroupOpen[tg.key] !== false;   // default open
-    var champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
-    var head = el("div", { class:"hist-t-head", role:"button", onClick:function () {
-      ui.historyGroupOpen[tg.key] = !open; render();
-    } }, [
-      el("span", { class:"hist-t-title disp" }, [ (open ? "▾ " : "▸ ") + formatName(tg.tournament.format) ]),
-      el("span", { class:"hist-t-sum disp" }, [ statsSummaryText(stats) + champBadge ])
-    ]);
-    var wrap = el("div", { class:"hist-t-group" }, [ head ]);
-    if (open) tg.records.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
+    if (open) recs.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
     return wrap;
   }
 
@@ -2475,7 +2511,7 @@ window.SOMERSET_FB_CONFIG = {
       totals: null,                          // no score — winner was entered manually
       winner: (teamIdx === m.a) ? 0 : 1,     // index into the record's teams array
       deals: [],
-      tournament: { format: tourney.format, teams: [A.name, B.name], manual: true, id: tourney.id }
+      tournament: { format: tourney.format, teams: [A.name, B.name], manual: true, id: tourney.id, bestOf: tourney.bestOf }
     };
     gameHistory.unshift(rec);
     saveHistory();
@@ -2493,7 +2529,7 @@ window.SOMERSET_FB_CONFIG = {
     var archived;
     if (complete) {
       var prevGame = game; game = m.game;   // archiveCurrentGame reads the global game pointer
-      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id });
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
       game = prevGame;
       m.completedGame = JSON.parse(JSON.stringify(m.game));   // keep the score on the bracket
       archived = gameHistory[0];
@@ -2514,7 +2550,7 @@ window.SOMERSET_FB_CONFIG = {
     var win = gameWinner(m.game);                 // 0 or 1
     var tournTeam = (win === 0) ? m.a : m.b;
     var champBefore = tourney.champion;
-    archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id });
+    archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
     var justArchived = gameHistory[0];            // archiveCurrentGame unshifts the new record
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
