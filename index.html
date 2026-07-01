@@ -1828,9 +1828,64 @@ window.SOMERSET_FB_CONFIG = {
     } catch (e) { return ""; }
   }
 
+  function exportHistory() {
+    var blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), games: gameHistory }, null, 2)],
+      { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = el("a", { href:url, download:"somerset-history-" + new Date().toISOString().slice(0,10) + ".json" }, []);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importHistoryFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var games;
+      try {
+        var data = JSON.parse(reader.result);
+        games = Array.isArray(data) ? data : data.games;
+      } catch (e) { games = null; }
+      if (!Array.isArray(games)) {
+        ui.info = "That file doesn't look like a Some-R-Set history export.";
+        render();
+        return;
+      }
+      var existingIds = {};
+      gameHistory.forEach(function (g) { existingIds[g.id] = true; });
+      var added = 0;
+      games.forEach(function (g) {
+        if (!g || existingIds[g.id]) return;
+        gameHistory.push(g);
+        existingIds[g.id] = true;
+        added++;
+      });
+      gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+      saveHistory();
+      ui.info = added ? ("Imported " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to import — they're already in your History.";
+      render();
+    };
+    reader.readAsText(file);
+  }
+
   function renderHistory() {
     viewRootEl.innerHTML = "";
-    var card = el("div", { class:"pad fade" }, [ el("div", { class:"view-head disp" }, ["Game History"]) ]);
+    var fileInput = el("input", { type:"file", accept:"application/json", style:"display:none;", onChange:function () {
+      if (fileInput.files && fileInput.files[0]) importHistoryFile(fileInput.files[0]);
+      fileInput.value = "";
+    } }, []);
+    var card = el("div", { class:"pad fade" }, [
+      el("div", { class:"view-head disp" }, ["Game History"]),
+      el("div", { class:"sync-bar" }, [
+        el("span", { class:"sync-label disp" }, ["Back up or restore your History"]),
+        el("div", {}, [
+          el("button", { class:"link-btn disp", onClick:exportHistory }, ["Export"]),
+          el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ fileInput.click(); } }, ["Import"])
+        ]),
+        fileInput
+      ])
+    ]);
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Completed games appear here once you start a new game."]));
     } else {
@@ -2450,7 +2505,7 @@ window.SOMERSET_FB_CONFIG = {
       } }, ["Best-of Series"])
     ]));
     card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
-      el("p", { class:"join-divider disp" }, ["Already have a tournament? Join it:"]),
+      el("p", { class:"join-divider disp" }, ["Already have a tournament?"]),
       el("button", { class:"btn btn-cancel disp", style:"padding:12px 24px;", onClick:function(){ ui.joinSheet = true; render(); } }, ["Join with code"])
     ]));
     viewRootEl.appendChild(card);

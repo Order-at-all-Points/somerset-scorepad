@@ -2,7 +2,7 @@
 
 ## Shipped (production: somerset-scorepad.vercel.app)
 - Single-game score pad: bidding/trump entry (two-step), set penalty (subtract bid, can go negative), shoot-the-moon win rule, clockwise dealer rotation with seat diagram, editable player/seat names with quick-add from the (editable) per-device name book, New Game.
-- **Game History** — completed games archived with rosters, winner, score, date; tap to expand the hand-by-hand log; delete entries.
+- **Game History** — completed games archived with rosters, winner, score, date; tap to expand the hand-by-hand log; delete entries; export/import a JSON backup (dedup on re-import, so it's safe to re-import the same file).
 - **Tournament mode**
   - Player-count picker (even players, min 6) → name entry with Quick-add name book (per device, editable, deduped).
   - Random team draw (2 per team); odd team counts allowed (random byes auto-advance).
