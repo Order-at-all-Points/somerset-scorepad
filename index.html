@@ -325,6 +325,8 @@
 
   /* ---- sync / join code ---- */
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
+  .history-footer { text-align:center; padding:12px; border-top:1px solid var(--cream-shade); }
+  .history-footer .dot-sep { color:var(--ink-soft); margin:0 10px; }
   .join-code-badge { display:inline-flex; align-items:center; gap:6px; }
   .join-code { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:18px; font-weight:600; letter-spacing:.2em; color:var(--ink); cursor:pointer; border:none; background:none; padding:0; }
   .join-code:active { opacity:.7; }
@@ -1854,10 +1856,22 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function exportHistory() {
-    var blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), games: gameHistory }, null, 2)],
-      { type: "application/json" });
+    var json = JSON.stringify({ exportedAt: new Date().toISOString(), games: gameHistory }, null, 2);
+    var name = "somerset-history-" + new Date().toISOString().slice(0,10) + ".json";
+    // Native share sheet where available (AirDrop / Files / Messages on phones);
+    // must stay synchronous with the tap or iOS refuses the share.
+    if (navigator.share && navigator.canShare) {
+      try {
+        var file = new File([json], name, { type: "application/json" });
+        if (navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: "Some-R-Set history" }).catch(function () {});
+          return;
+        }
+      } catch (e) { /* fall through to download */ }
+    }
+    var blob = new Blob([json], { type: "application/json" });
     var url = URL.createObjectURL(blob);
-    var a = el("a", { href:url, download:"somerset-history-" + new Date().toISOString().slice(0,10) + ".json" }, []);
+    var a = el("a", { href:url, download:name }, []);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1873,7 +1887,7 @@ window.SOMERSET_FB_CONFIG = {
         games = Array.isArray(data) ? data : data.games;
       } catch (e) { games = null; }
       if (!Array.isArray(games)) {
-        ui.info = "That file doesn't look like a Some-R-Set history export.";
+        ui.info = "That file doesn't look like a Some-R-Set history backup.";
         render();
         return;
       }
@@ -1888,7 +1902,7 @@ window.SOMERSET_FB_CONFIG = {
       });
       gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
       saveHistory();
-      ui.info = added ? ("Imported " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to import — they're already in your History.";
+      ui.info = added ? ("Restored " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to restore — they're already in your History.";
       render();
     };
     reader.readAsText(file);
@@ -1901,15 +1915,7 @@ window.SOMERSET_FB_CONFIG = {
       fileInput.value = "";
     } }, []);
     var card = el("div", { class:"pad fade" }, [
-      el("div", { class:"view-head disp" }, ["Game History"]),
-      el("div", { class:"sync-bar" }, [
-        el("span", { class:"sync-label disp" }, ["Back up or restore your History"]),
-        el("div", {}, [
-          el("button", { class:"link-btn disp", onClick:exportHistory }, ["Export"]),
-          el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ fileInput.click(); } }, ["Import"])
-        ]),
-        fileInput
-      ])
+      el("div", { class:"view-head disp" }, ["Game History"])
     ]);
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
@@ -1924,6 +1930,14 @@ window.SOMERSET_FB_CONFIG = {
       // ]));
       groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
     }
+    var footerLinks = [];
+    if (gameHistory.length) {
+      footerLinks.push(el("button", { class:"link-btn disp", onClick:exportHistory }, ["Back up"]));
+      footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
+    }
+    footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ fileInput.click(); } }, [gameHistory.length ? "Restore" : "Restore a backup"]));
+    card.appendChild(el("div", { class:"history-footer" }, footerLinks));
+    card.appendChild(fileInput);
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
     else applyScoreWrap();
