@@ -622,7 +622,7 @@ window.SOMERSET_FB_CONFIG = {
         totals: gameTotals(g),
         winner: winnerIdx,
         deals: JSON.parse(JSON.stringify(g.deals)),
-        tournament: { format: t.format, teams: [A.name, B.name], championship: champ, id: t.id }
+        tournament: { format: t.format, teams: [A.name, B.name], championship: champ, id: t.id, bestOf: t.bestOf }
       };
     }
     return {
@@ -635,7 +635,7 @@ window.SOMERSET_FB_CONFIG = {
       totals: null,
       winner: winnerIdx,
       deals: [],
-      tournament: { format: t.format, teams: [A.name, B.name], manual:true, championship: champ, id: t.id }
+      tournament: { format: t.format, teams: [A.name, B.name], manual:true, championship: champ, id: t.id, bestOf: t.bestOf }
     };
   }
   // Scan the synced tournament for completed matches that include "me" (the
@@ -1961,6 +1961,12 @@ window.SOMERSET_FB_CONFIG = {
       }
       g.records.push(rec);
     });
+    groups.forEach(function (g) {
+      if (g.isTournament && g.tournament.format === "series" && !g.tournament.bestOf) {
+        var withBestOf = g.records.find(function (rec) { return rec.tournament.bestOf; });
+        if (withBestOf) g.tournament = Object.assign({}, g.tournament, { bestOf: withBestOf.tournament.bestOf });
+      }
+    });
     return groups;
   }
   function setAllHistoryGroupsOpen(groups, openVal) {
@@ -1977,19 +1983,22 @@ window.SOMERSET_FB_CONFIG = {
     return { champion: champion };
   }
   // "Standard game", "Best of 5 Series", "Double Elimination Tournament", etc.
-  function modeLabel(rec) {
+  function modeLabel(rec, fallbackBestOf) {
     var t = rec.tournament;
     if (!t) return "Standard game";
-    if (t.format === "series") return "Best of " + (t.bestOf || "?") + " Series";
+    if (t.format === "series") return "Best of " + (t.bestOf || fallbackBestOf || "?") + " Series";
     return formatName(t.format) + " Tournament";
   }
   // "N games · Mode" (or a comma-joined list of modes when a group mixes them),
   // no per-team win/loss breakdown — that detail lives in the expanded items.
   function statsSummaryText(records) {
     var txt = records.length + (records.length === 1 ? " game" : " games");
+    var fallbackBestOf = records.reduce(function (found, rec) {
+      return found || (rec.tournament && rec.tournament.bestOf);
+    }, null);
     var modes = [], seen = {};
     records.forEach(function (rec) {
-      var lbl = modeLabel(rec);
+      var lbl = modeLabel(rec, fallbackBestOf);
       if (!seen[lbl]) { seen[lbl] = true; modes.push(lbl); }
     });
     if (modes.length) txt += " · " + modes.join(", ");
