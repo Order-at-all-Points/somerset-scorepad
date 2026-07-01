@@ -453,7 +453,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- State ----
   function freshGame() {
-    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[] };
+    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[], archivedId:null };
   }
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
@@ -1101,6 +1101,7 @@ window.SOMERSET_FB_CONFIG = {
     if (typeof g.dealerStart !== "number") g.dealerStart = 0;
     g.target = 50;
     if (!Array.isArray(g.deals)) g.deals = [];
+    if (!("archivedId" in g)) g.archivedId = null;
     return g;
   }
   function persist() {
@@ -1360,7 +1361,16 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow]),
           isReadOnly ? null : el("button", { class:"del", "aria-label":"Remove deal "+(idx+1), onClick:function(e){
             e.stopPropagation();
-            game.deals = game.deals.filter(function(x){ return x.id !== d.id; }); persist();
+            game.deals = game.deals.filter(function(x){ return x.id !== d.id; });
+            if (game.archivedId) {
+              // Deleting a deal after auto-archiving can change or undo the
+              // result, so drop the now-stale entry; it'll re-archive if the
+              // game reaches a win again.
+              gameHistory = gameHistory.filter(function(h){ return h.id !== game.archivedId; });
+              saveHistory();
+              game.archivedId = null;
+            }
+            persist();
           } }, ["\u2715"])
         ]));
         if (isOpen) {
@@ -1784,6 +1794,14 @@ window.SOMERSET_FB_CONFIG = {
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
     ui.bid = 6; ui.trump = ""; ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
+    // Solo games archive themselves the moment they're won, so a game is never
+    // lost to history just because the player didn't tap "New Game" (matches
+    // stay excluded — they archive explicitly via "Save Result", which also
+    // advances the tournament bracket).
+    if (!ui.activeMatch && !game.archivedId) {
+      var win = winner();
+      if (win === 0 || win === 1) game.archivedId = archiveCurrentGame() || null;
+    }
     persist();
   }
 
@@ -1791,8 +1809,9 @@ window.SOMERSET_FB_CONFIG = {
     if (!game.deals.length) return;
     var win = winner();
     if (win === null) return;   // only archive completed games
+    var id = Date.now();
     gameHistory.unshift({
-      id: Date.now(),
+      id: id,
       date: new Date().toISOString(),
       teams: game.teams.slice(),
       players: game.players.slice(),
@@ -1804,10 +1823,11 @@ window.SOMERSET_FB_CONFIG = {
       tournament: meta || null
     });
     saveHistory();
+    return id;
   }
 
   function newGame() {
-    archiveCurrentGame();
+    if (!soloGame.archivedId) archiveCurrentGame();   // safety net — normally already auto-archived on completion
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
     soloGame = freshGame();
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
