@@ -1924,17 +1924,18 @@ window.SOMERSET_FB_CONFIG = {
           el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
         ])
       ]));
-      groups.forEach(function (dg) { card.appendChild(renderDateGroup(dg)); });
+      groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
     }
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
     else applyScoreWrap();
   }
 
-  // Bucket history into calendar-day sections, and within each day further bucket
-  // tournament matches by tournament (via the id stamped on rec.tournament) so a
-  // whole bracket/series collapses to one summarized row instead of cluttering the
-  // list with every match. Standalone (non-tournament) games stay as plain leaves.
+  // Bucket history into top-level sections: standalone (non-tournament) games
+  // group by calendar day, while tournament matches group by tournament (via
+  // the id stamped on rec.tournament) regardless of day, so two different
+  // tournaments played the same day render as two separate collapsible
+  // entries instead of being nested under one shared date header.
   // gameHistory is already newest-first, so first-seen order gives newest-first groups too.
   function dateKey(iso) {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
@@ -1948,33 +1949,25 @@ window.SOMERSET_FB_CONFIG = {
     } catch (e) { return ""; }
   }
   function buildHistoryGroups() {
-    var dateGroups = [], byDate = {};
+    var groups = [], byKey = {};
     gameHistory.forEach(function (rec) {
-      var dk = dateKey(rec.date);
-      var dg = byDate[dk];
-      if (!dg) { dg = { key:"d:" + dk, items:[], byT:{} }; byDate[dk] = dg; dateGroups.push(dg); }
-      if (rec.tournament && rec.tournament.id != null) {
-        var tk = "t:" + rec.tournament.id;
-        var tg = dg.byT[tk];
-        if (!tg) { tg = { key: dg.key + "/" + tk, tournament: rec.tournament, records:[] }; dg.byT[tk] = tg; dg.items.push(tg); }
-        tg.records.push(rec);
-      } else {
-        dg.items.push({ record: rec });
+      var isTournament = rec.tournament && rec.tournament.id != null;
+      var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
+      var g = byKey[key];
+      if (!g) {
+        g = isTournament
+          ? { key:key, isTournament:true, tournament:rec.tournament, records:[] }
+          : { key:key, isTournament:false, records:[] };
+        byKey[key] = g;
+        groups.push(g);
       }
+      g.records.push(rec);
     });
-    return dateGroups;
+    return groups;
   }
-  function setAllHistoryGroupsOpen(dateGroups, openVal) {
-    dateGroups.forEach(function (dg) {
-      ui.historyGroupOpen[dg.key] = openVal;
-      dg.items.forEach(function (it) { if (!it.record) ui.historyGroupOpen[it.key] = openVal; });
-    });
+  function setAllHistoryGroupsOpen(groups, openVal) {
+    groups.forEach(function (g) { ui.historyGroupOpen[g.key] = openVal; });
     render();
-  }
-  function flattenGroupRecords(dg) {
-    var out = [];
-    dg.items.forEach(function (it) { if (it.record) out.push(it.record); else out = out.concat(it.records); });
-    return out;
   }
   // The tournament champion (if any) for a set of records — used for the 🏆
   // badge shown when a tournament group is collapsed.
@@ -2004,31 +1997,29 @@ window.SOMERSET_FB_CONFIG = {
     if (modes.length) txt += " · " + modes.join(", ");
     return txt;
   }
-  function renderDateGroup(dg) {
-    var recs = flattenGroupRecords(dg);
-    var open = ui.historyGroupOpen[dg.key] === true;   // default collapsed
+  // "Best of 5", "Double Elimination", etc. — short form for the group header title.
+  function tournamentTitleLabel(t) {
+    return t.format === "series" ? ("Best of " + t.bestOf) : formatName(t.format);
+  }
+  function renderHistoryGroup(g) {
+    var recs = g.records;
+    var open = ui.historyGroupOpen[g.key] === true;   // default collapsed
+    var titleText = g.isTournament
+      ? (dateHeading(recs[0].date) + " · " + tournamentTitleLabel(g.tournament))
+      : dateHeading(recs[0].date);
+    var champBadge = "";
+    if (g.isTournament) {
+      var stats = groupStats(recs);
+      champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
+    }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
-      ui.historyGroupOpen[dg.key] = !open; render();
+      ui.historyGroupOpen[g.key] = !open; render();
     } }, [
-      el("span", { class:"hist-date-title disp" }, [ (open ? "▾ " : "▸ ") + dateHeading(recs[0].date) ]),
-      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) ])
+      el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
+      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) + champBadge ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
-    if (open) dg.items.forEach(function (it) { wrap.appendChild(it.record ? renderHistoryItem(it.record) : renderTournamentGroup(it)); });
-    return wrap;
-  }
-  function renderTournamentGroup(tg) {
-    var stats = groupStats(tg.records);
-    var open = ui.historyGroupOpen[tg.key] === true;   // default collapsed
-    var champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
-    var head = el("div", { class:"hist-t-head", role:"button", onClick:function () {
-      ui.historyGroupOpen[tg.key] = !open; render();
-    } }, [
-      el("span", { class:"hist-t-title disp" }, [ (open ? "▾ " : "▸ ") + formatName(tg.tournament.format) ]),
-      el("span", { class:"hist-t-sum disp" }, [ statsSummaryText(tg.records) + champBadge ])
-    ]);
-    var wrap = el("div", { class:"hist-t-group" }, [ head ]);
-    if (open) tg.records.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
+    if (open) recs.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
     return wrap;
   }
 
