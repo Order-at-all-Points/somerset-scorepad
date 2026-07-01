@@ -1933,8 +1933,12 @@ window.SOMERSET_FB_CONFIG = {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
   }
   function dateHeading(iso) {
-    try { return new Date(iso).toLocaleDateString(undefined, { weekday:"long", month:"long", day:"numeric", year:"numeric" }); }
-    catch (e) { return ""; }
+    try {
+      var d = new Date(iso);
+      var dd = String(d.getDate()).padStart(2, "0");
+      var mm = String(d.getMonth() + 1).padStart(2, "0");
+      return dd + "/" + mm + "/" + d.getFullYear();
+    } catch (e) { return ""; }
   }
   function buildHistoryGroups() {
     var dateGroups = [], byDate = {};
