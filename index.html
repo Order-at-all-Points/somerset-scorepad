@@ -1330,9 +1330,7 @@ window.SOMERSET_FB_CONFIG = {
 
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
-    if (game.deals.length === 0) {
-      history.appendChild(el("p", { class:"empty disp" }, ["No deals recorded yet."]));
-    } else {
+    if (game.deals.length > 0) {
       var runningScore = [0, 0];
       game.deals.forEach(function (d, idx) {
         var r = dealResult(d), isSet = r[2];
@@ -1691,11 +1689,10 @@ window.SOMERSET_FB_CONFIG = {
     var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
       style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" }, ["↑︎"]);
 
-    var label = started
-      ? el("p", { class:"table-label disp" }, ["Dealer: ", el("b", {}, [seatName(cur)])])
-      : el("p", { class:"table-label disp" }, ["Choose the first dealer — tap a seat"]);
-
-    var children = [label, el("div", { class:"table" }, seats.concat([arrow]))];
+    var children = [el("div", { class:"table" }, seats.concat([arrow]))];
+    if (started) {
+      children.unshift(el("p", { class:"table-label disp" }, ["Dealer: ", el("b", {}, [seatName(cur)])]));
+    }
 
     if (ui.pendingDealer !== null) {
       var pd = ui.pendingDealer;
