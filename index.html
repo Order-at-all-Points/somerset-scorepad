@@ -1917,7 +1917,14 @@ window.SOMERSET_FB_CONFIG = {
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Completed games appear here once you start a new game."]));
     } else {
-      buildHistoryGroups().forEach(function (dg) { card.appendChild(renderDateGroup(dg)); });
+      var groups = buildHistoryGroups();
+      card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
+        el("div", {}, [
+          el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
+          el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
+        ])
+      ]));
+      groups.forEach(function (dg) { card.appendChild(renderDateGroup(dg)); });
     }
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
@@ -1937,7 +1944,7 @@ window.SOMERSET_FB_CONFIG = {
       var d = new Date(iso);
       var dd = String(d.getDate()).padStart(2, "0");
       var mm = String(d.getMonth() + 1).padStart(2, "0");
-      return dd + "/" + mm + "/" + d.getFullYear();
+      return mm + "/" + dd + "/" + d.getFullYear();
     } catch (e) { return ""; }
   }
   function buildHistoryGroups() {
@@ -1956,6 +1963,13 @@ window.SOMERSET_FB_CONFIG = {
       }
     });
     return dateGroups;
+  }
+  function setAllHistoryGroupsOpen(dateGroups, openVal) {
+    dateGroups.forEach(function (dg) {
+      ui.historyGroupOpen[dg.key] = openVal;
+      dg.items.forEach(function (it) { if (!it.record) ui.historyGroupOpen[it.key] = openVal; });
+    });
+    render();
   }
   function flattenGroupRecords(dg) {
     var out = [];
@@ -1986,7 +2000,7 @@ window.SOMERSET_FB_CONFIG = {
   function renderDateGroup(dg) {
     var recs = flattenGroupRecords(dg);
     var stats = groupStats(recs);
-    var open = ui.historyGroupOpen[dg.key] !== false;   // default open, matching prior always-expanded behavior
+    var open = ui.historyGroupOpen[dg.key] === true;   // default collapsed
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[dg.key] = !open; render();
     } }, [
@@ -1999,7 +2013,7 @@ window.SOMERSET_FB_CONFIG = {
   }
   function renderTournamentGroup(tg) {
     var stats = groupStats(tg.records);
-    var open = ui.historyGroupOpen[tg.key] !== false;   // default open
+    var open = ui.historyGroupOpen[tg.key] === true;   // default collapsed
     var champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
     var head = el("div", { class:"hist-t-head", role:"button", onClick:function () {
       ui.historyGroupOpen[tg.key] = !open; render();
