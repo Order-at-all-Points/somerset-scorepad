@@ -1579,7 +1579,7 @@ window.SOMERSET_FB_CONFIG = {
       var meNow = myNameForCurrentTourney();
       var wKids = [
         el("h3", { class:"disp" }, ["Which player are you?"]),
-        el("p", { class:"sub disp" }, ["Tag yourself so matches you play in this tournament are saved to your own History — even ones a teammate records."])
+        el("p", { class:"sub disp" }, ["Tag yourself so matches you play in this tournament are saved to your own History."])
       ];
       roster.forEach(function (nm) {
         wKids.push(el("button", { class:"sheet-btn" + (nm === meNow ? " primary" : "") + " disp", onClick:function(){ identifyAs(nm); } }, [nm]));
