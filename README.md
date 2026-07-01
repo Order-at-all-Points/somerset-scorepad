@@ -97,6 +97,7 @@ Scoring is computed by threading the running total through every deal (`gameTota
 - Completed games are archived with **rosters, winner, final score, and date**.
 - Tap an entry to expand the full **hand‑by‑hand log**.
 - Delete entries you no longer want.
+- **Export / Import** — back up your History to a JSON file, or restore it (e.g. after reinstalling the app or switching phones). Importing merges into your existing History and skips games already present, so it's safe to import the same file twice.
 
 ### Tournament tab
 
