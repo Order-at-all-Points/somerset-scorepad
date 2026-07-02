@@ -83,6 +83,10 @@
   .empty { text-align:center; color:var(--ink-soft); font-style:italic; padding:20px 16px; margin:0; }
   .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
   .deal-row.open { border-bottom-color:transparent; }
+  /* The no./score/dash/score block is fixed-width (ch-based cells, one glyph dash) —
+     wrapping it lets the expanded row measure and reuse that exact width so Trump
+     lands centered directly underneath it. See alignDealDetail(). */
+  .deal-score-block { display:flex; align-items:center; gap:8px; flex:none; }
   .deal-no { color:var(--ink-soft); font-size:12px; width:22px; }
   .score-cell { display:inline-flex; align-items:baseline; font-size:16px; font-weight:600; color:var(--ink); }
   .score-sign { width:0.75ch; text-align:right; }
@@ -93,12 +97,10 @@
   .set-flag { color:var(--red); font-style:normal; margin-left:6px; letter-spacing:.08em; font-weight:700; }
   .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass-text); font-style:normal; white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:700; }
-  /* Trump and Dealer are equal flex-grow "sides" so the bid line (flex:none) always
-     lands dead center regardless of how long either side's text is. */
   .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
-  .deal-detail-side { flex:1 1 0; }
-  .deal-detail-side:last-child { text-align:right; }
-  .deal-bid-line { flex:0 1 auto; text-align:center; font-style:italic; }
+  .deal-detail-trump { display:flex; align-items:center; justify-content:center; flex:none; gap:4px; }   /* width set in JS to match .deal-score-block */
+  .deal-detail-side { flex:none; text-align:right; }   /* Dealer */
+  .deal-bid-line { flex:1 1 auto; text-align:center; font-style:italic; }   /* nudged into digit alignment in JS */
   .deal-bid-line.red { color:var(--red); }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
@@ -1465,6 +1467,9 @@ window.SOMERSET_FB_CONFIG = {
 
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
+    // Refs for the currently-open row's Trump/digit alignment (see alignDealDetail);
+    // reset each render since a torn-down row's nodes would otherwise linger stale.
+    target.__dealAlign = null;
     if (game.deals.length > 0) {
       var runningScore = [0, 0];
       var swipeCoord = { current:null };   // tracks which row's swipe is open (see makeSwipeRow)
@@ -1472,25 +1477,33 @@ window.SOMERSET_FB_CONFIG = {
         var r = dealResult(d), isSet = r[2];
         var delta = dealDelta(d, runningScore);
         runningScore[0] += delta[0]; runningScore[1] += delta[1];
-        var descKids = [
-          game.teams[d.bidTeam] + " " + (d.bid === POINTS_PER_DEAL ? "shot the moon" : ("bid " + d.bid))
-        ];
+        // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
+        var bidNumEl = null, descKids;
+        if (d.bid === POINTS_PER_DEAL) {
+          descKids = [ game.teams[d.bidTeam] + " shot the moon" ];
+        } else {
+          bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
+          descKids = [ game.teams[d.bidTeam] + " bid ", bidNumEl ];
+        }
         if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (game.teams[d.bidTeam] + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // arrow points toward the seat (0 bottom, 1 left, 2 top, 3 right); ︎ forces plain text, not emoji
         var seatArrow = ["↓", "←", "↑", "→"][dlr] + "︎";
         var isOpen = ui.openDeal === d.id;
+        var scoreBlockEl = el("span", { class:"deal-score-block" }, [
+          el("span", { class:"deal-no mono" }, [(idx+1)+"."]),
+          scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null),
+          el("span", { class:"dash" }, ["|"]),
+          scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null)
+        ]);
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
           "aria-label":"Deal " + (idx+1) + " \u2014 show dealer, trump and options",
           onClick:function(){ ui.openDeal = isOpen ? null : d.id; render(); }
         }, [
-          el("span", { class:"deal-no mono" }, [(idx+1)+"."]),
-          scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null),
-          el("span", { class:"dash" }, ["|"]),
-          scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null),
+          scoreBlockEl,
           el("span", { class:"deal-desc disp" }, descKids),
           el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow])
         ]);
@@ -1501,12 +1514,17 @@ window.SOMERSET_FB_CONFIG = {
           var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
           var takenPts = d.pts[d.bidTeam];
           // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
-          var bidLineTxt = game.teams[d.bidTeam] + " took " + takenPts + (isSet ? " (set)" : "");
+          var takenNumEl = el("span", { class:"deal-desc-num" }, [String(takenPts)]);
+          var bidLineKids = [ game.teams[d.bidTeam] + " took ", takenNumEl ];
+          if (isSet) bidLineKids.push(" (set)");
+          var trumpEl = el("span", { class:"deal-detail-trump" }, ["Trump:", el("b", {}, [trumpVal])]);
+          var bidLineEl = el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, bidLineKids);
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
-            el("span", { class:"deal-detail-side" }, ["Trump:", el("b", {}, [trumpVal])]),
-            el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
+            trumpEl,
+            bidLineEl,
             el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])])
           ]));
+          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl };
         }
       });
     }
@@ -1544,6 +1562,21 @@ window.SOMERSET_FB_CONFIG = {
     // is already attached, so equalize now; it's a no-op without match names.
     target.__teamNameEls = teamNameEls;
     if (target.isConnected) equalizeTeamNames(teamNameEls);
+    if (target.isConnected) alignDealDetail(target.__dealAlign);
+  }
+
+  // The expanded deal row's Trump block and "took" digit are positioned by measuring
+  // the already-rendered collapsed row (same pattern as equalizeTeamNames above) —
+  // widths built from ch units + a bare glyph aren't reliably reproducible with a
+  // second, independent CSS declaration, so we copy the real rendered pixels instead.
+  function alignDealDetail(a) {
+    if (!a) return;
+    a.trumpEl.style.width = a.scoreBlockEl.getBoundingClientRect().width + "px";
+    a.bidLineEl.style.transform = "";
+    if (a.bidNumEl) {   // null for a moon bid — nothing to align the taken digit to
+      var delta = a.bidNumEl.getBoundingClientRect().left - a.takenNumEl.getBoundingClientRect().left;
+      a.bidLineEl.style.transform = "translateX(" + delta + "px)";
+    }
   }
 
   // If one match name wraps to two lines, stack the other team's partner onto
@@ -2896,6 +2929,7 @@ window.SOMERSET_FB_CONFIG = {
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
+    alignDealDetail(card.__dealAlign);
   }
 
   function renderTournamentSetup() {
