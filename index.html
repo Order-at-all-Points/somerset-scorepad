@@ -1506,6 +1506,7 @@ window.SOMERSET_FB_CONFIG = {
         ]);
         var descEl = el("span", { class:"deal-desc disp" }, descKids);
         target.__dealDescEls.push(descEl);
+        var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", { class:"deal-dealer-arrow", "aria-hidden":"true" }, [seatArrow])]);
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
@@ -1514,7 +1515,7 @@ window.SOMERSET_FB_CONFIG = {
         }, [
           scoreBlockEl,
           descEl,
-          el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", { class:"deal-dealer-arrow", "aria-hidden":"true" }, [seatArrow])])
+          dealerLabelEl
         ]);
         history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl, swipeCoord,
           function(){ startEditDeal(d); },
@@ -1528,12 +1529,13 @@ window.SOMERSET_FB_CONFIG = {
           if (isSet) bidLineKids.push(" (set)");
           var trumpEl = el("span", { class:"deal-detail-trump" }, ["Trump:", el("b", {}, [trumpVal])]);
           var bidLineEl = el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, bidLineKids);
+          var dealerNameEl = el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])]);
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             trumpEl,
             bidLineEl,
-            el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])])
+            dealerNameEl
           ]));
-          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl };
+          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl };
         }
       });
     }
@@ -1591,6 +1593,14 @@ window.SOMERSET_FB_CONFIG = {
       var delta = a.bidNumEl.getBoundingClientRect().left - a.takenNumEl.getBoundingClientRect().left;
       a.bidLineEl.style.transform = "translateX(" + delta + "px)";
     }
+    // The dealer's name is right-aligned like the "Dealer" label above it, but for
+    // short names a right-edge match leaves it floating under the arrow instead of
+    // under the word "Dealer". Nudge it left to line up under the "D" — but never
+    // right, since a name wider than "Dealer ↓" already reaches that edge and
+    // pushing it further would run it off the card.
+    a.dealerNameEl.style.transform = "";
+    var nameDelta = Math.min(0, a.dealerLabelEl.getBoundingClientRect().left - a.dealerNameEl.getBoundingClientRect().left);
+    a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
   }
 
   // Each collapsed row's "We bid X" line is nudged so its own center lands on the
