@@ -94,7 +94,7 @@
   .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass-text); font-style:normal; white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:700; }
   .deal-detail { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
-  .deal-bid-line { flex-basis:100%; text-align:center; font-style:italic; margin:0 0 2px; }
+  .deal-bid-line { font-style:italic; }
   .deal-bid-line.red { color:var(--red); }
   .deal-detail .detail-del { background:none; border:none; color:var(--red); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
@@ -1400,7 +1400,7 @@ window.SOMERSET_FB_CONFIG = {
             ? (" but only took " + takenPts + " (set)")
             : (" and took " + takenPts));
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
-            el("p", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
+            el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
             el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
             isReadOnly ? null : el("button", { class:"detail-del disp", "aria-label":"Remove deal "+(idx+1),
