@@ -1332,17 +1332,22 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Score cell with a fixed sign slot + centered digits, so single digits sit under the
-  // middle of two-digit numbers and a leading "−" never shifts the row.
-  function scoreCell(val, setMsg) {
+  // middle of two-digit numbers and a leading "−" never shifts the row. mirrorSign adds
+  // a same-width blank slot *after* the digits too, so a cell on the right side of a
+  // divider sits the same distance from it as a cell on the left (whose sign slot comes
+  // before the digits, not after).
+  function scoreCell(val, setMsg, mirrorSign) {
     var props = { class:"score-cell mono" + (setMsg ? " score-set" : "") };
     if (setMsg) {
       props.role = "button"; props.tabindex = "0"; props["aria-label"] = setMsg;
       props.onClick = function(e){ if (e) e.stopPropagation(); ui.info = setMsg; render(); };
     }
-    return el("span", props, [
+    var kids = [
       el("span", { class:"score-sign" }, [val < 0 ? "−" : ""]),
       el("span", { class:"score-digits" }, [String(Math.abs(val))])
-    ]);
+    ];
+    if (mirrorSign) kids.push(el("span", { class:"score-sign" }, []));
+    return el("span", props, kids);
   }
 
   // ---- Render ----
@@ -1493,7 +1498,7 @@ window.SOMERSET_FB_CONFIG = {
         var seatArrow = ["↓", "←", "↑", "→"][dlr] + "︎";
         var isOpen = ui.openDeal === d.id;
         var scoreBlockEl = el("span", { class:"deal-score-block" }, [
-          scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null),
+          scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null, true),
           el("span", { class:"dash" }, ["|"]),
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null)
         ]);
