@@ -149,6 +149,8 @@
   .chip.on:active { transform:scale(.93); box-shadow:none; }
   .chip[disabled] { opacity:.45; cursor:default; box-shadow:none; }
   .chip[disabled]:active { transform:none; }
+  .chips-trump { flex-wrap:nowrap; gap:4px; }
+  .chips-trump .chip { flex:1; padding:9px 0; text-align:center; }
 
   .check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-soft); margin-bottom:10px; }
   .warn { color:var(--red); font-size:13px; font-style:italic; margin:0 0 8px; }
@@ -473,7 +475,7 @@ window.SOMERSET_FB_CONFIG = {
 
   var STORAGE_KEY = "somerset:dev-v1";
   var POINTS_PER_DEAL = 14;
-  var TRUMP_CHIPS = ["No trump","1","2","3","4","5","6"];
+  var TRUMP_CHIPS = ["0","1","2","3","4","5","6"];
 
   // ---- State ----
   function freshGame() {
@@ -1390,7 +1392,7 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow])
         ]));
         if (isOpen) {
-          var trumpVal = d.trump ? (d.trump === "No trump" ? "None" : d.trump) : "not recorded";
+          var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
@@ -1771,7 +1773,7 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
         el("div", { style:"margin-bottom:14px;" }, [
           el("span", { class:"label disp", style:"display:block; margin-bottom:6px;" }, ["Trump (optional)"]),
-          el("div", { class:"chips" }, TRUMP_CHIPS.map(function (tc) {
+          el("div", { class:"chips chips-trump" }, TRUMP_CHIPS.map(function (tc) {
             return el("button", { class:"chip"+(ui.trump===tc?" on":""), onClick:function(){ ui.trump = (ui.trump===tc?"":tc); softRender(); } }, [tc]);
           }))
         ]),
@@ -1788,7 +1790,7 @@ window.SOMERSET_FB_CONFIG = {
     var willBeSet = ui.bidderPts < ui.bid;
     var moonBid = ui.bid === POINTS_PER_DEAL;
     var preTotal = totals()[ui.bidTeam];
-    var trumpTxt = ui.trump ? (" \u00b7 " + (ui.trump === "No trump" ? "no trump" : ("trump " + ui.trump))) : "";
+    var trumpTxt = ui.trump ? (" \u00b7 " + ((ui.trump === "No trump" || ui.trump === "0") ? "no trump" : ("trump " + ui.trump))) : "";
 
     var kids = header.concat([
       el("p", { class:"phase-label disp" }, ["Step 2 \u00b7 after the hand"]),
