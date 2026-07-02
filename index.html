@@ -1506,7 +1506,7 @@ window.SOMERSET_FB_CONFIG = {
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             el("span", { class:"deal-detail-side" }, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
-            el("span", { class:"deal-detail-side" }, ["Dealer:", el("b", {}, [seatName(dlr)])])
+            el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])])
           ]));
         }
       });
