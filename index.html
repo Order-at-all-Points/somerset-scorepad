@@ -2027,10 +2027,10 @@ window.SOMERSET_FB_CONFIG = {
     ]);
     kids.push(el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, [game.teams[ui.bidTeam]+" took"]), stepper(ui.bidderPts, function(v){ ui.bidderPts = clamp(v, 0, POINTS_PER_DEAL); softRender(); }, 0, POINTS_PER_DEAL, "points taken") ]));
     if (!moonBid) {
-      kids.push(el("div", { class:"row", style:"margin-bottom:8px;" }, [ el("span", { class:"label disp" }, [game.teams[1-ui.bidTeam]+" get"]),
+      kids.push(el("div", { class:"row", style:"margin-bottom:8px;" }, [ el("span", { class:"label disp" }, [game.teams[1-ui.bidTeam]+" took"]),
         el("div", { class:"stepper" }, [
           el("span", { class:"step", style:"visibility:hidden;", "aria-hidden":"true" }, []),
-          el("span", { class:"step-val mono", "aria-label":game.teams[1-ui.bidTeam]+" get "+otherPts }, [String(otherPts)]),
+          el("span", { class:"step-val mono", "aria-label":game.teams[1-ui.bidTeam]+" took "+otherPts }, [String(otherPts)]),
           el("span", { class:"step", style:"visibility:hidden;", "aria-hidden":"true" }, [])
         ]) ]));
     }
