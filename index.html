@@ -1934,9 +1934,7 @@ window.SOMERSET_FB_CONFIG = {
       style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" }, ["↑︎"]);
 
     var children = [el("div", { class:"table" }, seats.concat([arrow]))];
-    if (started) {
-      children.unshift(el("p", { class:"table-label disp" }, ["Dealer: ", el("b", {}, [seatName(cur)])]));
-    } else if (!game.players.some(function (p) { return p && p.trim(); })) {
+    if (!started && !game.players.some(function (p) { return p && p.trim(); })) {
       // discoverability nudge for fresh games; disappears once anyone is named or play starts
       children.push(el("p", { class:"table-label disp" }, ["Tap a seat to name players or change the dealer"]));
     }
