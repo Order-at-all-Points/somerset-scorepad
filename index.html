@@ -96,8 +96,6 @@
   .deal-detail { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
   .deal-bid-line { font-style:italic; }
   .deal-bid-line.red { color:var(--red); }
-  .deal-detail .detail-del { background:none; border:none; color:var(--red); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
-  .deal-detail .detail-edit { background:none; border:none; color:var(--brass-text); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
   .deal-row-wrap { position:relative; overflow:hidden; }
@@ -1252,8 +1250,7 @@ window.SOMERSET_FB_CONFIG = {
   // implicitly "closes" every swipe whenever anything else changes the pad.
   var SWIPE_ACTION_W = 76;
   function makeSwipeRow(rowEl, coord, onEdit, onDelete) {
-    // tabindex:-1 — these sit off-screen until swiped into view, so keep them out of
-    // tab order; the detail row's "Edit deal"/"Remove deal" links are the keyboard path.
+    // tabindex:-1 — these sit off-screen until swiped into view, so keep them out of tab order.
     var editBtn = el("button", { class:"swipe-action-btn edit disp", "aria-label":"Edit deal", tabindex:"-1",
       onClick:function(e){ e.stopPropagation(); closeSwipe(false); onEdit(); } }, ["Edit"]);
     var deleteBtn = el("button", { class:"swipe-action-btn delete disp", "aria-label":"Delete deal", tabindex:"-1",
@@ -1505,11 +1502,7 @@ window.SOMERSET_FB_CONFIG = {
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
             el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
-            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
-            isReadOnly ? null : el("button", { class:"detail-edit disp", "aria-label":"Edit deal "+(idx+1),
-              onClick:function(e){ e.stopPropagation(); startEditDeal(d); } }, ["Edit deal"]),
-            isReadOnly ? null : el("button", { class:"detail-del disp", "aria-label":"Remove deal "+(idx+1),
-              onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Remove deal"])
+            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])])
           ]));
         }
       });
