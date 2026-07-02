@@ -1812,7 +1812,7 @@ window.SOMERSET_FB_CONFIG = {
         ]),
         el("div", { class:"actions" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.showEntry=false; ui.entryStep=1; render(); } }, ["Cancel"]),
-          el("button", { class:"btn btn-record disp", onClick:function(){ ui.entryStep=2; render(); } }, ["Next: play the hand \u2192"])
+          el("button", { class:"btn btn-record disp", onClick:function(){ ui.bidderPts = ui.bid; ui.entryStep=2; render(); } }, ["Next: play the hand \u2192"])
         ])
       ]);
       return el("div", { class:"entry" }, kids1);
