@@ -1500,9 +1500,8 @@ window.SOMERSET_FB_CONFIG = {
         if (isOpen) {
           var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
           var takenPts = d.pts[d.bidTeam];
-          var bidLineTxt = game.teams[d.bidTeam] + " bid " + d.bid + (isSet
-            ? (" but only took " + takenPts + " (set)")
-            : (" and took " + takenPts));
+          // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
+          var bidLineTxt = game.teams[d.bidTeam] + " took " + takenPts + (isSet ? " (set)" : "");
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             el("span", { class:"deal-detail-side" }, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
