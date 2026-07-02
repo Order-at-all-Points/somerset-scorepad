@@ -93,8 +93,12 @@
   .set-flag { color:var(--red); font-style:normal; margin-left:6px; letter-spacing:.08em; font-weight:700; }
   .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass-text); font-style:normal; white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:700; }
-  .deal-detail { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
-  .deal-bid-line { font-style:italic; }
+  /* Trump and Dealer are equal flex-grow "sides" so the bid line (flex:none) always
+     lands dead center regardless of how long either side's text is. */
+  .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
+  .deal-detail-side { flex:1 1 0; }
+  .deal-detail-side:last-child { text-align:right; }
+  .deal-bid-line { flex:0 1 auto; text-align:center; font-style:italic; }
   .deal-bid-line.red { color:var(--red); }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
@@ -1500,9 +1504,9 @@ window.SOMERSET_FB_CONFIG = {
             ? (" but only took " + takenPts + " (set)")
             : (" and took " + takenPts));
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
+            el("span", { class:"deal-detail-side" }, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
-            el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
-            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])])
+            el("span", { class:"deal-detail-side" }, ["Dealer:", el("b", {}, [seatName(dlr)])])
           ]));
         }
       });
