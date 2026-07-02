@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>SomeRSet Scorepad</title>
 
 <!-- iOS standalone web-app -->
@@ -20,6 +20,7 @@
   :root {
     --felt:#1E4634; --felt-deep:#16382A; --cream:#F8F2E2; --cream-shade:#EDE3CB;
     --rule:#C9B98F; --ink:#33302A; --ink-soft:#6B6353; --red:#9B2226; --brass:#A07C2E;
+    --brass-text:#7A5E20;   /* darker brass for small text — #A07C2E is only 3.47:1 on cream (fails WCAG AA) */
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
@@ -84,16 +85,20 @@
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); font-style:italic; text-align:center; }
   .set-flag { color:var(--red); font-style:normal; margin-left:6px; letter-spacing:.08em; font-weight:700; }
-  .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass); font-style:normal; white-space:nowrap; }
+  .deal-dealer { flex:none; text-align:right; font-size:12px; color:var(--brass-text); font-style:normal; white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:700; }
-  .deal-detail { display:flex; justify-content:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
-  .deal-detail b { font-weight:700; color:var(--brass); margin-left:4px; }
-  .del { background:none; border:none; color:var(--ink-soft); font-size:16px; cursor:pointer; padding:4px; border-radius:4px; transition:color .08s, background .08s; }
+  .deal-detail { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 22px; padding:0 12px 9px; border-bottom:1px solid var(--cream-shade); font-size:12px; color:var(--ink-soft); }
+  .deal-detail .detail-del { background:none; border:none; color:var(--red); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
+  /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
+  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:6px; padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:14px; box-shadow:0 6px 18px rgba(0,0,0,.45); z-index:60; white-space:nowrap; }
+  .undo-toast button { background:none; border:none; color:var(--rule); font-size:14px; font-weight:700; text-decoration:underline; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 12px; }
+  .deal-detail b { font-weight:700; color:var(--brass-text); margin-left:4px; }
+  .del { background:none; border:none; color:var(--ink-soft); font-size:16px; cursor:pointer; padding:12px; border-radius:4px; transition:color .08s, background .08s; line-height:1; }
   .del:active { color:var(--red); background:rgba(155,34,38,.1); }
 
   .entry { border-top:2px solid var(--rule); padding:14px 16px 18px; background:var(--cream-shade); }
   .entry h2 { margin:0 0 4px; font-weight:700; font-size:16px; color:var(--ink); letter-spacing:.05em; }
-  .phase-label { text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:700; color:var(--brass); margin:0 0 12px; }
+  .phase-label { text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:700; color:var(--brass-text); margin:0 0 12px; }
   .bid-summary { background:var(--cream); border:1px solid var(--rule); border-radius:5px; padding:9px 11px; font-size:15px; color:var(--ink); margin:0 0 14px; }
   .row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .label { color:var(--ink); font-size:15px; }
@@ -112,7 +117,7 @@
   .who button.on:active { transform:scale(.96); box-shadow:none; }
 
   .stepper { display:flex; align-items:center; gap:8px; }
-  .step { width:40px; height:40px; border-radius:4px; border:1.5px solid var(--rule);
+  .step { width:44px; height:44px; border-radius:4px; border:1.5px solid var(--rule);
     background:linear-gradient(to bottom, #fdfaf4 0%, var(--cream) 100%);
     color:var(--ink); font-size:20px; cursor:pointer; line-height:1;
     box-shadow:0 1px 2px rgba(0,0,0,.1);
@@ -121,10 +126,10 @@
   .step-val { font-size:22px; font-weight:600; width:48px; text-align:center; }
   .step-input { width:48px; border:1px solid var(--rule); border-radius:4px; background:var(--cream); color:var(--ink);
     padding:6px 0; -moz-appearance:textfield; }
-  .step-input:focus { border-color:var(--brass); }
+  .step-input:focus { border-color:var(--brass-text); }
 
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
-  .chip { padding:5px 10px; border-radius:999px; font-size:13px; cursor:pointer; border:1px solid var(--rule);
+  .chip { padding:9px 14px; border-radius:999px; font-size:13px; cursor:pointer; border:1px solid var(--rule);
     background:linear-gradient(to bottom, #fdfaf4 0%, var(--cream) 100%);
     color:var(--ink-soft); font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
     box-shadow:0 1px 2px rgba(0,0,0,.1);
@@ -165,9 +170,10 @@
     color:var(--cream); font-size:18px; font-weight:700; letter-spacing:.06em;
     box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.09); }
   .btn-new:active { transform:scale(.98); box-shadow:none; }
+  .btn-new[disabled], .btn-record[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
   .add-wrap { padding:14px 16px 18px; border-top:1px solid var(--cream-shade); display:flex; justify-content:center; }
 
-  .settings-toggle { background:none; border:none; color:var(--rule); font-size:13px; font-style:italic; cursor:pointer; text-decoration:underline; font-family:'Old Standard TT',serif; transition:color .08s; }
+  .settings-toggle { background:none; border:none; color:var(--rule); font-size:13px; font-style:italic; cursor:pointer; text-decoration:underline; font-family:'Old Standard TT',serif; transition:color .08s; padding:12px 16px; }
   .settings-toggle:active { color:var(--cream); }
   .settings { background:rgba(0,0,0,.18); border-radius:6px; padding:16px; margin-top:8px; color:var(--cream); }
   .seg { display:flex; gap:6px; }
@@ -192,7 +198,7 @@
   .reset-yes:active { transform:scale(.97); box-shadow:none; opacity:1; }
   .footer { text-align:center; color:rgba(255,255,255,.35); font-size:11px; font-style:italic; margin-top:18px; }
   .table-label { text-align:center; color:var(--ink-soft); font-size:13px; font-style:italic; margin:12px 0 0; }
-  .table-label b { font-style:normal; font-weight:700; color:var(--brass); }
+  .table-label b { font-style:normal; font-weight:700; color:var(--brass-text); }
   .table { position:relative; width:100%; max-width:300px; height:172px; margin:6px auto 14px; }
   .seat { position:absolute; transform:translate(-50%,-50%); width:96px; max-width:42%; text-align:center;
     background:linear-gradient(to bottom, #fdfaf4 0%, var(--cream-shade) 100%);
@@ -202,7 +208,7 @@
   .seat:active { transform:translate(-50%,-50%) scale(.93); box-shadow:none; }
   .seat .pname { font-family:'Old Standard TT',Georgia,serif; font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .seat .pteam { font-family:'Old Standard TT',Georgia,serif; font-size:10px; letter-spacing:-0.01em; font-style:italic; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:clip; }
-  .seat.dealer { border-color:var(--brass);
+  .seat.dealer { border-color:var(--brass-text);
     background:linear-gradient(to bottom, #fffaee 0%, var(--cream) 100%);
     box-shadow:inset 0 0 0 2px var(--brass), 0 1px 2px rgba(0,0,0,.12); }
   .deal-arrow { position:absolute; left:50%; top:50%; font-size:30px; line-height:1; color:var(--brass); pointer-events:none; transition:transform .45s ease; }
@@ -243,7 +249,7 @@
 
   /* ---- nav + views ---- */
   .nav { display:flex; gap:6px; justify-content:center; margin:0 0 14px; }
-  .nav-btn { flex:1; max-width:132px; padding:8px 0; border-radius:6px; border:1px solid rgba(201,185,143,.5);
+  .nav-btn { flex:1; max-width:132px; padding:12px 0; border-radius:6px; border:1px solid rgba(201,185,143,.5);
     background:rgba(255,255,255,.04); color:var(--rule); font-family:'Old Standard TT',Georgia,serif;
     font-size:14px; letter-spacing:.04em; cursor:pointer;
     transition:opacity .08s ease; }
@@ -259,7 +265,7 @@
   .hist-date-sum { font-size:12px; color:var(--ink-soft); font-style:italic; margin-left:14px; }
   .hist-t-group { border-top:1px solid var(--cream-shade); }
   .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 8px 22px; cursor:pointer; }
-  .hist-t-title { font-size:13px; font-weight:700; color:var(--brass); }
+  .hist-t-title { font-size:13px; font-weight:700; color:var(--brass-text); }
   .hist-t-sum { font-size:12px; color:var(--ink-soft); font-style:italic; margin-left:14px; }
   .hist-entry { border-bottom:1px solid var(--cream-shade); }
   .hist-item { padding:10px 12px; cursor:pointer; }
@@ -269,7 +275,7 @@
   .hist-score .hs-team { white-space:nowrap; }
   .hist-score .hs-div { color:var(--ink-soft); }
   .hist-score.wrapped .hs-div { display:none; }
-  .hist-win { font-size:13px; color:var(--brass); font-weight:700; white-space:nowrap; flex:0 0 auto; }
+  .hist-win { font-size:13px; color:var(--brass-text); font-weight:700; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   .hist-meta { font-size:12px; color:var(--ink-soft); font-style:italic; margin-top:3px; }
   .hist-detail { padding:8px 12px 14px; background:var(--cream-shade); }
@@ -278,9 +284,9 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { font-style:italic; color:var(--ink-soft); }
-  .hist-hand .hh-dlr { font-size:11px; color:var(--brass); white-space:nowrap; }
+  .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:10px; }
-  .link-btn { background:none; border:none; color:var(--red); font-size:13px; text-decoration:underline; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; }
+  .link-btn { background:none; border:none; color:var(--red); font-size:13px; text-decoration:underline; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:12px 8px; margin:-8px 0; }
 
   /* ---- tournament setup ---- */
   .tplayers { padding:10px 12px 0; }
@@ -313,7 +319,7 @@
   .mbox-slot.pick { cursor:pointer; }
   .mbox-slot.pick:active { background:var(--cream-shade); }
   .mbox-slot-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .mbox-score { font-size:11px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; flex-shrink:0; margin-left:6px; color:var(--brass); }
+  .mbox-score { font-size:11px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; flex-shrink:0; margin-left:6px; color:var(--brass-text); }
   .mbox-slot.win .mbox-score { color:var(--cream); }
   .mbox.ready { cursor:pointer; }
   .mbox.ready:active { background:var(--cream-shade); }
@@ -338,11 +344,11 @@
   .sync-dot.error { background:var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   .sync-label { font-size:12px; color:var(--ink-soft); font-style:italic; }
-  .sync-copy-hint { font-size:11px; color:var(--brass); font-style:italic; }
+  .sync-copy-hint { font-size:11px; color:var(--brass-text); font-style:italic; }
   .join-input { width:100%; padding:14px; box-sizing:border-box; border:2px solid var(--rule); border-radius:6px;
     font-size:26px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-weight:600; letter-spacing:.28em; color:var(--ink);
     background:#fff; text-align:center; text-transform:uppercase; margin-bottom:12px; }
-  .join-input:focus { border-color:var(--brass); outline:none; }
+  .join-input:focus { border-color:var(--brass-text); outline:none; }
   .join-error { color:var(--red); font-size:13px; font-style:italic; text-align:center; margin:0 0 10px; }
   .join-divider { text-align:center; color:var(--ink-soft); font-size:13px; font-style:italic; margin:6px 0 8px; border-top:1px solid var(--cream-shade); padding-top:10px; }
 
@@ -374,7 +380,7 @@
     padding:8px 12px; border-bottom:1px solid var(--cream-shade); font-size:13px; }
   .rr-teams { flex:1; color:var(--ink); }
   .rr-vs { color:var(--ink-soft); margin:0 4px; }
-  .rr-result { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:12px; color:var(--brass); white-space:nowrap; }
+  .rr-result { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:12px; color:var(--brass-text); white-space:nowrap; }
   .rr-result.set { color:var(--red); }
   .rr-section-head { background:var(--cream-shade); padding:5px 12px; font-size:11px; font-weight:700;
     letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--rule); }
@@ -383,14 +389,14 @@
   .series-side:first-child { justify-content:flex-end; text-align:right; }
   .series-side:last-child { justify-content:flex-start; text-align:left; }
   .series-team-name { font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .series-team-name.champ { color:var(--brass); font-weight:700; }
+  .series-team-name.champ { color:var(--brass-text); font-weight:700; }
   .series-wins { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:30px; font-weight:600; color:var(--ink); flex:none; }
-  .series-wins.champ { color:var(--brass); }
+  .series-wins.champ { color:var(--brass-text); }
   .series-dash { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:22px; color:var(--ink-soft); flex:none; }
   .series-sub { text-align:center; font-size:12px; font-style:italic; color:var(--ink-soft); margin:2px 0 12px; }
   .series-game-label { flex:1; color:var(--ink); font-size:13px; }
   .rr-row.series-next { background:rgba(160,124,46,.10); }
-  .rr-row.series-next .rr-result { color:var(--brass); font-style:italic; }
+  .rr-row.series-next .rr-result { color:var(--brass-text); font-style:italic; }
   .rr-row.series-live { background:rgba(82,168,82,.12); }
   .rr-result.live { color:#2e7d32; font-weight:600; }
 </style>
@@ -1230,7 +1236,7 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null || ui.whoSheet;
+           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -1341,7 +1347,7 @@ window.SOMERSET_FB_CONFIG = {
         var descKids = [
           game.teams[d.bidTeam] + " " + (d.bid === POINTS_PER_DEAL ? "shot the moon" : ("bid " + d.bid))
         ];
-        if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass);" }, ["MOON"]));
+        if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (game.teams[d.bidTeam] + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // arrow points toward the seat (0 bottom, 1 left, 2 top, 3 right); ︎ forces plain text, not emoji
@@ -1350,7 +1356,7 @@ window.SOMERSET_FB_CONFIG = {
         history.appendChild(el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
-          "aria-label":"Deal " + (idx+1) + " \u2014 show dealer and trump",
+          "aria-label":"Deal " + (idx+1) + " \u2014 show dealer, trump and options",
           onClick:function(){ ui.openDeal = isOpen ? null : d.id; render(); }
         }, [
           el("span", { class:"deal-no mono" }, [(idx+1)+"."]),
@@ -1358,26 +1364,15 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"dash" }, ["|"]),
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null),
           el("span", { class:"deal-desc disp" }, descKids),
-          el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow]),
-          isReadOnly ? null : el("button", { class:"del", "aria-label":"Remove deal "+(idx+1), onClick:function(e){
-            e.stopPropagation();
-            game.deals = game.deals.filter(function(x){ return x.id !== d.id; });
-            if (game.archivedId) {
-              // Deleting a deal after auto-archiving can change or undo the
-              // result, so drop the now-stale entry; it'll re-archive if the
-              // game reaches a win again.
-              gameHistory = gameHistory.filter(function(h){ return h.id !== game.archivedId; });
-              saveHistory();
-              game.archivedId = null;
-            }
-            persist();
-          } }, ["\u2715"])
+          el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow])
         ]));
         if (isOpen) {
           var trumpVal = d.trump ? (d.trump === "No trump" ? "None" : d.trump) : "not recorded";
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
-            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])])
+            el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
+            isReadOnly ? null : el("button", { class:"detail-del disp", "aria-label":"Remove deal "+(idx+1),
+              onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Remove deal"])
           ]));
         }
       });
@@ -1444,6 +1439,19 @@ window.SOMERSET_FB_CONFIG = {
   function renderModal(noFade) {
     modalRoot.innerHTML = "";
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
+    if (ui.confirmReset) {
+      var resetDone = winner() !== null;
+      var resetSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Start a new game",
+        onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Start a new game?"]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink); margin:8px 0 14px;" },
+          [ resetDone ? "This game is finished and saved in History." : "The current score will be discarded." ]),
+        el("button", { class:"sheet-btn primary disp", onClick:newGame }, ["Yes, start fresh"]),
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; render(); } }, ["Keep playing"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; render(); } }, [resetSheet]));
+      return;
+    }
     if (ui.info) {
       var infoSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
         onClick:function(e){ e.stopPropagation(); } }, [
@@ -1685,7 +1693,7 @@ window.SOMERSET_FB_CONFIG = {
         onClick:function(){ ui.seatMenu = i; ui.seatMenuMode = "menu"; render(); }
       }, [
         el("div", { class:"pname disp" }, [seatName(i)]),
-        el("div", { class:"pteam disp", style:"color:" + (team === 0 ? "var(--brass)" : "var(--red)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(game.teams[team].length, 1)))) + "px;" }, [game.teams[team]])
+        el("div", { class:"pteam disp", style:"color:" + (team === 0 ? "var(--brass-text)" : "var(--red)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(game.teams[team].length, 1)))) + "px;" }, [game.teams[team]])
       ]);
     });
     var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
@@ -1785,6 +1793,50 @@ window.SOMERSET_FB_CONFIG = {
     return el("div", { class:"entry" }, kids);
   }
 
+  // ---- deal removal with undo (no confirm dialogs in the core loop) ----
+  var undoToastEl = null, undoTimer = null;
+  function dismissUndoToast() {
+    if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+    if (undoToastEl && undoToastEl.parentNode) undoToastEl.parentNode.removeChild(undoToastEl);
+    undoToastEl = null;
+  }
+  function showUndoToast(msg, onUndo) {
+    dismissUndoToast();
+    undoToastEl = el("div", { class:"undo-toast fade disp", role:"status" }, [
+      el("span", {}, [msg]),
+      el("button", { onClick:function(){ dismissUndoToast(); onUndo(); } }, ["Undo"])
+    ]);
+    document.body.appendChild(undoToastEl);
+    undoTimer = setTimeout(dismissUndoToast, 6000);
+  }
+  function removeDealWithUndo(d, idx) {
+    var snapGame = game, snapArchivedId = game.archivedId, snapRec = null;
+    if (game.archivedId) {
+      for (var i = 0; i < gameHistory.length; i++) {
+        if (gameHistory[i].id === game.archivedId) { snapRec = gameHistory[i]; break; }
+      }
+      // Deleting a deal after auto-archiving can change or undo the result,
+      // so drop the now-stale entry; it'll re-archive if the game reaches a win again.
+      gameHistory = gameHistory.filter(function(h){ return h.id !== game.archivedId; });
+      saveHistory();
+      game.archivedId = null;
+    }
+    game.deals = game.deals.filter(function(x){ return x.id !== d.id; });
+    ui.openDeal = null;
+    persist();
+    showUndoToast("Deal " + (idx + 1) + " removed", function(){
+      if (snapGame !== game) return;   // a different game is active now; nothing sane to restore into
+      snapGame.deals.splice(Math.min(idx, snapGame.deals.length), 0, d);
+      if (snapRec) {
+        gameHistory.unshift(snapRec);
+        gameHistory.sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+        saveHistory();
+        snapGame.archivedId = snapArchivedId;
+      }
+      persist();
+    });
+  }
+
   function recordDeal() {
     var otherPts = POINTS_PER_DEAL - ui.bidderPts;
     var pts = ui.bidTeam === 0 ? [ui.bidderPts, otherPts] : [otherPts, ui.bidderPts];
@@ -1826,6 +1878,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function newGame() {
+    dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) archiveCurrentGame();   // safety net — normally already auto-archived on completion
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
     soloGame = freshGame();
@@ -1836,12 +1889,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function renderSettings() {
-    settingsPanelEl.innerHTML = "";
-    if (!ui.confirmReset) return;
-    settingsPanelEl.appendChild(el("div", { style:"text-align:center; margin-top:10px; display:flex; gap:8px; justify-content:center;" }, [
-      el("button", { class:"reset disp", onClick:function(){ ui.confirmReset=false; render(); } }, ["Keep game"]),
-      el("button", { class:"reset reset-yes disp", onClick:newGame }, ["Yes, start fresh"])
-    ]));
+    settingsPanelEl.innerHTML = "";   // confirm now lives in renderModal (ui.confirmReset)
   }
 
     // ================= HISTORY VIEW =================
@@ -2036,7 +2084,7 @@ window.SOMERSET_FB_CONFIG = {
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[g.key] = !open; render();
     } }, [
-      el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
+      el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass-text);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
       el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) + champBadge ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
@@ -3271,6 +3319,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   document.getElementById("settingsToggle").addEventListener("click", function () {
+    if (!game.deals.length) { newGame(); return; }   // empty game — nothing to confirm
     ui.confirmReset = !ui.confirmReset;
     ui.showSettings = false;
     render();
