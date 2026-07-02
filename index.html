@@ -1570,8 +1570,11 @@ window.SOMERSET_FB_CONFIG = {
     target.__teamNameEls = teamNameEls;
     target.__dealTableEl = pad.querySelector(".table");
     if (target.isConnected) equalizeTeamNames(teamNameEls);
-    if (target.isConnected) alignDealDetail(target.__dealAlign);
+    // alignDealDesc must run first: it shifts the "We bid X" line (which contains
+    // bidNumEl) to center on the seating diagram, and alignDealDetail measures
+    // bidNumEl's *final* position to land the "took" digit underneath it.
     if (target.isConnected) alignDealDesc(target.__dealDescEls, target.__dealTableEl);
+    if (target.isConnected) alignDealDetail(target.__dealAlign);
   }
 
   // The expanded deal row's Trump block and "took" digit are positioned by measuring
@@ -2954,8 +2957,8 @@ window.SOMERSET_FB_CONFIG = {
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
-    alignDealDetail(card.__dealAlign);
     alignDealDesc(card.__dealDescEls, card.__dealTableEl);
+    alignDealDetail(card.__dealAlign);
   }
 
   function renderTournamentSetup() {
