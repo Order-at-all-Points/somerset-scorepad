@@ -97,6 +97,20 @@
   .deal-bid-line { font-style:italic; }
   .deal-bid-line.red { color:var(--red); }
   .deal-detail .detail-del { background:none; border:none; color:var(--red); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
+  .deal-detail .detail-edit { background:none; border:none; color:var(--brass-text); text-decoration:underline; font-size:12px; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 10px; margin:-6px 0; }
+  /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
+     (which owns .fade — see the note below) so our drag transform never collides with it. */
+  .deal-row-wrap { position:relative; overflow:hidden; }
+  .deal-row-fg { position:relative; background:var(--cream); touch-action:pan-y; }
+  .swipe-actions { position:absolute; top:0; bottom:0; width:76px; display:flex; }
+  .swipe-actions.left { left:0; }
+  .swipe-actions.right { right:0; }
+  .swipe-action-btn { flex:1; border:none; display:flex; align-items:center; justify-content:center;
+    font-family:'Old Standard TT',Georgia,serif; font-size:13px; font-weight:700; letter-spacing:.04em;
+    color:var(--cream); cursor:pointer; }
+  .swipe-action-btn.edit { background:var(--brass); }
+  .swipe-action-btn.delete { background:var(--red); }
+  .swipe-action-btn:active { filter:brightness(.92); }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
   .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:6px; padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:14px; box-shadow:0 6px 18px rgba(0,0,0,.45); z-index:60; white-space:nowrap; }
   .undo-toast button { background:none; border:none; color:var(--rule); font-size:14px; font-weight:700; text-decoration:underline; cursor:pointer; font-family:'Old Standard TT',Georgia,serif; padding:8px 12px; }
@@ -495,7 +509,7 @@ window.SOMERSET_FB_CONFIG = {
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
-    openDeal:null, whoSheet:false
+    openDeal:null, whoSheet:false, editingDeal:null
   };
 
   // ---- History + tournament storage ----
@@ -1230,6 +1244,91 @@ window.SOMERSET_FB_CONFIG = {
     ]);
   }
 
+  // Wraps a deal-row in a swipeable foreground so a horizontal drag reveals an
+  // Edit (swipe right) or Delete (swipe left) action underneath. `coord` is a
+  // single {current} box shared by every row in one history render pass, so
+  // opening a new row auto-closes whichever row was previously open. Rows are
+  // fully rebuilt (and this state discarded) on every render(), which is what
+  // implicitly "closes" every swipe whenever anything else changes the pad.
+  var SWIPE_ACTION_W = 76;
+  function makeSwipeRow(rowEl, coord, onEdit, onDelete) {
+    // tabindex:-1 — these sit off-screen until swiped into view, so keep them out of
+    // tab order; the detail row's "Edit deal"/"Remove deal" links are the keyboard path.
+    var editBtn = el("button", { class:"swipe-action-btn edit disp", "aria-label":"Edit deal", tabindex:"-1",
+      onClick:function(e){ e.stopPropagation(); closeSwipe(false); onEdit(); } }, ["Edit"]);
+    var deleteBtn = el("button", { class:"swipe-action-btn delete disp", "aria-label":"Delete deal", tabindex:"-1",
+      onClick:function(e){ e.stopPropagation(); closeSwipe(false); onDelete(); } }, ["Delete"]);
+    var fg = el("div", { class:"deal-row-fg" }, [rowEl]);
+    var wrap = el("div", { class:"deal-row-wrap" }, [
+      el("div", { class:"swipe-actions left" }, [editBtn]),
+      el("div", { class:"swipe-actions right" }, [deleteBtn]),
+      fg
+    ]);
+
+    var openState = 0, curX = 0, dragging = false, decided = false, isHorizontal = false, startX = 0, startY = 0, pointerId = 0;
+
+    function setTransform(x, animate) {
+      fg.style.transition = animate ? "transform .18s ease-out" : "none";
+      fg.style.transform = "translateX(" + x + "px)";
+      curX = x;
+    }
+    function closeSwipe(animate) {
+      openState = 0;
+      setTransform(0, animate !== false);
+      if (coord.current === closeSwipe) coord.current = null;
+    }
+    function swallowNextClick() {
+      fg.addEventListener("click", function swallow(e){ e.stopPropagation(); e.preventDefault(); }, { capture:true, once:true });
+    }
+    function settle() {
+      var threshold = SWIPE_ACTION_W / 2;
+      if (curX <= -threshold) { openState = -1; setTransform(-SWIPE_ACTION_W, true); }
+      else if (curX >= threshold) { openState = 1; setTransform(SWIPE_ACTION_W, true); }
+      else { openState = 0; setTransform(0, true); }
+      coord.current = openState !== 0 ? closeSwipe : null;
+    }
+    var captured = false;
+    fg.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (coord.current && coord.current !== closeSwipe) coord.current(true);
+      startX = e.clientX; startY = e.clientY; dragging = true; decided = false; isHorizontal = false; captured = false;
+      pointerId = e.pointerId;
+      // Pointer capture is only claimed once a real horizontal drag is confirmed (in
+      // onMove below) \u2014 not here. Chromium retargets the eventual click/pointerup to
+      // whichever element holds capture, so capturing on every tap would stop plain
+      // taps from ever reaching rowEl's own click listener (it's a descendant of fg).
+    });
+    fg.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var deltaX = e.clientX - startX, deltaY = e.clientY - startY;
+      if (!decided) {
+        if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+        decided = true;
+        isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+        if (!isHorizontal) { dragging = false; return; }   // vertical scroll: let the page handle it
+        try { fg.setPointerCapture(pointerId); captured = true; } catch (err) {}
+      }
+      if (!isHorizontal) return;
+      e.preventDefault();
+      setTransform(clamp(openState * SWIPE_ACTION_W + deltaX, -SWIPE_ACTION_W, SWIPE_ACTION_W), false);
+    });
+    fg.addEventListener("pointerup", function (e) {
+      if (!dragging) return;
+      dragging = false;
+      if (captured) { try { fg.releasePointerCapture(pointerId); } catch (err) {} captured = false; }
+      if (decided && isHorizontal) { settle(); swallowNextClick(); }
+      else if (openState !== 0) { closeSwipe(true); swallowNextClick(); }
+      // else: a plain tap on a closed row \u2014 let the click bubble to rowEl's own handler
+    });
+    fg.addEventListener("pointercancel", function () {
+      dragging = false;
+      if (captured) { try { fg.releasePointerCapture(pointerId); } catch (err) {} captured = false; }
+      setTransform(openState * SWIPE_ACTION_W, true);
+    });
+
+    return wrap;
+  }
+
   // Score cell with a fixed sign slot + centered digits, so single digits sit under the
   // middle of two-digit numbers and a leading "−" never shifts the row.
   function scoreCell(val, setMsg) {
@@ -1367,6 +1466,7 @@ window.SOMERSET_FB_CONFIG = {
     var history = el("div", { style:"padding:4px 0;" });
     if (game.deals.length > 0) {
       var runningScore = [0, 0];
+      var swipeCoord = { current:null };   // tracks which row's swipe is open (see makeSwipeRow)
       game.deals.forEach(function (d, idx) {
         var r = dealResult(d), isSet = r[2];
         var delta = dealDelta(d, runningScore);
@@ -1380,7 +1480,7 @@ window.SOMERSET_FB_CONFIG = {
         // arrow points toward the seat (0 bottom, 1 left, 2 top, 3 right); ︎ forces plain text, not emoji
         var seatArrow = ["↓", "←", "↑", "→"][dlr] + "︎";
         var isOpen = ui.openDeal === d.id;
-        history.appendChild(el("div", {
+        var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
           "aria-label":"Deal " + (idx+1) + " \u2014 show dealer, trump and options",
@@ -1392,7 +1492,10 @@ window.SOMERSET_FB_CONFIG = {
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null),
           el("span", { class:"deal-desc disp" }, descKids),
           el("span", { class:"deal-dealer disp" }, ["Dealer " + seatArrow])
-        ]));
+        ]);
+        history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl, swipeCoord,
+          function(){ startEditDeal(d); },
+          function(){ removeDealWithUndo(d, idx); }));
         if (isOpen) {
           var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
           var takenPts = d.pts[d.bidTeam];
@@ -1403,6 +1506,8 @@ window.SOMERSET_FB_CONFIG = {
             el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineTxt]),
             el("span", {}, ["Trump:", el("b", {}, [trumpVal])]),
             el("span", {}, ["Dealer:", el("b", {}, [seatName(dlr)])]),
+            isReadOnly ? null : el("button", { class:"detail-edit disp", "aria-label":"Edit deal "+(idx+1),
+              onClick:function(e){ e.stopPropagation(); startEditDeal(d); } }, ["Edit deal"]),
             isReadOnly ? null : el("button", { class:"detail-del disp", "aria-label":"Remove deal "+(idx+1),
               onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Remove deal"])
           ]));
@@ -1796,9 +1901,18 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function renderEntry(dealNo) {
+    var editIdx = -1, editingObj = null;
+    if (ui.editingDeal != null) {
+      for (var ei = 0; ei < game.deals.length; ei++) {
+        if (game.deals[ei].id === ui.editingDeal) { editIdx = ei; editingObj = game.deals[ei]; break; }
+      }
+    }
+    var isEditing = editingObj != null;
+    var displayDealNo = isEditing ? editIdx + 1 : dealNo;
+    var dealerForEntry = isEditing ? editingObj.dealer : dealerSeat();
     var header = [
-      el("h2", { class:"disp" }, ["Deal " + dealNo]),
-      el("p", { class:"dealer-line disp" }, ["Dealt by ", el("b", {}, [seatName(dealerSeat())])])
+      el("h2", { class:"disp" }, [(isEditing ? "Edit Deal " : "Deal ") + displayDealNo]),
+      el("p", { class:"dealer-line disp" }, ["Dealt by ", el("b", {}, [seatName(dealerForEntry)])])
     ];
 
     // ---- Step 1: before the hand \u2014 bid & trump ----
@@ -1818,7 +1932,7 @@ window.SOMERSET_FB_CONFIG = {
           }))
         ]),
         el("div", { class:"actions" }, [
-          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.showEntry=false; ui.entryStep=1; render(); } }, ["Cancel"]),
+          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null; render(); } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){ ui.bidderPts = ui.bid; ui.entryStep=2; render(); } }, ["Next: play the hand \u2192"])
         ])
       ]);
@@ -1864,7 +1978,7 @@ window.SOMERSET_FB_CONFIG = {
 
     kids.push(el("div", { class:"actions" }, [
       el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.entryStep=1; render(); } }, ["\u2190 Back"]),
-      el("button", { class:"btn btn-record disp", onClick:recordDeal }, ["Record deal"])
+      el("button", { class:"btn btn-record disp", onClick:recordDeal }, [isEditing ? "Save changes" : "Record deal"])
     ]));
 
     return el("div", { class:"entry" }, kids);
@@ -1914,10 +2028,44 @@ window.SOMERSET_FB_CONFIG = {
     });
   }
 
+  // Prefills the entry form from an existing deal and opens it in edit mode;
+  // recordDeal() below checks ui.editingDeal to update that deal in place
+  // instead of pushing a new one.
+  function startEditDeal(d) {
+    ui.editingDeal = d.id;
+    ui.bidTeam = d.bidTeam;
+    ui.bid = d.bid;
+    ui.trump = d.trump || "";
+    ui.bidderPts = d.pts[d.bidTeam];
+    ui.showEntry = true;
+    ui.entryStep = 1;
+    ui.openDeal = null;
+    render();
+  }
+
   function recordDeal() {
     var otherPts = POINTS_PER_DEAL - ui.bidderPts;
     var pts = ui.bidTeam === 0 ? [ui.bidderPts, otherPts] : [otherPts, ui.bidderPts];
-    game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, trump:ui.trump.trim(), pts:pts, dealer:dealerSeat() });
+    if (ui.editingDeal != null) {
+      var editing = null;
+      for (var i = 0; i < game.deals.length; i++) {
+        if (game.deals[i].id === ui.editingDeal) { editing = game.deals[i]; break; }
+      }
+      if (editing) {
+        // Editing can change or undo an already-archived result just like deleting
+        // a deal does (see removeDealWithUndo) — drop the stale entry; it'll
+        // re-archive below if the edit still leaves the game won.
+        if (game.archivedId) {
+          gameHistory = gameHistory.filter(function(h){ return h.id !== game.archivedId; });
+          saveHistory();
+          game.archivedId = null;
+        }
+        editing.bidTeam = ui.bidTeam; editing.bid = ui.bid; editing.trump = ui.trump.trim(); editing.pts = pts;
+      }
+      ui.editingDeal = null;
+    } else {
+      game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, trump:ui.trump.trim(), pts:pts, dealer:dealerSeat() });
+    }
     // reset form, alternate default bidder
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
     ui.bid = 6; ui.trump = ""; ui.bidderPts = 6;
@@ -3440,7 +3588,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.joinSheet) { ui.joinSheet = false; ui.joinError = null; render(); return true; }
     if (ui.backConfirm) { ui.backConfirm = false; render(); return true; }
     if (ui.matchMenu != null) { ui.matchMenu = null; render(); return true; }
-    if (ui.showEntry) { ui.showEntry = false; ui.entryStep = 1; render(); return true; }
+    if (ui.showEntry) { ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null; render(); return true; }
     if (ui.activeMatch) { leaveMatch(); return true; }
     if (ui.view !== "game") { ui.view = "game"; render(); return true; }
     return false;
