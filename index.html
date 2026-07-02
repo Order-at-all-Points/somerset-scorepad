@@ -1316,7 +1316,15 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (!isHorizontal) return;
       e.preventDefault();
-      setTransform(clamp(openState * SWIPE_ACTION_W + deltaX, -SWIPE_ACTION_W, SWIPE_ACTION_W), false);
+      // Dragging out of an already-open state stops at neutral (0) instead of
+      // continuing into the opposite action — otherwise overshooting a
+      // "back out" swipe drops the user straight into the other action, and
+      // the next "back out" swipe does the same in reverse, looping forever.
+      // Reaching the opposite action requires releasing at neutral first and
+      // starting a new gesture.
+      var min = openState === 1 ? 0 : -SWIPE_ACTION_W;
+      var max = openState === -1 ? 0 : SWIPE_ACTION_W;
+      setTransform(clamp(openState * SWIPE_ACTION_W + deltaX, min, max), false);
     });
     fg.addEventListener("pointerup", function (e) {
       if (!dragging) return;
