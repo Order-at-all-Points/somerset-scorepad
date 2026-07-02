@@ -1454,6 +1454,28 @@ window.SOMERSET_FB_CONFIG = {
 
   function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; render(); }
 
+  // Tournament match team names are always "PlayerA & PlayerB", derived live from
+  // the seats — never hand-typed (unlike the solo game's freely-editable "We"/"They").
+  // Keep them (and the shared tourney.teams roster, so the bracket/standings agree)
+  // in sync whenever a seat's player changes.
+  function syncMatchTeamNames() {
+    if (!ui.activeMatch || !tourney) return;
+    var m = getActiveMatchObj(ui.activeMatch);
+    if (!m) return;
+    var nameA = seatName(0) + " & " + seatName(2), nameB = seatName(1) + " & " + seatName(3);
+    game.teams[0] = nameA; game.teams[1] = nameB;
+    var A = tourney.teams[m.a], B = tourney.teams[m.b];
+    if (A) { A.name = nameA; A.players = [game.players[0], game.players[2]]; }
+    if (B) { B.name = nameB; B.players = [game.players[1], game.players[3]]; }
+  }
+
+  function swapSeats(i, j) {
+    var tmp = game.players[i]; game.players[i] = game.players[j]; game.players[j] = tmp;
+    syncMatchTeamNames();
+    ui.seatMenu = null; ui.seatMenuMode = "menu";
+    persist();
+  }
+
   function chooseDealerFromMenu(i) {
     if (dealerSeat() === i) { closeSeatMenu(); return; }   // already dealing
     ui.seatMenu = null; ui.seatMenuMode = "menu";
@@ -1653,7 +1675,7 @@ window.SOMERSET_FB_CONFIG = {
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
     if (ui.seatMenuMode === "edit") {
-      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
+      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); syncMatchTeamNames(); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
       var input = el("input", { class:"sheet-input disp", type:"text", value:game.players[i] || "",
         placeholder:"Player name", maxlength:24, "aria-label":"Player name",
         onKeydown:function(e){ if (e.key === "Enter") { saveName(input.value); } } });
@@ -1687,11 +1709,22 @@ window.SOMERSET_FB_CONFIG = {
       sheetKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ saveName(input.value); } }, ["Save"]));
       sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; render(); } }, ["Cancel"]));
       if (!ui.editNames) setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
+    } else if (ui.seatMenuMode === "swap") {
+      sheetKids = [
+        el("h3", { class:"disp" }, ["Swap seats"]),
+        el("p", { class:"sub disp" }, ["Move " + seatName(i) + " to —"])
+      ];
+      [0,1,2,3].filter(function (j) { return j !== i; }).forEach(function (j) {
+        sheetKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ swapSeats(i, j); } },
+          [ seatName(j) + " · seat " + (j + 1) ]));
+      });
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; render(); } }, ["Cancel"]));
     } else {
       sheetKids = [
         el("h3", { class:"disp" }, [seatName(i)]),
         el("p", { class:"sub disp" }, [game.teams[i % 2] + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; render(); } }, ["Edit name"]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "swap"; render(); } }, ["Swap seats"]),
         el("button", { class:"sheet-btn primary disp", disabled:isDealer, onClick:function(){ chooseDealerFromMenu(i); } },
           [ isDealer ? "Already dealing" : "Set as dealer" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:closeSeatMenu }, ["Cancel"])
