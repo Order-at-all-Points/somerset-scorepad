@@ -2,6 +2,8 @@
 
 *Reviewed 2026-07-01 against the live app (somerset-scorepad.vercel.app) at commit `1af4572`. Method: full click-through of every view/state in Chromium at phone viewport (22 screenshots), WCAG contrast math on the actual palette, CSS touch-target audit, and code walkthrough of every destructive/confirmation flow. Ordered by user-experience impact.*
 
+> **Status 2026-07-02:** items 1–13 addressed (commits `29ed248`, `0a2bc2b`, and the button-hierarchy/bottom-sheet commit following). Grammar adopted for item 6: brass = primary/GO, dark ink = secondary, red = destructive. Item 13's bottom-sheet migration implemented via CSS at ≤520px.
+
 **What's already strong:** the two-step deal entry (before/after the hand) with the set-warning shown *before* recording; the unsaved-result guard when leaving a match; End Tournament confirmation; auto-archiving finished games; the coherent vintage table aesthetic. Nothing below requires changing the app's character.
 
 ---

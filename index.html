@@ -157,10 +157,15 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1); }
   .btn-cancel:active { transform:scale(.97); background:var(--cream-shade); box-shadow:none; }
   .btn-record { flex:2; padding:12px 0; border:none;
+    background:linear-gradient(to bottom, #ab8638 0%, var(--brass) 60%, #886824 100%);
+    color:var(--cream); font-size:16px; font-weight:700; letter-spacing:.05em;
+    box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.09); }
+  .btn-record:active { transform:scale(.97); box-shadow:none; }
+  .btn-danger { flex:2; padding:12px 0; border:none;
     background:linear-gradient(to bottom, #a52529 0%, var(--red) 60%, #821d21 100%);
     color:var(--cream); font-size:16px; font-weight:700; letter-spacing:.05em;
     box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.07); }
-  .btn-record:active { transform:scale(.97); box-shadow:none; }
+  .btn-danger:active { transform:scale(.97); box-shadow:none; }
   .btn-add { width:100%; padding:14px 0; border:none;
     background:linear-gradient(to bottom, #3d3a34 0%, var(--ink) 60%, #2a2824 100%);
     color:var(--cream); font-size:17px; font-weight:700; letter-spacing:.06em;
@@ -188,16 +193,6 @@
     color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.15); }
   .seg button.on:active { transform:scale(.96); box-shadow:none; }
   .radio { display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:4px; cursor:pointer; }
-  .reset { width:100%; padding:10px 0; border-radius:4px; border:1px solid rgba(255,255,255,.4);
-    background:rgba(255,255,255,.06); color:var(--cream); cursor:pointer; font-size:14px; font-family:'Old Standard TT',serif;
-    transition:transform .08s ease, opacity .08s ease; }
-  .reset:active { opacity:.7; transform:scale(.98); }
-  .reset-yes { border:none;
-    background:linear-gradient(to bottom, #a52529 0%, var(--red) 60%, #821d21 100%);
-    font-weight:700;
-    box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.07);
-    opacity:1; }
-  .reset-yes:active { transform:scale(.97); box-shadow:none; opacity:1; }
   .footer { text-align:center; color:rgba(255,255,255,.35); font-size:11px; font-style:italic; margin-top:18px; }
   .table-label { text-align:center; color:var(--ink-soft); font-size:13px; font-style:italic; margin:12px 0 0; }
   .table-label b { font-style:normal; font-weight:700; color:var(--brass-text); }
@@ -227,6 +222,15 @@
      auto-selected name's blue highlight visibly slide as the sheet settles. */
   .sheet.fade { animation:sheet-in .35s ease both; }
   @keyframes sheet-in { from { opacity:0; } to { opacity:1; } }
+  /* Phones: anchor dialogs to the bottom (thumb reach) and slide them up. */
+  @media (max-width:520px) {
+    .overlay { align-items:flex-end; padding:0; }
+    .sheet { max-width:none; border-radius:14px 14px 0 0; padding:20px 18px calc(14px + env(safe-area-inset-bottom));
+      box-shadow:0 -12px 40px rgba(0,0,0,.4); }
+    .sheet.fade { animation:sheet-up .3s ease both; }
+  }
+  @keyframes sheet-up { from { opacity:.4; transform:translateY(40px); } to { opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce) { .sheet.fade { animation:none; } }
   .sheet h3 { margin:0; font-family:'Old Standard TT',Georgia,serif; font-size:20px; font-weight:700; color:var(--ink); text-align:center; }
   .sheet .sub { text-align:center; color:var(--ink-soft); font-size:12px; font-style:italic; margin:2px 0 14px; }
   .sheet-btn { display:block; width:100%; min-height:48px; padding:12px 0; margin-bottom:8px; border-radius:6px;
@@ -237,10 +241,10 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease, box-shadow .08s ease; }
   .sheet-btn:active:not(.primary):not(.ghost) { transform:scale(.98); background:var(--cream-shade); box-shadow:none; }
-  .sheet-btn.primary { border-color:var(--ink);
-    background:linear-gradient(to bottom, #3d3a34 0%, var(--ink) 60%, #2a2824 100%);
+  .sheet-btn.primary { border-color:#886824; font-weight:700; letter-spacing:.04em;
+    background:linear-gradient(to bottom, #ab8638 0%, var(--brass) 60%, #886824 100%);
     color:var(--cream);
-    box-shadow:0 1px 2px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.07); }
+    box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.09); }
   .sheet-btn.primary:active { transform:scale(.98); box-shadow:none; }
   .sheet-btn.primary[disabled] { background:var(--cream-shade); color:var(--ink-soft); border-color:var(--rule); cursor:default; box-shadow:none; }
   .sheet-btn.ghost { border:none; background:transparent; color:var(--ink-soft); margin-bottom:0; min-height:40px; box-shadow:none; }
@@ -1412,7 +1416,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-add disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); } },
+        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); } },
           ["Record Deal " + dealNo])
       ]));
     }
@@ -2525,7 +2529,7 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"disp", style:"padding:16px; color:var(--red); font-size:13px;" },
           ["Display error: " + e.message + ". This usually means stored tournament data is in an unexpected format."]),
         el("div", { style:"padding:0 12px 16px;" }, [
-          el("button", { class:"btn btn-record disp", onClick:function(){
+          el("button", { class:"btn btn-danger disp", onClick:function(){
             tourney = null; saveTourney(); render();
           } }, ["Clear tournament & start fresh"])
         ])
@@ -3288,7 +3292,7 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"disp", style:"margin:0 0 10px; font-size:14px; color:var(--ink);" }, [isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?"]),
         el("div", { style:"display:flex; gap:8px;" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; render(); } }, ["Keep it"]),
-          el("button", { class:"btn btn-record disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, ["Yes, end it"])
+          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, ["Yes, end it"])
         ])
       ]));
     } else {
