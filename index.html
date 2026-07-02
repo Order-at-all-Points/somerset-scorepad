@@ -38,6 +38,11 @@
     padding: max(20px, env(safe-area-inset-top)) 12px calc(48px + env(safe-area-inset-bottom));
     -webkit-text-size-adjust: 100%;
     -webkit-user-select: none; user-select: none;
+    /* Without this, dropping maximum-scale=1 (pinch-zoom fix) reinstates
+       Safari's ~300ms tap delay + double-tap-to-zoom gesture, which can eat
+       taps on low-feedback controls. touch-action:manipulation removes the
+       delay/double-tap-zoom while still allowing pinch-zoom. */
+    touch-action: manipulation;
   }
   .wrap { max-width: 480px; margin: 0 auto; }
   .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
