@@ -1533,7 +1533,7 @@ window.SOMERSET_FB_CONFIG = {
           function(){ startEditDeal(d); },
           function(){ removeDealWithUndo(d, idx); }));
         if (isOpen) {
-          var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
+          var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "-";
           var takenPts = d.pts[d.bidTeam];
           // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
           var takenNumEl = el("span", { class:"deal-desc-num" }, [String(takenPts)]);
