@@ -1890,6 +1890,17 @@ window.SOMERSET_FB_CONFIG = {
             } }, [ !cHasGame ? "Set winner" : cComplete ? "Save & set winner" : "Discard & set winner" ]),
           el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; render(); } }, ["Cancel"])
         ];
+      } else if (mm.watchPick) {
+        var wpNames = dedupeNames((TA.players || []).concat(TB.players || []).filter(Boolean));
+        mkids = [
+          el("h3", { class:"disp" }, ["Watching as…"]),
+          el("p", { class:"sub disp" }, ["Pick your name to save this game to your History, or just watch."])
+        ];
+        wpNames.forEach(function (nm) {
+          mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ identifyAs(nm); watchMatchAm(mm); } }, [nm]));
+        });
+        mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ watchMatchAm(mm); } }, ["Just observing"]));
+        mkids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ mm.watchPick = false; render(); } }, ["Back"]));
       } else {
         // Ready match — play or pick winner; respect lock
         var locked = !isMineOrUnlocked(mm);
@@ -1898,7 +1909,10 @@ window.SOMERSET_FB_CONFIG = {
             el("h3", { class:"disp" }, [TA.name + "  vs  " + TB.name]),
             el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink-soft);" },
               ["This game is being edited on another device."]),
-            hasGame ? el("button", { class:"sheet-btn primary disp", onClick:function(){ watchMatchAm(mm); } }, ["Watch game"]) : null,
+            mt.game ? el("button", { class:"sheet-btn primary disp", onClick:function(){
+              if (myNameForCurrentTourney()) watchMatchAm(mm);
+              else { mm.watchPick = true; render(); }
+            } }, ["Watch game"]) : null,
             el("button", { class:"sheet-btn disp", onClick:function(){ startMatchAm(mm); } }, ["Take over editing"]),
             el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Cancel"])
           ];
