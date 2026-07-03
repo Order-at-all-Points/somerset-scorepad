@@ -315,9 +315,9 @@
   .hist-item { padding:10px 12px; cursor:pointer; }
   .hist-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
   .hist-line.stack { flex-direction:column; align-items:stretch; gap:2px; }
-  .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:grid; grid-template-columns:1fr auto; column-gap:10px; row-gap:2px; min-width:0; flex:1 1 auto; }
+  .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:inline-grid; grid-template-columns:auto auto; column-gap:8px; row-gap:2px; min-width:0; max-width:100%; flex:0 1 auto; }
   .hs-row { display:contents; }
-  .hs-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hs-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
   .hs-score { text-align:right; white-space:nowrap; }
   .hist-win { font-size:13px; color:var(--brass-text); font-weight:700; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
@@ -2232,13 +2232,9 @@ window.SOMERSET_FB_CONFIG = {
   }
 
     // ================= HISTORY VIEW =================
-  function fmtDate(iso) {
+  function fmtTime(iso) {
     try {
-      var d = new Date(iso);
-      var mm = String(d.getMonth() + 1).padStart(2, "0");
-      var dd = String(d.getDate()).padStart(2, "0");
-      return mm + "/" + dd + "/" + d.getFullYear() +
-        " · " + d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
+      return new Date(iso).toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
     } catch (e) { return ""; }
   }
 
@@ -2475,7 +2471,7 @@ window.SOMERSET_FB_CONFIG = {
         ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
-      el("div", { class:"hist-meta disp" }, [ fmtDate(rec.date) + (manual ? "" : (" · " + rec.deals.length + " hands")) + (rec.tournament ? (isChamp ? " · tournament championship" : " · tournament match") : "") ])
+      el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (rec.tournament ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
     ]);
     var entry = el("div", { class:"hist-entry" }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
