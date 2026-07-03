@@ -1537,7 +1537,7 @@ window.SOMERSET_FB_CONFIG = {
           function(){ removeDealWithUndo(d, idx); }));
         if (isOpen) {
           // Trump recording disabled for now (see renderEntry()/recordDeal() below).
-          // var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "not recorded";
+          // var trumpVal = d.trump ? ((d.trump === "No trump" || d.trump === "0") ? "None" : d.trump) : "-";
           var takenPts = d.pts[d.bidTeam];
           // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
           var takenNumEl = el("span", { class:"deal-desc-num" }, [String(takenPts)]);
