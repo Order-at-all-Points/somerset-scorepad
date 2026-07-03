@@ -1285,6 +1285,10 @@ window.SOMERSET_FB_CONFIG = {
   // (and this state discarded) on every render(), which is what implicitly
   // "closes" every swipe whenever anything else changes the pad.
   var SWIPE_ACTION_W = 76;
+  // A second swipe in the same direction, released within this many ms of the
+  // row settling into a peek, expands the action to fill the row instead of
+  // just re-settling at the peek width (see canExpand in makeSwipeRow).
+  var SWIPE_EXPAND_WINDOW_MS = 750;
   // Single coordinator shared by every swipe row across every render pass (rather than
   // recreated per render) so a document-level tap can always find whichever row is
   // currently open and close it, even when that tap lands outside every deal row.
@@ -1300,33 +1304,59 @@ window.SOMERSET_FB_CONFIG = {
       onClick:function(e){ e.stopPropagation(); closeSwipe(false); onEdit(); } }, ["Edit"]);
     var deleteBtn = el("button", { class:"swipe-action-btn delete disp", "aria-label":"Delete deal", tabindex:"-1",
       onClick:function(e){ e.stopPropagation(); closeSwipe(false); onDelete(); } }, ["Delete"]);
+    var leftActions = el("div", { class:"swipe-actions left" }, [editBtn]);
+    var rightActions = el("div", { class:"swipe-actions right" }, [deleteBtn]);
     var fg = el("div", { class:"deal-row-fg" }, [rowEl]);
-    var wrap = el("div", { class:"deal-row-wrap" }, [
-      el("div", { class:"swipe-actions left" }, [editBtn]),
-      el("div", { class:"swipe-actions right" }, [deleteBtn]),
-      fg
-    ]);
+    var wrap = el("div", { class:"deal-row-wrap" }, [leftActions, rightActions, fg]);
 
-    var openState = 0, curX = 0, dragging = false, decided = false, isHorizontal = false, startX = 0, startY = 0, pointerId = 0;
+    var openState = 0, curX = 0, dragging = false, decided = false, isHorizontal = false, startX = 0, startY = 0, pointerId = 0, baseX = 0;
+    // Set only while a drag is confirmed to be a same-direction re-swipe of an
+    // already-peeked row, arriving inside SWIPE_EXPAND_WINDOW_MS of the last peek.
+    var canExpand = false, fullW = 0, expandedActionsEl = null, resetExpandTimer = null, lastPeekTime = 0;
 
     function setTransform(x, animate) {
       fg.style.transition = animate ? "transform .18s ease-out" : "none";
       fg.style.transform = "translateX(" + x + "px)";
       curX = x;
     }
+    // Undoes the width bump applied while expanding (see the pointermove decide
+    // block below). Deferred so it fires after fg's own slide-back animation
+    // finishes, otherwise the wider action div would visibly shrink out from
+    // under the still-sliding foreground.
+    function resetExpand(animate) {
+      if (resetExpandTimer) { clearTimeout(resetExpandTimer); resetExpandTimer = null; }
+      var elToReset = expandedActionsEl;
+      expandedActionsEl = null;
+      if (!elToReset) return;
+      if (animate) resetExpandTimer = setTimeout(function () { elToReset.style.width = ""; }, 190);
+      else elToReset.style.width = "";
+    }
     function closeSwipe(animate) {
       openState = 0;
       setTransform(0, animate !== false);
+      resetExpand(animate !== false);
       if (swipeCoord.current === closeSwipe) { swipeCoord.current = null; swipeCoord.wrapEl = null; }
     }
     function swallowNextClick() {
       fg.addEventListener("click", function swallow(e){ e.stopPropagation(); e.preventDefault(); }, { capture:true, once:true });
     }
     function settle() {
-      var threshold = SWIPE_ACTION_W / 2;
-      if (curX <= -threshold) { openState = -1; setTransform(-SWIPE_ACTION_W, true); }
-      else if (curX >= threshold) { openState = 1; setTransform(SWIPE_ACTION_W, true); }
-      else { openState = 0; setTransform(0, true); }
+      var absX = Math.abs(curX), sign = curX < 0 ? -1 : 1;
+      if (absX < SWIPE_ACTION_W / 2) {
+        openState = 0;
+        setTransform(0, true);
+        resetExpand(true);
+      } else if (fullW && absX >= (SWIPE_ACTION_W + fullW) / 2) {
+        // Reached (or stayed past) the full-expand threshold: settle at full
+        // width. expandedActionsEl is already sized to fullW from the drag.
+        openState = sign * 2;
+        setTransform(sign * fullW, true);
+      } else {
+        openState = sign;
+        setTransform(sign * SWIPE_ACTION_W, true);
+        resetExpand(true);
+        lastPeekTime = Date.now();
+      }
       swipeCoord.current = openState !== 0 ? closeSwipe : null;
       swipeCoord.wrapEl = openState !== 0 ? wrap : null;
     }
@@ -1335,6 +1365,7 @@ window.SOMERSET_FB_CONFIG = {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       if (swipeCoord.current && swipeCoord.current !== closeSwipe) swipeCoord.current(true);
       startX = e.clientX; startY = e.clientY; dragging = true; decided = false; isHorizontal = false; captured = false;
+      baseX = curX; canExpand = false;
       pointerId = e.pointerId;
       // Pointer capture is only claimed once a real horizontal drag is confirmed (in
       // onMove below) \u2014 not here. Chromium retargets the eventual click/pointerup to
@@ -1350,6 +1381,18 @@ window.SOMERSET_FB_CONFIG = {
         isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
         if (!isHorizontal) { dragging = false; return; }   // vertical scroll: let the page handle it
         try { fg.setPointerCapture(pointerId); captured = true; } catch (err) {}
+        // A same-direction re-swipe of an already-peeked row, started within the
+        // expand window, is allowed to grow past the peek width. Widen the
+        // underlying action div right away so it's already full-size, hidden
+        // behind fg, by the time the drag reveals more of it.
+        var dirSign = deltaX > 0 ? 1 : -1;
+        if (openState !== 0 && dirSign === (openState > 0 ? 1 : -1) &&
+            (Date.now() - lastPeekTime) <= SWIPE_EXPAND_WINDOW_MS) {
+          canExpand = true;
+          fullW = wrap.getBoundingClientRect().width;
+          expandedActionsEl = dirSign === 1 ? leftActions : rightActions;
+          expandedActionsEl.style.width = fullW + "px";
+        }
       }
       if (!isHorizontal) return;
       e.preventDefault();
@@ -1358,10 +1401,12 @@ window.SOMERSET_FB_CONFIG = {
       // "back out" swipe drops the user straight into the other action, and
       // the next "back out" swipe does the same in reverse, looping forever.
       // Reaching the opposite action requires releasing at neutral first and
-      // starting a new gesture.
-      var min = openState === 1 ? 0 : -SWIPE_ACTION_W;
-      var max = openState === -1 ? 0 : SWIPE_ACTION_W;
-      setTransform(clamp(openState * SWIPE_ACTION_W + deltaX, min, max), false);
+      // starting a new gesture. The one exception is canExpand above, which
+      // deliberately extends the *same*-direction reach past the peek width.
+      var capW = Math.abs(openState) === 2 ? fullW : (canExpand ? fullW : SWIPE_ACTION_W);
+      var min = openState > 0 ? 0 : -capW;
+      var max = openState < 0 ? 0 : capW;
+      setTransform(clamp(baseX + deltaX, min, max), false);
     });
     fg.addEventListener("pointerup", function (e) {
       if (!dragging) return;
@@ -1374,7 +1419,7 @@ window.SOMERSET_FB_CONFIG = {
     fg.addEventListener("pointercancel", function () {
       dragging = false;
       if (captured) { try { fg.releasePointerCapture(pointerId); } catch (err) {} captured = false; }
-      setTransform(openState * SWIPE_ACTION_W, true);
+      setTransform((openState < 0 ? -1 : openState > 0 ? 1 : 0) * (Math.abs(openState) === 2 ? fullW : SWIPE_ACTION_W), true);
     });
 
     return wrap;
