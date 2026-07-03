@@ -208,8 +208,10 @@
   .btn-new[disabled], .btn-record[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
   .add-wrap { padding:14px 16px 18px; border-top:1px solid var(--cream-shade); display:flex; justify-content:center; }
 
-  .settings-toggle { background:none; border:none; color:var(--rule); font-size:13px; font-style:italic; cursor:pointer; text-decoration:underline; font-family:'Old Standard TT',serif; transition:color .08s; padding:12px 16px; }
-  .settings-toggle:active { color:var(--cream); }
+  .settings-toggle { display:inline-block; border-radius:20px; border:1px solid rgba(201,185,143,.5);
+    background:rgba(255,255,255,.04); color:var(--rule); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+    cursor:pointer; font-family:'Old Standard TT',serif; transition:opacity .08s ease, background .08s ease; padding:9px 20px; }
+  .settings-toggle:active { opacity:.6; background:rgba(255,255,255,.09); }
   .settings { background:rgba(0,0,0,.18); border-radius:6px; padding:16px; margin-top:8px; color:var(--cream); }
   .seg { display:flex; gap:6px; }
   .seg button { padding:6px 14px; border-radius:4px; font-size:14px; cursor:pointer; border:1px solid rgba(255,255,255,.3);
