@@ -1279,13 +1279,22 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Wraps a deal-row in a swipeable foreground so a horizontal drag reveals an
-  // Edit (swipe right) or Delete (swipe left) action underneath. `coord` is a
-  // single {current} box shared by every row in one history render pass, so
-  // opening a new row auto-closes whichever row was previously open. Rows are
-  // fully rebuilt (and this state discarded) on every render(), which is what
-  // implicitly "closes" every swipe whenever anything else changes the pad.
+  // Edit (swipe right) or Delete (swipe left) action underneath. Opening a new
+  // row, or tapping anywhere outside the open row, auto-closes whichever row
+  // was previously open (see swipeCoord below). Rows are also fully rebuilt
+  // (and this state discarded) on every render(), which is what implicitly
+  // "closes" every swipe whenever anything else changes the pad.
   var SWIPE_ACTION_W = 76;
-  function makeSwipeRow(rowEl, coord, onEdit, onDelete) {
+  // Single coordinator shared by every swipe row across every render pass (rather than
+  // recreated per render) so a document-level tap can always find whichever row is
+  // currently open and close it, even when that tap lands outside every deal row.
+  var swipeCoord = { current:null, wrapEl:null };
+  document.addEventListener("pointerdown", function (e) {
+    if (swipeCoord.current && swipeCoord.wrapEl && !swipeCoord.wrapEl.contains(e.target)) {
+      swipeCoord.current(true);
+    }
+  }, true);
+  function makeSwipeRow(rowEl, onEdit, onDelete) {
     // tabindex:-1 — these sit off-screen until swiped into view, so keep them out of tab order.
     var editBtn = el("button", { class:"swipe-action-btn edit disp", "aria-label":"Edit deal", tabindex:"-1",
       onClick:function(e){ e.stopPropagation(); closeSwipe(false); onEdit(); } }, ["Edit"]);
@@ -1308,7 +1317,7 @@ window.SOMERSET_FB_CONFIG = {
     function closeSwipe(animate) {
       openState = 0;
       setTransform(0, animate !== false);
-      if (coord.current === closeSwipe) coord.current = null;
+      if (swipeCoord.current === closeSwipe) { swipeCoord.current = null; swipeCoord.wrapEl = null; }
     }
     function swallowNextClick() {
       fg.addEventListener("click", function swallow(e){ e.stopPropagation(); e.preventDefault(); }, { capture:true, once:true });
@@ -1318,12 +1327,13 @@ window.SOMERSET_FB_CONFIG = {
       if (curX <= -threshold) { openState = -1; setTransform(-SWIPE_ACTION_W, true); }
       else if (curX >= threshold) { openState = 1; setTransform(SWIPE_ACTION_W, true); }
       else { openState = 0; setTransform(0, true); }
-      coord.current = openState !== 0 ? closeSwipe : null;
+      swipeCoord.current = openState !== 0 ? closeSwipe : null;
+      swipeCoord.wrapEl = openState !== 0 ? wrap : null;
     }
     var captured = false;
     fg.addEventListener("pointerdown", function (e) {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      if (coord.current && coord.current !== closeSwipe) coord.current(true);
+      if (swipeCoord.current && swipeCoord.current !== closeSwipe) swipeCoord.current(true);
       startX = e.clientX; startY = e.clientY; dragging = true; decided = false; isHorizontal = false; captured = false;
       pointerId = e.pointerId;
       // Pointer capture is only claimed once a real horizontal drag is confirmed (in
@@ -1515,9 +1525,13 @@ window.SOMERSET_FB_CONFIG = {
     // torn-down row's nodes would otherwise linger stale.
     target.__dealAlign = null;
     target.__dealDescEls = [];
+    // A torn-down row's swipe (if any) no longer exists in the new DOM, so drop any
+    // stale reference to it rather than let the global pointerdown listener above
+    // try to close a detached row.
+    swipeCoord.current = null;
+    swipeCoord.wrapEl = null;
     if (game.deals.length > 0) {
       var runningScore = [0, 0];
-      var swipeCoord = { current:null };   // tracks which row's swipe is open (see makeSwipeRow)
       game.deals.forEach(function (d, idx) {
         var r = dealResult(d), isSet = r[2];
         var delta = dealDelta(d, runningScore);
@@ -1554,7 +1568,7 @@ window.SOMERSET_FB_CONFIG = {
           descEl,
           dealerLabelEl
         ]);
-        history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl, swipeCoord,
+        history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl,
           function(){ startEditDeal(d); },
           function(){ removeDealWithUndo(d, idx); }));
         if (isOpen) {
