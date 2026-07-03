@@ -212,6 +212,12 @@
     background:rgba(255,255,255,.04); color:var(--rule); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
     cursor:pointer; font-family:'Old Standard TT',serif; transition:opacity .08s ease, background .08s ease; padding:9px 20px; }
   .settings-toggle:active { opacity:.6; background:rgba(255,255,255,.09); }
+  .game-actions-row { position:relative; margin-top:14px; min-height:40px; text-align:center; }
+  .settings-gear { position:absolute; right:4px; top:50%; transform:translateY(-50%); width:40px; height:40px;
+    display:flex; align-items:center; justify-content:center; background:transparent; border:none; padding:0;
+    color:var(--rule); cursor:pointer; }
+  .settings-gear:active { opacity:.6; }
+  .settings-gear svg { width:20px; height:20px; }
   .settings { background:rgba(0,0,0,.18); border-radius:6px; padding:16px; margin-top:8px; color:var(--cream); }
   .seg { display:flex; gap:6px; }
   .seg button { padding:6px 14px; border-radius:4px; font-size:14px; cursor:pointer; border:1px solid rgba(255,255,255,.3);
@@ -375,6 +381,20 @@
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
   .history-footer { text-align:center; padding:12px; border-top:1px solid var(--cream-shade); }
   .history-footer .dot-sep { color:var(--ink-soft); margin:0 10px; }
+
+  /* ---- settings view ---- */
+  .settings-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--cream-shade); }
+  .settings-row:last-child { border-bottom:none; }
+  .settings-row-text { display:flex; flex-direction:column; gap:2px; }
+  .settings-row-label { font-size:15px; font-weight:700; color:var(--ink); }
+  .settings-row-sub { font-size:12px; color:var(--ink-soft); font-style:italic; }
+  .switch { position:relative; display:inline-block; flex:none; width:46px; height:26px; }
+  .switch-input { position:absolute; inset:0; opacity:0; margin:0; cursor:pointer; }
+  .switch-track { position:absolute; inset:0; background:var(--cream-shade); border:1px solid var(--rule); border-radius:13px; transition:background .15s ease; pointer-events:none; }
+  .switch-track::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:transform .15s ease; }
+  .switch-input:checked + .switch-track { background:var(--brass); border-color:#886824; }
+  .switch-input:checked + .switch-track::after { transform:translateX(20px); }
+  .switch-input:focus-visible + .switch-track { outline:2px solid var(--brass); outline-offset:2px; }
   .join-code-badge { display:inline-flex; align-items:center; gap:6px; }
   .join-code { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:18px; font-weight:600; letter-spacing:.2em; color:var(--ink); cursor:pointer; border:none; background:none; padding:0; }
   .join-code:active { opacity:.7; }
@@ -466,8 +486,14 @@
   <div class="storage-warn disp" id="storageWarn">Heads up — scores can't be saved on this device (storage is full or blocked), so they'll be lost when you close the app.</div>
   <div id="gameView">
     <div class="pad fade" id="pad"></div>
-    <div style="text-align:center; margin-top:14px;">
+    <div class="game-actions-row">
       <button class="settings-toggle" id="settingsToggle">New Game</button>
+      <button class="settings-gear" id="settingsGear" aria-label="Settings" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
     </div>
     <div id="settingsPanel"></div>
   </div>
@@ -585,6 +611,15 @@ window.SOMERSET_FB_CONFIG = {
   var gameHistory = loadHistory();
   var tourney = loadTourney();
   var nameBook = loadNames();
+
+  // ---- optional features, off by default; toggled from the Settings panel ----
+  var FEATURES_KEY = "somerset:dev-features";
+  function loadFeatures() {
+    try { var r = localStorage.getItem(FEATURES_KEY); if (r) return Object.assign({ trumpEnabled:false }, JSON.parse(r)); } catch (e) {}
+    return { trumpEnabled:false };
+  }
+  function saveFeatures() { try { localStorage.setItem(FEATURES_KEY, JSON.stringify(features)); } catch (e) {} }
+  var features = loadFeatures();
 
   // ---- "Which player am I?" identity, for auto-saving tournament games to my History ----
   var MY_NAME_KEY = "somerset:dev-my-name";         // { code, name } — which roster name is "me" for the active join code
@@ -1412,6 +1447,7 @@ window.SOMERSET_FB_CONFIG = {
     if (inGame) { viewRootEl.innerHTML = ""; padEl.innerHTML = ""; renderScorePad(padEl, "solo"); renderSettings(); }
     else if (ui.view === "history") renderHistory();
     else if (ui.view === "tournament") renderTournament();
+    else if (ui.view === "settings") renderSettingsView();
     renderModal(modalNoFade);
   }
 
@@ -2006,12 +2042,12 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"]),
         who,
         el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
-        el("div", { style:"margin-bottom:14px;" }, [
+        features.trumpEnabled ? el("div", { style:"margin-bottom:14px;" }, [
           el("span", { class:"label disp", style:"display:block; margin-bottom:6px;" }, ["Trump (optional)"]),
           el("div", { class:"chips chips-trump" }, TRUMP_CHIPS.map(function (tc) {
             return el("button", { class:"chip"+(ui.trump===tc?" on":""), onClick:function(){ ui.trump = (ui.trump===tc?"":tc); softRender(); } }, [tc]);
           }))
-        ]),
+        ]) : null,
         el("div", { class:"actions" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null; render(); } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){ ui.bidderPts = ui.bid; ui.entryStep=2; render(); } }, ["Next: play the hand \u2192"])
@@ -2260,6 +2296,29 @@ window.SOMERSET_FB_CONFIG = {
       render();
     };
     reader.readAsText(file);
+  }
+
+  function renderToggle(value, label, onChange) {
+    var input = el("input", { type:"checkbox", class:"switch-input", checked:value, "aria-label":label,
+      onChange:function(){ onChange(input.checked); } });
+    return el("label", { class:"switch" }, [input, el("span", { class:"switch-track", "aria-hidden":"true" }, [])]);
+  }
+
+  function renderSettingsView() {
+    viewRootEl.innerHTML = "";
+    var card = el("div", { class:"pad fade" }, [
+      el("div", { class:"view-head disp" }, ["Settings"]),
+      el("div", { class:"settings-row" }, [
+        el("div", { class:"settings-row-text" }, [
+          el("span", { class:"settings-row-label disp" }, ["Record trump suit"]),
+          el("span", { class:"settings-row-sub disp" }, ["Show the trump picker when recording a deal."])
+        ]),
+        renderToggle(features.trumpEnabled, "Record trump suit", function (v) {
+          features.trumpEnabled = v; saveFeatures(); render();
+        })
+      ])
+    ]);
+    viewRootEl.appendChild(card);
   }
 
   function renderHistory() {
@@ -3639,6 +3698,10 @@ window.SOMERSET_FB_CONFIG = {
     ui.confirmReset = !ui.confirmReset;
     ui.showSettings = false;
     render();
+  });
+
+  document.getElementById("settingsGear").addEventListener("click", function () {
+    ui.view = "settings"; render();
   });
 
   window.addEventListener("resize", function () {
