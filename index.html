@@ -306,7 +306,7 @@
   .hist-date-group { border-bottom:2px solid var(--brass); }
   .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:10px 12px; cursor:pointer; background:var(--cream-shade); }
   .hist-date-title { font-size:14px; font-weight:700; color:var(--ink); }
-  .hist-date-sum { font-size:12px; color:var(--ink-soft); font-style:italic; margin-left:14px; }
+  .hist-date-sum { font-size:12px; color:var(--ink-soft); font-style:italic; margin-left:24px; }
   .hist-t-group { border-top:1px solid var(--cream-shade); }
   .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 8px 22px; cursor:pointer; }
   .hist-t-title { font-size:13px; font-weight:700; color:var(--brass-text); }
@@ -2463,17 +2463,17 @@ window.SOMERSET_FB_CONFIG = {
     });
     return { champion: champion };
   }
-  // "Standard game", "Best of 5 Series", "Double Elimination Tournament", etc.
+  // "Standard Game", "Best of 5 Series", "Double Elimination Tournament", etc.
   function modeLabel(rec, fallbackBestOf) {
     var t = rec.tournament;
-    if (!t) return "Standard game";
+    if (!t) return "Standard Game";
     if (t.format === "series") return "Best of " + (t.bestOf || fallbackBestOf || "?") + " Series";
     return formatName(t.format) + " Tournament";
   }
   // "N games · Mode" (or a comma-joined list of modes when a group mixes them),
   // no per-team win/loss breakdown — that detail lives in the expanded items.
   function statsSummaryText(records) {
-    var txt = records.length + (records.length === 1 ? " game" : " games");
+    var txt = records.length + (records.length === 1 ? " Game" : " Games");
     var fallbackBestOf = records.reduce(function (found, rec) {
       return found || (rec.tournament && rec.tournament.bestOf);
     }, null);
