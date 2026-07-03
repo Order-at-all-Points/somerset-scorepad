@@ -529,7 +529,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- State ----
   function freshGame() {
-    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[], archivedId:null };
+    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[], archivedId:null, pendingBid:null };
   }
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
@@ -860,6 +860,7 @@ window.SOMERSET_FB_CONFIG = {
       if (d && d.pts) d.pts = fbObjToArr(d.pts);
       return d;
     }) : [];
+    if (g.pendingBid === undefined) g.pendingBid = null;   // Firebase drops null fields
     return g;
   }
   function normalizeFirebaseMatches(rounds) {
@@ -1184,6 +1185,7 @@ window.SOMERSET_FB_CONFIG = {
     g.target = 50;
     if (!Array.isArray(g.deals)) g.deals = [];
     if (!("archivedId" in g)) g.archivedId = null;
+    if (!("pendingBid" in g)) g.pendingBid = null;
     return g;
   }
   function persist() {
@@ -1673,7 +1675,9 @@ window.SOMERSET_FB_CONFIG = {
     if (isReadOnly) {
       var viewBarText = gameOver
         ? ("Match complete \u2014 " + (win === "tie" ? "Tied" : (game.teams[win] + " won")))
-        : "Viewing \u2014 being edited on another device";
+        : (game.pendingBid
+            ? (game.teams[game.pendingBid.bidTeam] + (game.pendingBid.bid === POINTS_PER_DEAL ? " bid 14 (moon)" : (" bid " + game.pendingBid.bid)) + " \u2014 playing the hand")
+            : "Viewing \u2014 being edited on another device");
       pad.appendChild(el("div", { class:"view-only-bar disp" }, [viewBarText]));
     } else if (ui.showEntry) {
       pad.appendChild(renderEntry(dealNo));
@@ -2128,8 +2132,18 @@ window.SOMERSET_FB_CONFIG = {
         ]),
         */
         el("div", { class:"actions" }, [
-          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null; render(); } }, ["Cancel"]),
-          el("button", { class:"btn btn-record disp", onClick:function(){ ui.bidderPts = ui.bid; ui.entryStep=2; render(); } }, ["Next: play the hand \u2192"])
+          el("button", { class:"btn btn-cancel disp", onClick:function(){
+            ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
+            if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
+          } }, ["Cancel"]),
+          el("button", { class:"btn btn-record disp", onClick:function(){
+            ui.bidderPts = ui.bid; ui.entryStep=2;
+            // Broadcast the confirmed bid to observers (join-by-code guests watching a
+            // locked match) so they see it before the deal is recorded. Skip while
+            // editing an already-recorded deal \u2014 that deal is already visible to them.
+            if (ui.editingDeal == null) { game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid }; persist(); }
+            else render();
+          } }, ["Next: play the hand \u2192"])
         ])
       ]);
       return el("div", { class:"entry" }, kids1);
@@ -2264,6 +2278,7 @@ window.SOMERSET_FB_CONFIG = {
     } else {
       game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, /* trump:ui.trump.trim(), */ pts:pts, dealer:dealerSeat() });
     }
+    game.pendingBid = null;
     // reset form, alternate default bidder
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
     ui.bid = 6; /* ui.trump = ""; */ ui.bidderPts = 6;
@@ -3062,6 +3077,7 @@ window.SOMERSET_FB_CONFIG = {
     var hasUnrecordedResult = m.game && (gameWinner(m.game) === 0 || gameWinner(m.game) === 1);
     if (hasUnrecordedResult) { ui.backConfirm = true; render(); return; }
     if (!isCompleted) releaseLock(am);
+    if (m.game) m.game.pendingBid = null;
     ui.activeMatch = null; ui.showEntry = false;
     if (!isCompleted) saveTourney();
     render();
@@ -3777,7 +3793,11 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.joinSheet) { ui.joinSheet = false; ui.joinError = null; render(); return true; }
     if (ui.backConfirm) { ui.backConfirm = false; render(); return true; }
     if (ui.matchMenu != null) { ui.matchMenu = null; render(); return true; }
-    if (ui.showEntry) { ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null; render(); return true; }
+    if (ui.showEntry) {
+      ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null;
+      if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
+      return true;
+    }
     if (ui.activeMatch) { leaveMatch(); return true; }
     if (ui.view !== "game") { ui.view = "game"; render(); return true; }
     return false;
