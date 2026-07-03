@@ -172,6 +172,8 @@
   .chip.on:active { transform:scale(.93); box-shadow:none; }
   .chip[disabled] { opacity:.45; cursor:default; box-shadow:none; }
   .chip[disabled]:active { transform:none; }
+  .chips-fit { flex-wrap:nowrap; gap:4px; }
+  .chips-fit .chip { flex:1; padding:9px 2px; text-align:center; font-size:12px; }
   /* Trump recording disabled for now — see recordDeal()/renderEntry() in the script below.
   .chips-trump { flex-wrap:nowrap; gap:4px; }
   .chips-trump .chip { flex:1; padding:9px 0; text-align:center; }
@@ -3224,7 +3226,7 @@ window.SOMERSET_FB_CONFIG = {
     card.appendChild(msgEl);
 
     var fmts = [["single", "Single Elim"], ["double", "Double Elim"], ["round", "Round Robin"]];
-    var frow = el("div", { class:"chips" }, fmts.map(function (f) {
+    var frow = el("div", { class:"chips chips-fit" }, fmts.map(function (f) {
       return el("button", { class:"chip disp" + (s.format === f[0] ? " on" : ""),
         onClick: function(){ s.format = f[0]; softRender(); } }, [ f[1] ]);
     }));
@@ -3235,7 +3237,7 @@ window.SOMERSET_FB_CONFIG = {
     drawBtn = el("button", { class:"btn btn-add disp", onClick:function(){
       if (recompute()) { s.drawn = drawTeams(s.players.map(function (p) { return p.trim(); })); softRender(); }
     } }, [ s.drawn ? "Re-draw teams" : "Draw teams" ]);
-    card.appendChild(el("div", { style:"padding:8px 12px 0;" }, [ drawBtn ]));
+    card.appendChild(el("div", { style:"padding:8px 12px 14px;" }, [ drawBtn ]));
 
     if (s.drawn) {
       var list = el("div", { class:"draw-list" });
