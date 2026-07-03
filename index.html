@@ -39,9 +39,11 @@
     -webkit-text-size-adjust: 100%;
     -webkit-user-select: none; user-select: none;
     /* Without this, dropping maximum-scale=1 (pinch-zoom fix) reinstates
-       Safari's ~300ms tap delay + double-tap-to-zoom gesture, which can eat
-       taps on low-feedback controls. touch-action:manipulation removes the
-       delay/double-tap-zoom while still allowing pinch-zoom. */
+       Safari's ~300ms tap delay, which can eat taps on low-feedback controls.
+       touch-action:manipulation removes that delay while still allowing
+       pinch-zoom. iOS Safari still triggers double-tap-to-zoom regardless
+       (touch-action can't separate it from pinch-zoom there) — see the
+       touchend listener near the top of the main <script> for that. */
     touch-action: manipulation;
   }
   .wrap { max-width: 480px; margin: 0 auto; }
@@ -498,6 +500,28 @@ window.SOMERSET_FB_CONFIG = {
 <script>
 (function () {
   "use strict";
+
+  // iOS Safari still fires double-tap-to-zoom even with touch-action:manipulation
+  // (see index.html head) as long as pinch-zoom is left enabled — the two gestures
+  // aren't actually separable there via CSS. Swallow the second tap of a fast,
+  // same-spot double-tap in JS instead, but leave controls a user might legitimately
+  // tap twice fast (steppers, buttons) alone so this doesn't eat real clicks.
+  (function () {
+    var lastTouchEnd = 0, lastTouchX = 0, lastTouchY = 0;
+    document.addEventListener("touchend", function (e) {
+      if (e.touches.length > 0) return;
+      var t = e.changedTouches[0];
+      var now = Date.now();
+      var dx = t ? Math.abs(t.clientX - lastTouchX) : Infinity;
+      var dy = t ? Math.abs(t.clientY - lastTouchY) : Infinity;
+      var onControl = e.target.closest && e.target.closest("button, input, a, select, textarea, [role='button']");
+      if (now - lastTouchEnd <= 350 && dx < 30 && dy < 30 && !onControl) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+      if (t) { lastTouchX = t.clientX; lastTouchY = t.clientY; }
+    }, { passive: false });
+  })();
 
   var STORAGE_KEY = "somerset:dev-v1";
   var POINTS_PER_DEAL = 14;
