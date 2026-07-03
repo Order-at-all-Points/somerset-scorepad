@@ -2012,7 +2012,7 @@ window.SOMERSET_FB_CONFIG = {
       var kids1 = header.concat([
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"]),
         who,
-        el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
+        el("div", { class:"row", style:"padding:10px 0; margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
         /* Trump recording disabled for now.
         el("div", { style:"margin-bottom:14px;" }, [
           el("span", { class:"label disp", style:"display:block; margin-bottom:6px;" }, ["Trump (optional)"]),
