@@ -313,13 +313,12 @@
   .hist-t-sum { font-size:12px; color:var(--ink-soft); font-style:italic; margin-left:14px; }
   .hist-entry { border-bottom:1px solid var(--cream-shade); }
   .hist-item { padding:10px 12px; cursor:pointer; }
-  .hist-line { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .hist-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
   .hist-line.stack { flex-direction:column; align-items:stretch; gap:2px; }
-  .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px; min-width:0; flex:1 1 auto; }
-  .hist-score .hs-team { white-space:nowrap; }
-  .hist-score .hs-div { color:var(--ink-soft); }
-  .hist-score.wrapped .hs-div { display:none; }
-  .hist-score.wrapped .hs-team { flex-basis:100%; }   /* divider dropped → give each team its own row, not a run-on line */
+  .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:grid; grid-template-columns:1fr auto; column-gap:10px; row-gap:2px; min-width:0; flex:1 1 auto; }
+  .hs-row { display:contents; }
+  .hs-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hs-score { text-align:right; white-space:nowrap; }
   .hist-win { font-size:13px; color:var(--brass-text); font-weight:700; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   .hist-meta { font-size:12px; color:var(--ink-soft); font-style:italic; margin-top:3px; }
@@ -2432,12 +2431,9 @@ window.SOMERSET_FB_CONFIG = {
     return wrap;
   }
 
-  // Fix up each history summary line after layout:
-  //  1. When both team names can't share one line, wrap the score at the divider (never
-  //     mid-name) and drop the now-redundant "|".
-  //  2. When the score text would collide with the right-hand "… won" label, stack the
-  //     label onto its own line below the score instead of overlapping it.
-  // Measured in the default (row, divider-shown) layout so detection is consistent.
+  // Fix up each history summary line after layout: when the score column would collide
+  // with the right-hand "… won" label, stack the label onto its own line below the score
+  // instead of overlapping it.
   function applyScoreWrap() {
     var lines = viewRootEl.querySelectorAll(".hist-line");
     for (var i = 0; i < lines.length; i++) {
@@ -2446,15 +2442,12 @@ window.SOMERSET_FB_CONFIG = {
       var win = line.querySelector(".hist-win");
       if (!score) continue;
       line.classList.remove("stack");
-      score.classList.remove("wrapped");
-
-      var teams = score.querySelectorAll(".hs-team");
-      if (teams.length >= 2 && teams[1].offsetTop > teams[0].offsetTop) score.classList.add("wrapped");
 
       if (win) {
-        // Compare actual text extents (the team spans), not the flex-grown score box.
+        // Compare actual text extents (the name/score cells), not the grid-grown score box.
+        var cells = score.querySelectorAll(".hs-name, .hs-score");
         var contentRight = 0;
-        for (var t = 0; t < teams.length; t++) contentRight = Math.max(contentRight, teams[t].getBoundingClientRect().right);
+        for (var t = 0; t < cells.length; t++) contentRight = Math.max(contentRight, cells[t].getBoundingClientRect().right);
         if (contentRight > win.getBoundingClientRect().left - 4) line.classList.add("stack");
       }
     }
@@ -2465,20 +2458,20 @@ window.SOMERSET_FB_CONFIG = {
     var isChamp = !!(rec.tournament && rec.tournament.championship);
     var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
-    // Manual entries have no score; otherwise append each team's total. Either way the
-    // teams share one "|"-divided line, and applyScoreWrap stacks them (hiding the "|")
-    // when they don't fit.
-    var hsTeam = function (i) {
-      return el("span", { class:"hs-team" },
-        manual ? [ rec.teams[i] ] : [ rec.teams[i] + " ", el("b", {}, [ String(rec.totals[i]) ]) ]);
+    // Manual entries have no score. Otherwise each team gets its own row so the two
+    // totals form a vertically-aligned column regardless of team-name length.
+    var hsRow = function (i) {
+      return el("div", { class:"hs-row" }, [
+        el("span", { class:"hs-name" }, [ rec.teams[i] ]),
+        manual ? null : el("span", { class:"hs-score mono" }, [ String(rec.totals[i]) ])
+      ].filter(function (x) { return x; }));
     };
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
       el("div", { class:"hist-line" }, [
-        el("span", { class:"hist-score mono" }, [
-          hsTeam(0),
-          el("span", { class:"hs-div" }, ["–"]),
-          hsTeam(1)
+        el("div", { class:"hist-score" }, [
+          hsRow(0),
+          hsRow(1)
         ]),
         el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
