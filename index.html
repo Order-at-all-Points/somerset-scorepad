@@ -1312,24 +1312,34 @@ window.SOMERSET_FB_CONFIG = {
     var openState = 0, curX = 0, dragging = false, decided = false, isHorizontal = false, startX = 0, startY = 0, pointerId = 0, baseX = 0;
     // Set only while a drag is confirmed to be a same-direction re-swipe of an
     // already-peeked row, arriving inside SWIPE_EXPAND_WINDOW_MS of the last peek.
-    var canExpand = false, fullW = 0, expandedActionsEl = null, resetExpandTimer = null, lastPeekTime = 0;
+    var canExpand = false, fullW = 0, expandedActionsEl = null, otherActionsEl = null,
+        resetExpandTimer = null, pendingUndo = null, lastPeekTime = 0;
 
     function setTransform(x, animate) {
       fg.style.transition = animate ? "transform .18s ease-out" : "none";
       fg.style.transform = "translateX(" + x + "px)";
       curX = x;
     }
-    // Undoes the width bump applied while expanding (see the pointermove decide
-    // block below). Deferred so it fires after fg's own slide-back animation
-    // finishes, otherwise the wider action div would visibly shrink out from
-    // under the still-sliding foreground.
+    // Undoes the overrides applied while expanding (see the pointermove decide
+    // block below): the width bump on the expanded action div and the
+    // visibility:hidden on its sibling. Deferred so it fires after fg's own
+    // slide-back animation finishes, otherwise the wider action div would
+    // visibly shrink out from under the still-sliding foreground. A deferred
+    // undo that is superseded by a later resetExpand call runs immediately
+    // instead of being dropped, so no element is ever left with stale overrides.
     function resetExpand(animate) {
       if (resetExpandTimer) { clearTimeout(resetExpandTimer); resetExpandTimer = null; }
-      var elToReset = expandedActionsEl;
-      expandedActionsEl = null;
+      if (pendingUndo) { var prev = pendingUndo; pendingUndo = null; prev(); }
+      var elToReset = expandedActionsEl, otherToRestore = otherActionsEl;
+      expandedActionsEl = null; otherActionsEl = null;
       if (!elToReset) return;
-      if (animate) resetExpandTimer = setTimeout(function () { elToReset.style.width = ""; }, 190);
-      else elToReset.style.width = "";
+      var undo = function () {
+        resetExpandTimer = null; pendingUndo = null;
+        elToReset.style.width = "";
+        if (otherToRestore) otherToRestore.style.visibility = "";
+      };
+      if (animate) { pendingUndo = undo; resetExpandTimer = setTimeout(undo, 190); }
+      else undo();
     }
     function closeSwipe(animate) {
       openState = 0;
@@ -1389,9 +1399,20 @@ window.SOMERSET_FB_CONFIG = {
         if (openState !== 0 && dirSign === (openState > 0 ? 1 : -1) &&
             (Date.now() - lastPeekTime) <= SWIPE_EXPAND_WINDOW_MS) {
           canExpand = true;
+          // The previous peek-settle may still have a deferred reset pending;
+          // flush it now (synchronously, so no paint happens in between) rather
+          // than let it fire mid-expand and snap the action back to peek width.
+          resetExpand(false);
           fullW = wrap.getBoundingClientRect().width;
           expandedActionsEl = dirSign === 1 ? leftActions : rightActions;
+          otherActionsEl = dirSign === 1 ? rightActions : leftActions;
           expandedActionsEl.style.width = fullW + "px";
+          // Neither action div has a z-index, so paint order is DOM order and
+          // the widened div would end its growth underneath its later sibling
+          // (a fully-expanded Edit gets its tail covered — visually and for
+          // hit-testing — by the 76px Delete anchored at right:0). Hide the
+          // sibling for the duration of the expand instead.
+          otherActionsEl.style.visibility = "hidden";
         }
       }
       if (!isHorizontal) return;
@@ -1419,6 +1440,10 @@ window.SOMERSET_FB_CONFIG = {
     fg.addEventListener("pointercancel", function () {
       dragging = false;
       if (captured) { try { fg.releasePointerCapture(pointerId); } catch (err) {} captured = false; }
+      // A cancelled expand-attempt never reached settle(), so undo its
+      // overrides here — unless the row was already settled at full expand
+      // before this gesture, in which case they must stay.
+      if (Math.abs(openState) !== 2) resetExpand(true);
       setTransform((openState < 0 ? -1 : openState > 0 ? 1 : 0) * (Math.abs(openState) === 2 ? fullW : SWIPE_ACTION_W), true);
     });
 
