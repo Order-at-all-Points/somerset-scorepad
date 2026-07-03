@@ -388,7 +388,6 @@
   .sync-dot.error { background:var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   .sync-label { font-size:12px; color:var(--ink-soft); font-style:italic; }
-  .sync-copy-hint { font-size:11px; color:var(--brass-text); font-style:italic; }
   .join-input { width:100%; padding:14px; box-sizing:border-box; border:2px solid var(--rule); border-radius:6px;
     font-size:26px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-weight:600; letter-spacing:.28em; color:var(--ink);
     background:#fff; text-align:center; text-transform:uppercase; margin-bottom:12px; }
@@ -3532,8 +3531,7 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])]),
         el("span", { class:"join-code-badge" }, [
           el("span", { class:"sync-label disp" }, ["Code: "]),
-          codeBtn,
-          el("span", { class:"sync-copy-hint" }, [" tap to copy"])
+          codeBtn
         ])
       ]));
       var meNow = myNameForCurrentTourney();
