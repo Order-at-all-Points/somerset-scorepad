@@ -1695,7 +1695,7 @@ window.SOMERSET_FB_CONFIG = {
     } else if (gameOver) {
       pad.appendChild(el("div", { class:"add-wrap" }, [
         isMatch
-          ? el("button", { class:"btn btn-new disp", onClick:recordMatchResult }, ["Save Result"])
+          ? el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
           : el("button", { class:"btn btn-new disp", onClick:newGame }, ["New Game"])
       ]));
     } else {
@@ -1944,16 +1944,16 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.backConfirm && ui.activeMatch) {
       var bcAm = ui.activeMatch, bcM = getActiveMatchObj(bcAm);
-      var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Unsaved result", onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp" }, ["Unsaved result"]),
+      var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Bracket not updated", onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Update the bracket?"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
-          ["This match has a winner. Save the result before leaving or it will be lost."]),
-        el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; recordMatchResult(); } }, ["Save Result"]),
+          ["This match has a winner. The game is already saved to History — return to the bracket to advance it, or leave the match marked in-progress."]),
+        el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; returnToBracket(); } }, ["Return to Bracket"]),
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
           ui.backConfirm = false; releaseLock(bcAm);
           ui.activeMatch = null; ui.showEntry = false;
           saveTourney(); render();
-        } }, ["Leave without saving"]),
+        } }, ["Leave without updating bracket"]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.backConfirm = false; render(); } }, ["Stay"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.backConfirm = false; render(); } }, [bcSheet]));
@@ -2309,13 +2309,20 @@ window.SOMERSET_FB_CONFIG = {
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
     ui.bid = 6; /* ui.trump = ""; */ ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
-    // Solo games archive themselves the moment they're won, so a game is never
-    // lost to history just because the player didn't tap "New Game" (matches
-    // stay excluded — they archive explicitly via "Save Result", which also
-    // advances the tournament bracket).
-    if (!ui.activeMatch && !game.archivedId) {
+    // Games archive themselves the moment they're won, so a result is never
+    // lost to history just because nobody tapped a button. Tournament matches
+    // still need an explicit "Return to Bracket" tap before the bracket itself
+    // advances (see returnToBracket) — only the History record is automatic here.
+    if (!game.archivedId) {
       var win = winner();
-      if (win === 0 || win === 1) game.archivedId = archiveCurrentGame() || null;
+      if (win === 0 || win === 1) {
+        if (ui.activeMatch) {
+          var am = ui.activeMatch, m = getActiveMatchObj(am);
+          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
+        } else {
+          game.archivedId = archiveCurrentGame() || null;
+        }
+      }
     }
     persist();
   }
@@ -3029,7 +3036,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Finish a match from the bracket menu (manual "[Team] won"). A game played to
-  // a finish is archived just like the in-app "Save Result" path; otherwise the
+  // a finish is archived just like the in-app auto-save path; otherwise the
   // hand-picked winner is still logged as a manual result. Either way, badge the
   // record if this clinched the title.
   function recordManualMatchWin(am, m, teamIdx) {
@@ -3055,13 +3062,17 @@ window.SOMERSET_FB_CONFIG = {
     markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
   }
 
-  function recordMatchResult() {
+  function returnToBracket() {
     var am = ui.activeMatch, m = getActiveMatchObj(am);
     var win = gameWinner(m.game);                 // 0 or 1
     var tournTeam = (win === 0) ? m.a : m.b;
     var champBefore = tourney.champion;
-    archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
-    var justArchived = gameHistory[0];            // archiveCurrentGame unshifts the new record
+    // The game itself was already archived to History as soon as it was won
+    // (see recordDeal); this only covers the rare case that didn't happen yet.
+    if (!m.game.archivedId) {
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
+    }
+    var justArchived = gameHistory[0];
     releaseLock(am);
     m.completedGame = JSON.parse(JSON.stringify(m.game));
     m.game = null;
