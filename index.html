@@ -1534,6 +1534,15 @@ window.SOMERSET_FB_CONFIG = {
 
   function softRender() { suppressFade = true; render(); }   // re-render without the fade-in flash
 
+  // Brings the just-opened deal-entry panel into view. Called once, right after the
+  // render() that flips ui.showEntry to true — not on every re-render, or the
+  // stepper/who-bid taps inside the panel would keep yanking the page around.
+  function scrollEntryIntoView() {
+    var container = ui.view === "game" ? padEl : viewRootEl;
+    var entryEl = container && container.querySelector(".entry");
+    if (entryEl) entryEl.scrollIntoView({ behavior:"smooth", block:"start" });
+  }
+
   function renderScorePad(target, mode) {
     var noFade = suppressFade; suppressFade = false;   // consume flag; reset for next call
     var isMatch = mode === "match";
@@ -1691,7 +1700,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); } },
+        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); scrollEntryIntoView(); } },
           ["Record Deal " + dealNo])
       ]));
     }
@@ -2269,6 +2278,7 @@ window.SOMERSET_FB_CONFIG = {
     ui.entryStep = 1;
     ui.openDeal = null;
     render();
+    scrollEntryIntoView();
   }
 
   function recordDeal() {
