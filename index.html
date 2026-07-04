@@ -545,7 +545,8 @@ window.SOMERSET_FB_CONFIG = {
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
-    openDeal:null, whoSheet:false, editingDeal:null
+    openDeal:null, whoSheet:false, editingDeal:null,
+    series:null, offerSeries:null, seriesResult:null
   };
 
   // ---- History + tournament storage ----
@@ -1694,11 +1695,38 @@ window.SOMERSET_FB_CONFIG = {
     } else if (ui.showEntry) {
       pad.appendChild(renderEntry(dealNo));
     } else if (gameOver) {
-      pad.appendChild(el("div", { class:"add-wrap" }, [
-        isMatch
-          ? el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
-          : el("button", { class:"btn btn-new disp", onClick:newGame }, ["New Game"])
-      ]));
+      if (isMatch) {
+        pad.appendChild(el("div", { class:"add-wrap" }, [
+          el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
+        ]));
+      } else if (ui.series) {
+        var sw = ui.series.wins, nextNum = sw[0] + sw[1] + 1;
+        pad.appendChild(el("div", { class:"add-wrap" }, [
+          el("div", { class:"series-score" }, [
+            el("div", { class:"series-side" }, [
+              el("span", { class:"series-team-name" }, [game.teams[0]]),
+              el("span", { class:"series-wins" }, [String(sw[0])])
+            ]),
+            el("div", { class:"series-dash" }, ["–"]),
+            el("div", { class:"series-side" }, [
+              el("span", { class:"series-wins" }, [String(sw[1])]),
+              el("span", { class:"series-team-name" }, [game.teams[1]])
+            ])
+          ]),
+          el("p", { class:"series-sub disp" }, ["Best of " + ui.series.bestOf]),
+          el("button", { class:"btn btn-new disp", onClick:function(){ newGame(true); } }, ["Play Game " + nextNum])
+        ]));
+      } else {
+        var kids = [];
+        if (ui.seriesResult) {
+          var sr = ui.seriesResult;
+          kids.push(el("p", { class:"series-sub disp" }, [
+            game.teams[sr.winnerIdx] + " win the series " + sr.wins[sr.winnerIdx] + "–" + sr.wins[1 - sr.winnerIdx] + "!"
+          ]));
+        }
+        kids.push(el("button", { class:"btn btn-new disp", onClick:function(){ newGame(); } }, ["New Game"]));
+        pad.appendChild(el("div", { class:"add-wrap" }, kids));
+      }
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
         el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); scrollEntryIntoView(); } },
@@ -1808,6 +1836,23 @@ window.SOMERSET_FB_CONFIG = {
   function renderModal(noFade) {
     modalRoot.innerHTML = "";
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
+    if (ui.offerSeries) {
+      var os = ui.offerSeries;
+      var offerMsg = (os.bestOf === 3)
+        ? (game.teams[os.seedWinner] + " won! Play a best-of-3 series?")
+        : (ui.seriesResult
+            ? (game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
+            : "Play a best-of-5 series?");
+      var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
+        onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink); margin:8px 0 14px;" }, [offerMsg]),
+        el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Yes, Best of " + os.bestOf]),
+        el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet]));
+      return;
+    }
     if (ui.confirmReset) {
       var resetDone = winner() !== null;
       var resetSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Start a new game",
@@ -2322,6 +2367,7 @@ window.SOMERSET_FB_CONFIG = {
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
         } else {
           game.archivedId = archiveCurrentGame() || null;
+          handleGameCompleteForSeries(win);
         }
       }
     }
@@ -2349,7 +2395,7 @@ window.SOMERSET_FB_CONFIG = {
     return id;
   }
 
-  function newGame() {
+  function newGame(keepSeries) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) archiveCurrentGame();   // safety net — normally already auto-archived on completion
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
@@ -2357,7 +2403,42 @@ window.SOMERSET_FB_CONFIG = {
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
     game = soloGame;
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
+    if (!keepSeries) { ui.series = null; ui.offerSeries = null; ui.seriesResult = null; }
     persist();
+  }
+
+  // Best-of-N follow-up for casual (non-tournament) games: offer a series once a
+  // standalone game is won, track wins across the games the player then chooses
+  // to play, and escalate best-of-3 -> best-of-5 (but no further) on completion.
+  function handleGameCompleteForSeries(win) {
+    if (ui.series) {
+      ui.series.wins[win]++;
+      var target = Math.floor(ui.series.bestOf / 2) + 1;
+      if (ui.series.wins[win] >= target) {
+        var finished = ui.series;
+        ui.seriesResult = { bestOf:finished.bestOf, winnerIdx:win, wins:finished.wins.slice() };
+        ui.series = null;
+        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5 } : null;
+      }
+    } else if (!ui.offerSeries) {
+      ui.offerSeries = { bestOf:3, seedWinner:win };
+    }
+  }
+
+  function acceptSeriesOffer() {
+    var o = ui.offerSeries;
+    var wins = [0, 0];
+    if (o.seedWinner === 0 || o.seedWinner === 1) wins[o.seedWinner] = 1;
+    ui.series = { bestOf:o.bestOf, wins:wins };
+    ui.offerSeries = null;
+    ui.seriesResult = null;
+    newGame(true);
+  }
+
+  function declineSeriesOffer() {
+    ui.offerSeries = null;
+    ui.seriesResult = null;
+    render();
   }
 
   function renderSettings() {
