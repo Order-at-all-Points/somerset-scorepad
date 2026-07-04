@@ -2504,26 +2504,12 @@ window.SOMERSET_FB_CONFIG = {
     });
     return { champion: champion };
   }
-  // "Standard Game", "Best of 5 Series", "Double Elimination Tournament", etc.
-  function modeLabel(rec, fallbackBestOf) {
-    var t = rec.tournament;
-    if (!t) return "Standard Game";
-    if (t.format === "series") return "Best of " + (t.bestOf || fallbackBestOf || "?") + " Series";
-    return formatName(t.format) + " Tournament";
-  }
-  // "N games · Mode" (or a comma-joined list of modes when a group mixes them),
-  // no per-team win/loss breakdown — that detail lives in the expanded items.
-  function statsSummaryText(records) {
+  // "N Games, Tournament" or "N Games, Standard" — no per-team win/loss
+  // breakdown or specific format name here, that detail lives in the group
+  // header (tournament) or is implied (standard).
+  function statsSummaryText(records, isTournament) {
     var txt = records.length + (records.length === 1 ? " Game" : " Games");
-    var fallbackBestOf = records.reduce(function (found, rec) {
-      return found || (rec.tournament && rec.tournament.bestOf);
-    }, null);
-    var modes = [], seen = {};
-    records.forEach(function (rec) {
-      var lbl = modeLabel(rec, fallbackBestOf);
-      if (!seen[lbl]) { seen[lbl] = true; modes.push(lbl); }
-    });
-    if (modes.length) txt += " · " + modes.join(", ");
+    txt += ", " + (isTournament ? "Tournament" : "Standard");
     return txt;
   }
   // "Best of 5", "Double Elimination", etc. — short form for the group header title.
@@ -2539,13 +2525,13 @@ window.SOMERSET_FB_CONFIG = {
     var champBadge = "";
     if (g.isTournament) {
       var stats = groupStats(recs);
-      champBadge = stats.champion ? " · 🏆 " + stats.champion : "";
+      champBadge = stats.champion ? ", 🏆 " + stats.champion : "";
     }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[g.key] = !open; render();
     } }, [
       el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass-text);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
-      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs) + champBadge ])
+      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs, g.isTournament) + champBadge ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
     if (open) recs.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
