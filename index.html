@@ -1681,8 +1681,9 @@ window.SOMERSET_FB_CONFIG = {
 
     // Entry or Add button
     var gameOver = (win === 0 || win === 1);
-    // Hide the bottom "New Game" text link once the main button becomes "New Game"
-    if (!isMatch) settingsToggleEl.style.display = gameOver ? "none" : "";
+    // Hide the bottom "New Game" text link once the main button becomes "New Game",
+    // and hide it before the first deal too — there's nothing yet for it to reset.
+    if (!isMatch) settingsToggleEl.style.display = (gameOver || !game.deals.length) ? "none" : "";
     if (isReadOnly) {
       var viewBarText = gameOver
         ? ("Match complete \u2014 " + (win === "tie" ? "Tied" : (game.teams[win] + " won")))
