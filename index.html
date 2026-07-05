@@ -66,12 +66,12 @@
   h1 { color:var(--cream); font-family:var(--font-display); font-size:34px; margin:2px 0 0; font-weight:600; letter-spacing:.04em; }   /* Large Title; tracking OK — all-caps */
   .subtitle { color:var(--rule); font-family:var(--font-display); font-style:italic; font-size:13px; margin:2px 0 0; }
 
-  .pad { background:var(--cream); border-radius:var(--r-card); box-shadow:0 10px 30px rgba(0,0,0,.35), 0 2px 4px rgba(0,0,0,.2); overflow:hidden; }
+  .pad { background:var(--cream); border-radius:var(--r-card); box-shadow:0 1px 2px rgba(0,0,0,.15), 0 12px 32px rgba(0,0,0,.22); overflow:hidden; }
   .fade { animation: fade .35s ease both; }
   @keyframes fade { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
   @media (prefers-reduced-motion: reduce) { .fade { animation:none; } }
 
-  .banner { background:var(--brass); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
+  .banner { background:var(--brass-text); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
 
   .totals { display:grid; grid-template-columns:1fr 1px 1fr; border-bottom:1px solid var(--rule); }
   .team { padding:16px 12px 12px; text-align:center; }
@@ -127,7 +127,7 @@
   .swipe-action-btn.delete { background:var(--red); }
   .swipe-action-btn:active { filter:brightness(.92); }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
-  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:15px; box-shadow:0 6px 18px rgba(0,0,0,.45); z-index:60; white-space:nowrap; }
+  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.3); z-index:60; white-space:nowrap; }
   .undo-toast button { background:none; border:none; color:var(--rule); font-size:15px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:8px 12px; }
   .deal-detail b { font-weight:600; color:var(--brass-text); margin-left:4px; }
   .del { background:none; border:none; color:var(--ink-soft); font-size:17px; cursor:pointer; padding:12px; border-radius:var(--r-control); transition:color .08s, background .08s; line-height:1; }
@@ -263,7 +263,7 @@
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center;
     padding:24px max(24px, env(safe-area-inset-left)); z-index:60; }
   .sheet { background:var(--cream); border-radius:var(--r-sheet); width:100%; max-width:320px; padding:20px 16px 12px;
-    box-shadow:0 18px 44px rgba(0,0,0,.45); }
+    box-shadow:0 2px 6px rgba(0,0,0,.15), 0 18px 44px rgba(0,0,0,.3); }
   /* Centered modals fade opacity-only: the .fade translateY would make the
      auto-selected name's blue highlight visibly slide as the sheet settles. */
   .sheet.fade { animation:sheet-in .35s ease both; }
@@ -272,7 +272,7 @@
   @media (max-width:520px) {
     .overlay { align-items:flex-end; padding:0; }
     .sheet { max-width:none; border-radius:var(--r-sheet) var(--r-sheet) 0 0; padding:20px 16px calc(16px + env(safe-area-inset-bottom));
-      box-shadow:0 -12px 40px rgba(0,0,0,.4); }
+      box-shadow:0 -2px 6px rgba(0,0,0,.12), 0 -16px 40px rgba(0,0,0,.28); }
     .sheet.fade { animation:sheet-up .3s ease both; }
   }
   @keyframes sheet-up { from { opacity:.4; transform:translateY(40px); } to { opacity:1; transform:none; } }
@@ -311,7 +311,9 @@
   .nav-btn:active:not(.on) { opacity:.6; }
   .nav-btn.on { background:var(--cream); color:var(--ink); border-color:var(--cream); font-weight:600;
     box-shadow:0 1px 3px rgba(0,0,0,.18); }
-  .view-head { background:var(--brass); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
+  /* View titles print on the pad itself — serif ink over a double brass rule — rather
+     than sitting in a filled bar; the filled treatment is reserved for .banner moments. */
+  .view-head { background:var(--cream); color:var(--ink); font-family:var(--font-display); text-align:center; padding:16px 12px 12px; font-size:20px; font-weight:600; border-bottom:3px double var(--brass); }
 
   /* ---- history ---- */
   .hist-date-group { border-bottom:2px solid var(--brass); }
