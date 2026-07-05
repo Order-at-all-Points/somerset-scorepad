@@ -2432,10 +2432,11 @@ window.SOMERSET_FB_CONFIG = {
         var finished = ui.series;
         ui.seriesResult = { bestOf:finished.bestOf, winnerIdx:win, wins:finished.wins.slice() };
         ui.series = null;
-        // Carry the series id forward on escalation so the best-of-5 games join the
-        // same history group as the best-of-3 games that preceded them, rather than
-        // starting a new, disconnected group.
-        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5, id:finished.id } : null;
+        // Carry the series id and wins-so-far forward on escalation so the best-of-5
+        // games join the same history group as the best-of-3 games that preceded
+        // them, and the win count picks up where the best-of-3 left off rather than
+        // restarting at 0-0.
+        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5, id:finished.id, wins:finished.wins.slice() } : null;
       }
     } else if (!ui.offerSeries) {
       ui.offerSeries = { bestOf:3, seedWinner:win };
@@ -2444,7 +2445,7 @@ window.SOMERSET_FB_CONFIG = {
 
   function acceptSeriesOffer() {
     var o = ui.offerSeries;
-    var wins = [0, 0];
+    var wins = o.wins ? o.wins.slice() : [0, 0];
     if (o.seedWinner === 0 || o.seedWinner === 1) wins[o.seedWinner] = 1;
     var id = o.id || Date.now();
     ui.series = { bestOf:o.bestOf, wins:wins, id:id };
