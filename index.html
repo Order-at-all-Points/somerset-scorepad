@@ -153,8 +153,8 @@
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
-  /* fixed width so the varying glyph widths of the four arrows don't shift "Dealer" left/right row to row */
-  .deal-dealer-arrow { display:inline-block; width:1.1em; text-align:center; }
+  /* fixed width so the box stays put as it's rotated toward whichever seat is dealing */
+  .deal-dealer-arrow { display:inline-block; width:1.1em; text-align:center; font-weight:700; }
   .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-detail-trump { display:flex; align-items:center; justify-content:center; flex:none; gap:4px; }   /* width set in JS to match .deal-score-block */
   .deal-detail-side { flex:none; text-align:right; }   /* Dealer */
@@ -1700,8 +1700,10 @@ window.SOMERSET_FB_CONFIG = {
         if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (game.teams[d.bidTeam] + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
-        // arrow points toward the seat (0 bottom, 1 left, 2 top, 3 right); ︎ forces plain text, not emoji
-        var seatArrow = ["↓", "←", "↑", "→"][dlr] + "︎";
+        // one glyph rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
+        // the table's dealer arrow (renderTable) — rather than four distinct glyphs, which read as
+        // near-identical strokes at 13px. ︎ forces plain text, not emoji.
+        var seatArrowRot = [180, 270, 0, 90][dlr];
         var isOpen = ui.openDeal === d.id;
         var scoreBlockEl = el("span", { class:"deal-score-block" }, [
           scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null, true),
@@ -1710,7 +1712,10 @@ window.SOMERSET_FB_CONFIG = {
         ]);
         var descEl = el("span", { class:"deal-desc disp" }, descKids);
         target.__dealDescEls.push(descEl);
-        var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", { class:"deal-dealer-arrow", "aria-hidden":"true" }, [seatArrow])]);
+        var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
+          class:"deal-dealer-arrow", "aria-hidden":"true",
+          style:"transform:rotate(" + seatArrowRot + "deg);"
+        }, ["↑︎"])]);
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
