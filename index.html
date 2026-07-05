@@ -2377,7 +2377,8 @@ window.SOMERSET_FB_CONFIG = {
           var am = ui.activeMatch, m = getActiveMatchObj(am);
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
         } else {
-          game.archivedId = archiveCurrentGame() || null;
+          var seriesMeta = ui.series ? { format:"series", teams: game.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null;
+          game.archivedId = archiveCurrentGame(seriesMeta) || null;
           handleGameCompleteForSeries(win);
         }
       }
@@ -2408,7 +2409,9 @@ window.SOMERSET_FB_CONFIG = {
 
   function newGame(keepSeries) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
-    if (!soloGame.archivedId) archiveCurrentGame();   // safety net — normally already auto-archived on completion
+    if (!soloGame.archivedId) {   // safety net — normally already auto-archived on completion
+      archiveCurrentGame(ui.series ? { format:"series", teams: soloGame.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null);
+    }
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
     soloGame = freshGame();
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
@@ -2429,7 +2432,10 @@ window.SOMERSET_FB_CONFIG = {
         var finished = ui.series;
         ui.seriesResult = { bestOf:finished.bestOf, winnerIdx:win, wins:finished.wins.slice() };
         ui.series = null;
-        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5 } : null;
+        // Carry the series id forward on escalation so the best-of-5 games join the
+        // same history group as the best-of-3 games that preceded them, rather than
+        // starting a new, disconnected group.
+        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5, id:finished.id } : null;
       }
     } else if (!ui.offerSeries) {
       ui.offerSeries = { bestOf:3, seedWinner:win };
@@ -2440,7 +2446,17 @@ window.SOMERSET_FB_CONFIG = {
     var o = ui.offerSeries;
     var wins = [0, 0];
     if (o.seedWinner === 0 || o.seedWinner === 1) wins[o.seedWinner] = 1;
-    ui.series = { bestOf:o.bestOf, wins:wins };
+    var id = o.id || Date.now();
+    ui.series = { bestOf:o.bestOf, wins:wins, id:id };
+    if (!o.id && game.archivedId) {
+      // This is a brand-new series (not an escalation) — the standalone game that
+      // just prompted the offer becomes Game 1 of the series in history.
+      var seedRec = gameHistory.find(function (h) { return h.id === game.archivedId; });
+      if (seedRec) {
+        seedRec.tournament = { format:"series", teams: game.teams.slice(), id:id, bestOf:o.bestOf };
+        saveHistory();
+      }
+    }
     ui.offerSeries = null;
     ui.seriesResult = null;
     newGame(true);
