@@ -1838,11 +1838,22 @@ window.SOMERSET_FB_CONFIG = {
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
     if (ui.offerSeries) {
       var os = ui.offerSeries;
-      var offerMsg = (os.bestOf === 3)
-        ? (game.teams[os.seedWinner] + " won! Play a best-of-3 series?")
-        : (ui.seriesResult
-            ? (game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
-            : "Play a best-of-5 series?");
+      if (os.bestOf === 3) {
+        var offerSheet3 = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
+          onClick:function(e){ e.stopPropagation(); } }, [
+          el("h3", { class:"disp" }, ["Play again?"]),
+          el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink); margin:8px 0 14px;" },
+            [game.teams[os.seedWinner] + " won!"]),
+          el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Rematch? Best of 3?"]),
+          el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
+          el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
+        ]);
+        modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet3]));
+        return;
+      }
+      var offerMsg = ui.seriesResult
+        ? (game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
+        : "Play a best-of-5 series?";
       var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"]),
@@ -2439,6 +2450,14 @@ window.SOMERSET_FB_CONFIG = {
     ui.offerSeries = null;
     ui.seriesResult = null;
     render();
+  }
+
+  // Scrambles who's paired with whom (keeping the same 4 seats/names), then
+  // starts a fresh standalone game — no series tracking, since a redraw
+  // breaks up the two teams that would otherwise be rematching.
+  function redrawSoloTeamsAndPlay() {
+    soloGame.players = shuffle(soloGame.players.slice());
+    newGame();
   }
 
   function renderSettings() {
