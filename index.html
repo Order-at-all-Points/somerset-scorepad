@@ -150,8 +150,8 @@
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
-  .deal-desc-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn */
-  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignDealBidColumn */
+  .deal-desc-inner { display:inline-block; white-space:nowrap; }   /* positioned in JS, see alignDealBidColumn */
+  .deal-bidder-name { display:inline-block; text-align:right; white-space:nowrap; }   /* padded to the widest name in the list in JS, see alignDealBidColumn */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -388,8 +388,8 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
-  .hh-bid-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn */
-  .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignDealBidColumn */
+  .hh-bid-inner { display:inline-block; white-space:nowrap; }   /* positioned in JS, see alignDealBidColumn */
+  .hh-bidder { display:inline-block; text-align:right; white-space:nowrap; }   /* padded to the widest name in the table in JS, see alignDealBidColumn */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
@@ -1846,12 +1846,13 @@ window.SOMERSET_FB_CONFIG = {
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
         var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
-          innerKids = [ nameEl, " shot the moon" ];
+          innerKids = isMoonMade(d)
+            ? [ nameEl, " shot the ", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
+            : [ nameEl, " shot the moon" ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
           innerKids = [ nameEl, " bid ", bidNumEl ];
         }
-        if (isMoonMade(d)) innerKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (bidderLabel + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
