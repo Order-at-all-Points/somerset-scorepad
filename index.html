@@ -680,7 +680,7 @@ window.SOMERSET_FB_CONFIG = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
     bidTeam:0, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
-    view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
+    view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
     openDeal:null, whoSheet:false, editingDeal:null,
@@ -2866,6 +2866,16 @@ window.SOMERSET_FB_CONFIG = {
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
     else applyScoreWrap();
+    if (ui.jumpToRecordId != null) {
+      var jumpId = ui.jumpToRecordId;
+      ui.jumpToRecordId = null;
+      var scrollToJumpTarget = function () {
+        var target = viewRootEl.querySelector('[data-rec-id="' + jumpId + '"]');
+        if (target) target.scrollIntoView({ behavior:"smooth", block:"start" });
+      };
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(scrollToJumpTarget);
+      else scrollToJumpTarget();
+    }
   }
 
   // ---- Personal stats (History → Stats) ----
@@ -2905,7 +2915,7 @@ window.SOMERSET_FB_CONFIG = {
         var won = rec.winner === team, tie = rec.winner === "tie";
         var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
-          date: rec.date, team: team, won: won, tie: tie,
+          recId: rec.id, date: rec.date, team: team, won: won, tie: tie,
           champion: !!(rec.tournament && rec.tournament.championship && won),
           moons: moonsByTeam[team], sets: setsByTeam[team], moonAttempts: moonAttemptsByTeam[team],
           partnerName: partnerName, opponentNames: opponentNames,
@@ -2964,11 +2974,11 @@ window.SOMERSET_FB_CONFIG = {
         curType === "l" ? curRun++ : (curType = "l", curRun = 1);
       }
       if (g.won && g.margin != null && (!bestWin || g.margin > bestWin.margin)) {
-        bestWin = { margin: g.margin, opponentNames: g.opponentNames, date: g.date };
+        bestWin = { margin: g.margin, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
       if (g.dealsCount) {
-        if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date };
-        if (!shortestGame || g.dealsCount < shortestGame.dealsCount) shortestGame = { dealsCount: g.dealsCount, date: g.date };
+        if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
+        if (!shortestGame || g.dealsCount < shortestGame.dealsCount) shortestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
       }
       var fb = byFormat[g.format] || (byFormat[g.format] = { format: g.format, wins: 0, losses: 0, games: 0 });
       fb.games++; if (!g.tie) { if (g.won) fb.wins++; else fb.losses++; }
@@ -3094,7 +3104,9 @@ window.SOMERSET_FB_CONFIG = {
 
   function currentStreakText(cs) {
     if (!cs || !cs.count) return "—";
-    return (cs.type === "w" ? "W" : "L") + cs.count;
+    var noun = cs.type === "w" ? "Win" : "Loss";
+    if (cs.count > 1) noun = cs.type === "w" ? "Wins" : "Losses";
+    return cs.count + " " + noun;
   }
 
   function statFormatLabel(f) {
@@ -3103,11 +3115,19 @@ window.SOMERSET_FB_CONFIG = {
 
   // Label + value row used by the Best partner / Nemesis / Best win / Game length
   // sections — same shape, so one row builder covers all of them.
-  function statsPairRow(label, value, sub, valueClass, explain) {
+  // `action` is either an explanation string (shown via the ui.info sheet) or a
+  // function (e.g. jump to the underlying game record) — either way the row becomes tappable.
+  function statsPairRow(label, value, sub, valueClass, action) {
     var props = { class:"stats-pair-row" };
-    if (explain) {
-      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain;
-      props.onClick = function(){ ui.info = explain; render(); };
+    if (action) {
+      props.role = "button"; props.tabindex = "0";
+      if (typeof action === "function") {
+        props["aria-label"] = "View " + label.toLowerCase() + " game record";
+        props.onClick = action;
+      } else {
+        props["aria-label"] = label + ": " + action;
+        props.onClick = function(){ ui.info = action; render(); };
+      }
     }
     return el("div", props, [
       el("div", { class:"stats-pair-label disp" }, [label]),
@@ -3217,15 +3237,15 @@ window.SOMERSET_FB_CONFIG = {
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
           "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date), null,
-          "This player's largest final point margin in a single game."));
+          function(){ goToGameRecord(p.bestWin.recId); }));
       }
       if (p.longestGame) {
         hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
-          "The most hands any of this player's games has gone the distance for."));
+          function(){ goToGameRecord(p.longestGame.recId); }));
       }
       if (p.shortestGame) {
         hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date), null,
-          "The fewest hands any of this player's games has taken to finish."));
+          function(){ goToGameRecord(p.shortestGame.recId); }));
       }
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp" }, ["Highlights"]),
@@ -3298,6 +3318,20 @@ window.SOMERSET_FB_CONFIG = {
       }
     });
     return groups;
+  }
+  // Jumps from a personal-stats highlight (biggest win, longest/shortest game) to
+  // that exact game in History: expands its date/tournament group, opens its
+  // detail, and scrolls it into view once rendered (see renderHistory's rAF below).
+  function goToGameRecord(recId) {
+    var rec = gameHistory.find(function (r) { return r.id === recId; });
+    if (!rec) return;
+    var isTournament = rec.tournament && rec.tournament.id != null;
+    var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
+    ui.historyGroupOpen[key] = true;
+    ui.historyOpen = rec.id;
+    ui.jumpToRecordId = rec.id;
+    ui.view = "history"; ui.historySub = null;
+    render();
   }
   function setAllHistoryGroupsOpen(groups, openVal) {
     groups.forEach(function (g) { ui.historyGroupOpen[g.key] = openVal; });
@@ -3392,7 +3426,7 @@ window.SOMERSET_FB_CONFIG = {
       ]),
       el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (rec.tournament ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
     ]);
-    var entry = el("div", { class:"hist-entry" }, [ summary ]);
+    var entry = el("div", { class:"hist-entry", "data-rec-id":rec.id }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
     return entry;
   }
