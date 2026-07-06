@@ -150,7 +150,7 @@
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
-  .deal-bidder-name { display:inline-block; text-align:left; }   /* padded to the widest name in the list in JS, see alignBidderNames */
+  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignBidderNames */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -387,7 +387,7 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
-  .hh-bidder { display:inline-block; text-align:left; }   /* padded to the widest name in the table in JS, see alignBidderNames */
+  .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignBidderNames */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
@@ -1999,10 +1999,12 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Column-aligns "bid" down a list of hands: names vary in length, so each
-  // bidder-name span is padded to the widest name among the given elements —
-  // the longest name sits flush left and shorter ones reserve the same space,
-  // landing "bid" (or "shot the moon") at the same x position on every row.
-  // Shared by the live deal history and the archived History detail table.
+  // bidder-name span is padded (and right-aligned via CSS) to the widest name
+  // among the given elements — the longest name fills its box exactly and
+  // shorter ones sit flush against its right edge, so there's always exactly
+  // one space before "bid" (or "shot the moon") and it lands at the same x
+  // position on every row. Shared by the live deal history and the archived
+  // History detail table.
   function alignBidderNames(nameEls) {
     if (!nameEls || !nameEls.length) return;
     var i, max = 0;
