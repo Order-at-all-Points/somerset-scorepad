@@ -150,8 +150,7 @@
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
-  .deal-desc-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn; wraps rather than overlapping the dealer column when it doesn't fit */
-  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignDealBidColumn; wraps rather than overflowing if a name is too long to fit */
+  .deal-desc-inner { display:inline-block; }   /* positioned in JS, see alignDealDesc; wraps rather than overlapping the dealer column when it doesn't fit */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -1824,7 +1823,7 @@ window.SOMERSET_FB_CONFIG = {
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
     // Refs for the currently-open row's Trump/digit alignment (see alignDealDetail),
-    // and every row's bid-column parts (see alignDealBidColumn); reset each render
+    // and every row's "<name> bid X" line (see alignDealDesc); reset each render
     // since a torn-down row's nodes would otherwise linger stale.
     target.__dealAlign = null;
     target.__dealBidRows = [];
@@ -1842,7 +1841,6 @@ window.SOMERSET_FB_CONFIG = {
         // Older deals recorded before bidder tracking existed have no bidderSeat,
         // so they fall back to naming the team instead of a specific player.
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : game.teams[d.bidTeam];
-        var nameEl = el("span", { class:"deal-bidder-name" }, [bidderLabel]);
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
         var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
@@ -1850,11 +1848,11 @@ window.SOMERSET_FB_CONFIG = {
           // failed attempts keep set-flag's default red — mirrors success/failure so
           // the color alone tells the story.
           innerKids = isMoonMade(d)
-            ? [ nameEl, " shot the ", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
-            : [ nameEl, " shot the ", el("strong", { class:"set-flag disp" }, ["MOON"]) ];
+            ? [ bidderLabel + " shot the ", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
+            : [ bidderLabel + " shot the ", el("strong", { class:"set-flag disp" }, ["MOON"]) ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
-          innerKids = [ nameEl, " bid ", bidNumEl ];
+          innerKids = [ bidderLabel + " bid ", bidNumEl ];
         }
         var setMsg = isSet ? (bidderLabel + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
@@ -1871,7 +1869,7 @@ window.SOMERSET_FB_CONFIG = {
         ]);
         var innerEl = el("span", { class:"deal-desc-inner" }, innerKids);
         var descEl = el("span", { class:"deal-desc disp" }, [innerEl]);
-        target.__dealBidRows.push({ nameEl:nameEl, innerEl:innerEl, descEl:descEl });
+        target.__dealBidRows.push({ innerEl:innerEl, descEl:descEl });
         var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
           class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
           style:"transform:rotate(" + seatArrowRot + "deg);"
@@ -1975,11 +1973,12 @@ window.SOMERSET_FB_CONFIG = {
     // after this returns, so measuring here would read 0). Solo mode's target
     // is already attached, so equalize now; it's a no-op without match names.
     target.__teamNameEls = teamNameEls;
+    target.__dealTableEl = pad.querySelector(".table");
     if (target.isConnected) equalizeTeamNames(teamNameEls);
-    // alignDealBidColumn must run first: it repositions each row's bid text
-    // (shifting bidNumEl's position), and alignDealDetail then measures bidNumEl's
-    // *final* position to land the "took" digit underneath it.
-    if (target.isConnected) alignDealBidColumn(target.__dealBidRows);
+    // alignDealDesc must run first: it repositions each row's bid text (shifting
+    // bidNumEl's position), and alignDealDetail then measures bidNumEl's *final*
+    // position to land the "took" digit underneath it.
+    if (target.isConnected) alignDealDesc(target.__dealBidRows, target.__dealTableEl);
     if (target.isConnected) alignDealDetail(target.__dealAlign);
   }
 
@@ -2005,21 +2004,49 @@ window.SOMERSET_FB_CONFIG = {
     a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
   }
 
-  // Column-aligns "bid" down a list of hands. Each row is { nameEl, innerEl, descEl }:
-  // nameEl is the bidder's name, innerEl wraps the row's full "<name> bid <n>" text,
-  // and descEl is the available space between the score and dealer columns.
-  // First, every nameEl is padded to the widest name in the list (and right-aligned
-  // via CSS), so there's always exactly one space before "bid" regardless of name
-  // length — capped to the row's own available width, so a name too long to fit
-  // wraps onto a second line instead of forcing every row to overflow. Then the row
-  // with that longest name is used as a baseline: its innerEl is centered within its
-  // own descEl, and every other row's innerEl is shifted by that same pixel amount —
-  // not re-centered individually — so "bid" stays lined up beneath the baseline
-  // row's regardless of how wide the trailing bid number or moon/set suffix is. The
-  // shift is clamped per row (not just for the baseline) so a row whose own content
-  // is wider than the baseline's — e.g. a "shot the MOON" suffix — never gets pushed
-  // past its own box edges into the dealer column; better to leave it off-center
-  // than spill. Shared by the live deal history and the archived History detail table.
+  // Each collapsed row's full "<name> bid <n>" (or "shot the MOON") text is nudged
+  // so its own center lands on the seating diagram's center (the ".table" element
+  // above the history) — every row centers independently against that fixed external
+  // reference rather than sharing a column with other rows, so a long name or a
+  // "shot the MOON" suffix on one row can never throw off another row's position.
+  // The shift is still clamped so it never pushes a row's own content past its own
+  // box edges into the score or dealer columns — better to leave it off-center than
+  // spill. Rows are { innerEl, descEl }: innerEl wraps the row's full text, descEl is
+  // the available space between the score and dealer columns.
+  function alignDealDesc(rows, tableEl) {
+    if (!rows || !rows.length || !tableEl) return;
+    var tableRect = tableEl.getBoundingClientRect();
+    var tableCenter = tableRect.left + tableRect.width / 2;
+    var i;
+    for (i = 0; i < rows.length; i++) rows[i].innerEl.style.transform = "";
+    for (i = 0; i < rows.length; i++) {
+      var boxRect = rows[i].descEl.getBoundingClientRect();
+      var innerRect = rows[i].innerEl.getBoundingClientRect();
+      var curLeft = innerRect.left - boxRect.left;
+      var delta = tableCenter - (innerRect.left + innerRect.width / 2);
+      var minDelta = -curLeft, maxDelta = boxRect.width - innerRect.width - curLeft;
+      delta = (maxDelta >= minDelta) ? Math.max(minDelta, Math.min(maxDelta, delta)) : 0;
+      rows[i].innerEl.style.transform = "translateX(" + delta + "px)";
+    }
+  }
+
+  // Column-aligns "bid" down the archived History detail's hand table. Each row is
+  // { nameEl, innerEl, descEl }: nameEl is the bidder's name, innerEl wraps the row's
+  // full "<name> bid <n>" text, and descEl is the available space between the score
+  // and dealer columns. First, every nameEl is padded to the widest name in the list
+  // (and right-aligned via CSS), so there's always exactly one space before "bid"
+  // regardless of name length — capped to the row's own available width, so a name
+  // too long to fit wraps onto a second line instead of forcing every row to
+  // overflow. Then the row with that longest name is used as a baseline: its innerEl
+  // is centered within its own descEl, and every other row's innerEl is shifted by
+  // that same pixel amount — not re-centered individually — so "bid" stays lined up
+  // beneath the baseline row's regardless of how wide the trailing bid number or
+  // moon/set suffix is. The shift is clamped per row (not just for the baseline) so
+  // a row whose own content is wider than the baseline's — e.g. a "shot the MOON"
+  // suffix — never gets pushed past its own box edges into the dealer column; better
+  // to leave it off-center than spill. There's no seating diagram in the archived
+  // view to center against (see alignDealDesc for the live deal history), so this
+  // column-alignment scheme is kept here on its own.
   function alignDealBidColumn(rows) {
     if (!rows || !rows.length) return;
     var i, ref = null, maxNameWidth = 0;
@@ -4052,7 +4079,7 @@ window.SOMERSET_FB_CONFIG = {
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
-    alignDealBidColumn(card.__dealBidRows);
+    alignDealDesc(card.__dealBidRows, card.__dealTableEl);
     alignDealDetail(card.__dealAlign);
   }
 
