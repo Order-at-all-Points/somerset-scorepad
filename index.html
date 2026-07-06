@@ -153,8 +153,9 @@
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
-  /* fixed width so the box stays put as it's rotated toward whichever seat is dealing */
-  .deal-dealer-arrow { display:inline-block; width:1.1em; text-align:center; font-weight:700; }
+  /* fixed size so the box stays put as it's rotated toward whichever seat is dealing */
+  .deal-dealer-arrow { display:inline-block; width:12px; height:12px; vertical-align:-1px; }
+  .deal-dealer-arrow svg { display:block; width:100%; height:100%; }
   .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-detail-trump { display:flex; align-items:center; justify-content:center; flex:none; gap:4px; }   /* width set in JS to match .deal-score-block */
   .deal-detail-side { flex:none; text-align:right; }   /* Dealer */
@@ -287,7 +288,12 @@
   .seat.dealer { border-color:var(--brass-text);
     background:var(--control);
     box-shadow:inset 0 0 0 2px var(--brass), 0 1px 2px rgba(0,0,0,.12); }
-  .deal-arrow { position:absolute; left:50%; top:50%; font-size:28px; line-height:1; color:var(--brass); pointer-events:none; transition:transform .45s ease; }
+  /* A solid filled arrowhead (drawn as an SVG shape, not a font glyph) reads far more
+     clearly at a glance than a thin-stroke text arrow — font arrow glyphs render at
+     wildly different weights across platforms and are easy to miss on the felt. */
+  .deal-arrow { position:absolute; left:50%; top:50%; width:30px; height:30px; color:var(--brass);
+    pointer-events:none; transition:transform .45s ease; }
+  .deal-arrow svg { display:block; width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
   .dealer-line { text-align:right; font-size:13px; color:var(--ink-soft); margin:0; }
   .dealer-line b { font-weight:600; color:var(--ink); }
   .entry-head { margin:0 0 12px; }
@@ -579,6 +585,10 @@ window.SOMERSET_FB_CONFIG = {
 
   var STORAGE_KEY = "somerset:dev-v1";
   var POINTS_PER_DEAL = 14;
+  // Solid filled arrowhead (shaft + point), used for the dealer indicator both on the
+  // seating table and inline in deal history — an SVG shape renders as a consistently
+  // bold, solid point on every platform, unlike a text arrow glyph.
+  var DEALER_ARROW_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1 L17 9 L13 9 L13 23 L11 23 L11 9 L7 9 Z"/></svg>';
   // Trump recording disabled for now — see renderEntry()/recordDeal() below.
   // var TRUMP_CHIPS = ["0","1","2","3","4","5","6"];
 
@@ -1724,9 +1734,10 @@ window.SOMERSET_FB_CONFIG = {
         if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (game.teams[d.bidTeam] + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
-        // one glyph rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
-        // the table's dealer arrow (renderTable) — rather than four distinct glyphs, which read as
-        // near-identical strokes at 13px. ︎ forces plain text, not emoji.
+        // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
+        // the table's dealer arrow (renderTable) — rather than four distinct icons, which read as
+        // near-identical strokes at 13px. The shared SVG shape stays legible at that size where a
+        // thin font-glyph arrow doesn't.
         var seatArrowRot = [180, 270, 0, 90][dlr];
         var isOpen = ui.openDeal === d.id;
         var scoreBlockEl = el("span", { class:"deal-score-block" }, [
@@ -1737,9 +1748,9 @@ window.SOMERSET_FB_CONFIG = {
         var descEl = el("span", { class:"deal-desc disp" }, descKids);
         target.__dealDescEls.push(descEl);
         var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
-          class:"deal-dealer-arrow", "aria-hidden":"true",
+          class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
           style:"transform:rotate(" + seatArrowRot + "deg);"
-        }, ["↑︎"])]);
+        })]);
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
@@ -2265,8 +2276,8 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"pteam disp", style:"color:" + (team === 0 ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(game.teams[team].length, 1)))) + "px;" }, [game.teams[team]])
       ]);
     });
-    var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
-      style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" }, ["↑︎"]);
+    var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true", html:DEALER_ARROW_SVG,
+      style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" });
 
     var children = [el("div", { class:"table" }, seats.concat([arrow]))];
     if (!started && !game.players.some(function (p) { return p && p.trim(); })) {
