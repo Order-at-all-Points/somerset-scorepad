@@ -3515,7 +3515,7 @@ window.SOMERSET_FB_CONFIG = {
       sumLeft = recs.length + " game" + (recs.length === 1 ? "" : "s") + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s")
         + ", " + tournamentTitleLabel(g.tournament).toLowerCase();
     } else {
-      titleLeft = chevron + dateHeading(recs[0].date) + " · " + (recs.length === 1 ? "Standard Game" : "Standard Games");
+      titleLeft = chevron + dateHeading(recs[0].date);
       sumLeft = statsSummaryText(recs);
     }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
