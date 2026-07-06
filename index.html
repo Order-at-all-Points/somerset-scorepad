@@ -486,6 +486,15 @@
   .stats-activity-bar.zero { background:var(--cream-shade); opacity:1; }
   .stats-activity-label { font-size:10px; color:var(--ink-soft); }
 
+  .stats-pair-list { padding-bottom:6px; }
+  .stats-pair-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--cream-shade); }
+  .stats-pair-row:last-child { border-bottom:none; }
+  .stats-pair-label { font-size:13px; color:var(--ink-soft); flex:none; }
+  .stats-pair-id { text-align:right; min-width:0; }
+  .stats-pair-value { font-size:14px; font-weight:600; color:var(--ink); }
+  .stats-pair-value.bad { color:var(--red); }
+  .stats-pair-sub { font-size:11px; color:var(--ink-soft); margin-top:1px; }
+
   .merge-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 2px; border-bottom:1px solid var(--cream-shade); }
   .merge-row:last-of-type { border-bottom:none; margin-bottom:10px; }
   .merge-row-txt { font-size:14px; color:var(--ink); }
@@ -1368,10 +1377,13 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- Scoring ----
   function dealResult(d) {
-    var isSet = d.pts[d.bidTeam] < d.bid;
+    var isSet = isDealSet(d);
     var credited = d.pts.slice();
     if (isSet) credited[d.bidTeam] = -d.bid;   // set: subtract the bid (may go negative)
     return [credited[0], credited[1], isSet];
+  }
+  function isDealSet(d) {
+    return d.pts[d.bidTeam] < d.bid;
   }
   function isMoonMade(d) {
     return d.bid === POINTS_PER_DEAL && d.pts[d.bidTeam] === POINTS_PER_DEAL;
@@ -2856,23 +2868,52 @@ window.SOMERSET_FB_CONFIG = {
   // uses for the per-device name book, so "Dan" and "dan " count as one player.
   function statKey(name) { return (name || "").trim().toLowerCase(); }
 
+  // Partner/opponent are tracked by seat parity: seats 0/2 are one team, 1/3 the
+  // other, and within a team the other seat is your partner while both seats of
+  // the opposite parity are your opponents for that game.
+  function seatPartner(seat) { return (seat + 2) % 4; }
+  function seatOpponents(seat) { return seat % 2 === 0 ? [1, 3] : [0, 2]; }
+
   function computePlayerStats() {
     var byKey = {};
     gameHistory.forEach(function (rec) {
       if (rec.winner == null || !rec.players) return;
-      var moonsByTeam = [0, 0];
-      (rec.deals || []).forEach(function (d) { if (isMoonMade(d)) moonsByTeam[d.bidTeam]++; });
+      var moonsByTeam = [0, 0], setsByTeam = [0, 0], moonAttemptsByTeam = [0, 0];
+      (rec.deals || []).forEach(function (d) {
+        if (d.bid === POINTS_PER_DEAL) moonAttemptsByTeam[d.bidTeam]++;
+        if (isMoonMade(d)) moonsByTeam[d.bidTeam]++;
+        if (isDealSet(d)) setsByTeam[d.bidTeam]++;
+      });
+      var format = rec.tournament ? rec.tournament.format : "casual";
+      var tournamentId = rec.tournament ? rec.tournament.id : null;
+      var dealsCount = (rec.deals || []).length;
       rec.players.forEach(function (raw, seat) {
         var nm = (raw || "").trim();
         if (!nm) return;
         var resolved = canonicalName(nm);
         var key = statKey(resolved), team = seat % 2;
-        var p = byKey[key] || (byKey[key] = { name: resolved, games: [] });
+        var p = byKey[key] || (byKey[key] = { name: resolved, games: [], partners: {}, opponents: {} });
+        var partnerName = canonicalName((rec.players[seatPartner(seat)] || "").trim() || "?");
+        var oppSeats = seatOpponents(seat);
+        var opponentNames = oppSeats.map(function (s) { return canonicalName((rec.players[s] || "").trim() || "?"); });
+        var won = rec.winner === team, tie = rec.winner === "tie";
+        var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
-          date: rec.date, team: team,
-          won: rec.winner === team, tie: rec.winner === "tie",
-          champion: !!(rec.tournament && rec.tournament.championship && rec.winner === team),
-          moons: moonsByTeam[team]
+          date: rec.date, team: team, won: won, tie: tie,
+          champion: !!(rec.tournament && rec.tournament.championship && won),
+          moons: moonsByTeam[team], sets: setsByTeam[team], moonAttempts: moonAttemptsByTeam[team],
+          partnerName: partnerName, opponentNames: opponentNames,
+          format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin
+        });
+        [partnerName].forEach(function (nm2) {
+          var pk = statKey(nm2);
+          var rec2 = p.partners[pk] || (p.partners[pk] = { name: nm2, games: 0, wins: 0, losses: 0 });
+          rec2.games++; if (!tie) { if (won) rec2.wins++; else rec2.losses++; }
+        });
+        opponentNames.forEach(function (nm2) {
+          var ok = statKey(nm2);
+          var rec2 = p.opponents[ok] || (p.opponents[ok] = { name: nm2, games: 0, wins: 0, losses: 0 });
+          rec2.games++; if (!tie) { if (won) rec2.wins++; else rec2.losses++; }
         });
       });
     });
@@ -2880,22 +2921,69 @@ window.SOMERSET_FB_CONFIG = {
     return byKey;
   }
 
+  // Best/worst-record pairing (min 2 games together), win% over decided (non-tie) games.
+  function bestOrWorstPairing(byKey, wantBest) {
+    var best = null;
+    Object.keys(byKey).forEach(function (k) {
+      var e = byKey[k];
+      if (e.games < 2) return;
+      var decided = e.wins + e.losses;
+      var pct = decided ? e.wins / decided : 0;
+      if (!best) { best = { rec: e, pct: pct }; return; }
+      var better = wantBest ? (pct > best.pct) : (pct < best.pct);
+      if (better || (pct === best.pct && e.games > best.rec.games)) best = { rec: e, pct: pct };
+    });
+    return best ? { name: best.rec.name, wins: best.rec.wins, losses: best.rec.losses, games: best.rec.games, winPct: Math.round(best.pct * 100) } : null;
+  }
+
   function finalizePlayerStats(p) {
     p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
-    var wins = 0, losses = 0, moons = 0, champs = 0, longest = 0, run = 0;
+    var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0;
+    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null;
+    var byFormat = {};
     p.games.forEach(function (g) {
       if (g.champion) champs++;
-      moons += g.moons;
-      if (g.tie) { run = 0; }
-      else if (g.won) { wins++; run++; longest = Math.max(longest, run); }
-      else { losses++; run = 0; }
+      moons += g.moons; sets += g.sets; moonAttempts += g.moonAttempts;
+      if (g.tournamentId != null) tournamentIds[g.tournamentId] = true;
+      if (g.tie) { run = 0; curType = null; curRun = 0; }
+      else if (g.won) {
+        wins++; run++; longest = Math.max(longest, run);
+        curType === "w" ? curRun++ : (curType = "w", curRun = 1);
+      } else {
+        losses++; run = 0;
+        curType === "l" ? curRun++ : (curType = "l", curRun = 1);
+      }
+      if (g.won && g.margin != null && (!bestWin || g.margin > bestWin.margin)) {
+        bestWin = { margin: g.margin, opponentNames: g.opponentNames, date: g.date };
+      }
+      if (g.dealsCount) {
+        if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date };
+        if (!shortestGame || g.dealsCount < shortestGame.dealsCount) shortestGame = { dealsCount: g.dealsCount, date: g.date };
+      }
+      var fb = byFormat[g.format] || (byFormat[g.format] = { format: g.format, wins: 0, losses: 0, games: 0 });
+      fb.games++; if (!g.tie) { if (g.won) fb.wins++; else fb.losses++; }
     });
     p.gamesPlayed = p.games.length;
     p.wins = wins; p.losses = losses;
     p.winPct = (wins + losses) ? Math.round((wins / (wins + losses)) * 100) : null;
     p.longestStreak = longest;
+    p.currentStreak = { type: curType, count: curRun };
     p.moonsShot = moons;
+    p.timesSet = sets;
+    p.moonAttempts = moonAttempts;
+    p.moonConversionRate = moonAttempts ? Math.round((moons / moonAttempts) * 100) : null;
     p.championships = champs;
+    p.tournamentsPlayed = Object.keys(tournamentIds).length;
+    p.bestWin = bestWin;
+    p.longestGame = longestGame;
+    p.shortestGame = (shortestGame && shortestGame.dealsCount !== (longestGame && longestGame.dealsCount)) ? shortestGame : null;
+    p.bestPartner = bestOrWorstPairing(p.partners, true);
+    p.nemesis = bestOrWorstPairing(p.opponents, false);
+    var formatOrder = ["casual", "single", "double", "round", "series"];
+    p.formatBreakdown = formatOrder.map(function (f) { return byFormat[f]; }).filter(Boolean).map(function (fb) {
+      var decided = fb.wins + fb.losses;
+      return { format: fb.format, wins: fb.wins, losses: fb.losses, games: fb.games, winPct: decided ? Math.round((fb.wins / decided) * 100) : null };
+    });
   }
 
   // Last `months` calendar months oldest-first, each bucketed with a game count —
@@ -2989,6 +3077,27 @@ window.SOMERSET_FB_CONFIG = {
     ]);
   }
 
+  function currentStreakText(cs) {
+    if (!cs || !cs.count) return "—";
+    return (cs.type === "w" ? "W" : "L") + cs.count;
+  }
+
+  function statFormatLabel(f) {
+    return f === "casual" ? "Casual" : f === "series" ? "Best-of Series" : formatName(f);
+  }
+
+  // Label + value row used by the Best partner / Nemesis / Best win / Game length
+  // sections — same shape, so one row builder covers all of them.
+  function statsPairRow(label, value, sub, valueClass) {
+    return el("div", { class:"stats-pair-row" }, [
+      el("div", { class:"stats-pair-label disp" }, [label]),
+      el("div", { class:"stats-pair-id" }, [
+        el("div", { class:"stats-pair-value" + (valueClass ? " " + valueClass : "") }, [value]),
+        sub ? el("div", { class:"stats-pair-sub" }, [sub]) : null
+      ].filter(function (x) { return x; }))
+    ]);
+  }
+
   function renderStatsPlayer() {
     viewRootEl.innerHTML = "";
     var stats = computePlayerStats();
@@ -3015,8 +3124,9 @@ window.SOMERSET_FB_CONFIG = {
           ? (p.gamesPlayed + " game" + (p.gamesPlayed === 1 ? "" : "s") + " played")
           : (p.winPct + "% win rate over " + p.gamesPlayed + " game" + (p.gamesPlayed === 1 ? "" : "s"))
       ]),
-      p.championships ? el("div", { class:"stats-hero-champ disp" },
-        ["🏆 " + p.championships + " tournament championship" + (p.championships === 1 ? "" : "s")]) : null
+      p.tournamentsPlayed ? el("div", { class:"stats-hero-champ disp" },
+        ["🏆 " + p.championships + " championship" + (p.championships === 1 ? "" : "s") +
+         " from " + p.tournamentsPlayed + " tournament" + (p.tournamentsPlayed === 1 ? "" : "s")]) : null
     ]));
 
     card.appendChild(el("div", { class:"stats-tile-grid" }, [
@@ -3024,6 +3134,13 @@ window.SOMERSET_FB_CONFIG = {
       statTile(p.longestStreak, "Longest streak"),
       statTile(p.moonsShot, "Moons shot"),
       statTile(p.gamesPlayed, "Games played")
+    ]));
+
+    card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px;" }, [
+      statTile(currentStreakText(p.currentStreak), "Current streak"),
+      statTile(p.timesSet, "Times set"),
+      statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon conv. rate"),
+      statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin")
     ]));
 
     var recent = p.games.slice(-10);
@@ -3048,6 +3165,50 @@ window.SOMERSET_FB_CONFIG = {
         ])
       ])
     ]));
+
+    if (p.bestPartner || p.nemesis) {
+      var pairRows = [];
+      if (p.bestPartner) {
+        pairRows.push(statsPairRow("Best partner", p.bestPartner.name,
+          p.bestPartner.wins + "–" + p.bestPartner.losses + " together (" + p.bestPartner.winPct + "%)"));
+      }
+      if (p.nemesis) {
+        pairRows.push(statsPairRow("Nemesis", p.nemesis.name,
+          p.nemesis.wins + "–" + p.nemesis.losses + " against (" + p.nemesis.winPct + "%)", "bad"));
+      }
+      card.appendChild(el("div", { class:"stats-section" }, [
+        el("p", { class:"stats-section-title disp" }, ["Partners & rivals"]),
+        el("div", { class:"stats-pair-list" }, pairRows)
+      ]));
+    }
+
+    if (p.bestWin || p.longestGame) {
+      var hlRows = [];
+      if (p.bestWin) {
+        hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
+          "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date)));
+      }
+      if (p.longestGame) {
+        hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date)));
+      }
+      if (p.shortestGame) {
+        hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date)));
+      }
+      card.appendChild(el("div", { class:"stats-section" }, [
+        el("p", { class:"stats-section-title disp" }, ["Highlights"]),
+        el("div", { class:"stats-pair-list" }, hlRows)
+      ]));
+    }
+
+    if (p.formatBreakdown.length >= 2) {
+      card.appendChild(el("div", { class:"stats-section" }, [
+        el("p", { class:"stats-section-title disp" }, ["Win rate by format"]),
+        el("div", { class:"stats-pair-list" }, p.formatBreakdown.map(function (fb) {
+          return statsPairRow(statFormatLabel(fb.format), fb.wins + "–" + fb.losses,
+            fb.winPct == null ? null : (fb.winPct + "%"));
+        }))
+      ]));
+    }
 
     var months = playerMonthlyActivity(p, 6);
     var maxCount = Math.max(1, Math.max.apply(null, months.map(function (m) { return m.count; })));
