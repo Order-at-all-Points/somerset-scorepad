@@ -160,7 +160,8 @@
   .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-detail-trump { display:flex; align-items:center; justify-content:center; flex:none; gap:4px; }   /* width set in JS to match .deal-score-block */
   .deal-detail-side { flex:none; text-align:right; }   /* Dealer */
-  .deal-bid-line { flex:1 1 auto; text-align:center; }   /* nudged into digit alignment in JS */
+  .deal-bid-line { flex:1 1 auto; text-align:center; }   /* box for digit alignment in JS; see .deal-bid-line-inner */
+  .deal-bid-line-inner { display:inline-block; }   /* nudged so its digit lines up under the bid digit above, see alignDealDetail() */
   .deal-bid-line.red { color:var(--red); }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
@@ -1899,14 +1900,18 @@ window.SOMERSET_FB_CONFIG = {
           // Kept as an empty spacer: alignDealDetail() sizes this to match .deal-score-block's
           // width so the "took" line below centers under the score row above it.
           var trumpEl = el("span", { class:"deal-detail-trump" }, []);
-          var bidLineEl = el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, bidLineKids);
+          var bidLineInnerEl = el("span", { class:"deal-bid-line-inner" }, bidLineKids);
+          var bidLineEl = el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineInnerEl]);
           var dealerNameEl = el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])]);
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             trumpEl,
             bidLineEl,
             dealerNameEl
           ]));
-          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl };
+          target.__dealAlign = {
+            scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl,
+            bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl, bidLineInnerEl:bidLineInnerEl
+          };
         }
       });
     }
@@ -1994,6 +1999,24 @@ window.SOMERSET_FB_CONFIG = {
     a.dealerNameEl.style.transform = "";
     var nameDelta = Math.min(0, a.dealerLabelEl.getBoundingClientRect().left - a.dealerNameEl.getBoundingClientRect().left);
     a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
+    // Nudge the "took" line's digit to line up under the "bid" digit in the collapsed
+    // row above (skipped for a moon bid — bidNumEl is null, nothing to align to), so
+    // at a glance the bid and the take read as one column. Runs after alignDealDesc
+    // (see call site below) so bidNumEl's rect already reflects its final position.
+    // Clamped like alignDealDesc's per-row shift, so a big required nudge (e.g. a long
+    // bidder name pushing the bid digit far right) never spills the "took" text into
+    // the Trump spacer or the dealer's name.
+    a.bidLineInnerEl.style.transform = "";
+    if (a.bidNumEl) {
+      var boxRect = a.bidLineEl.getBoundingClientRect();
+      var innerRect = a.bidLineInnerEl.getBoundingClientRect();
+      var curLeft = innerRect.left - boxRect.left;
+      var delta = a.bidNumEl.getBoundingClientRect().left - a.takenNumEl.getBoundingClientRect().left;
+      var minDelta = -curLeft, maxDelta = boxRect.width - innerRect.width - curLeft;
+      if (delta < minDelta) delta = minDelta;
+      if (delta > maxDelta) delta = maxDelta;
+      a.bidLineInnerEl.style.transform = "translateX(" + delta + "px)";
+    }
   }
 
   // Each collapsed row's full "<name> bid <n>" (or "shot the MOON") text is nudged
