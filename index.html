@@ -3302,11 +3302,11 @@ window.SOMERSET_FB_CONFIG = {
 
     card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px;" }, [
       statTile(p.timesSet, "Times set",
-        "How many times this player's team bid and then fell short of it, losing the bid amount from their score."),
+        "How many times this player personally bid and then fell short of it, losing the bid amount from their team's score."),
       statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin",
         "The largest point gap this player's team has ever finished a game with."),
       statTile(p.moonsShot, "Moons shot",
-        "How many times this player's team bid to sweep every point in the hand — and made it."),
+        "How many times this player personally bid to sweep every point in the hand — and made it."),
       statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon conv. rate",
         "The share of this player's moon bids (betting to sweep the hand) that actually came through.")
     ]));
