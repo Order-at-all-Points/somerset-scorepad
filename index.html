@@ -684,7 +684,7 @@ window.SOMERSET_FB_CONFIG = {
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
-    bidTeam:0, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
+    bidTeam:0, bidderSeat:0, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
@@ -2494,12 +2494,18 @@ window.SOMERSET_FB_CONFIG = {
     // ---- Step 1: before the hand \u2014 bid ----
     if (ui.entryStep === 1) {
       var who = el("div", { class:"who" }, [0,1].map(function (i) {
-        return el("button", { class:"disp"+(ui.bidTeam===i?" on":""), onClick:function(){ ui.bidTeam=i; softRender(); } },
+        return el("button", { class:"disp"+(ui.bidTeam===i?" on":""), onClick:function(){ ui.bidTeam=i; ui.bidderSeat=i; softRender(); } },
           [ game.teams[i] + " bid" ]);
+      }));
+      var whoPlayer = el("div", { class:"who" }, [ui.bidTeam, ui.bidTeam + 2].map(function (seat) {
+        return el("button", { class:"disp"+(ui.bidderSeat===seat?" on":""), onClick:function(){ ui.bidderSeat=seat; softRender(); } },
+          [ seatName(seat) ]);
       }));
       var kids1 = header.concat([
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"]),
         who,
+        el("p", { class:"phase-label disp", style:"margin-top:8px;" }, ["Who bid?"]),
+        whoPlayer,
         el("div", { class:"row", style:"padding:10px 0; margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
         /* Trump recording disabled for now.
         el("div", { style:"margin-bottom:14px;" }, [
@@ -2519,7 +2525,7 @@ window.SOMERSET_FB_CONFIG = {
             // Broadcast the confirmed bid to observers (join-by-code guests watching a
             // locked match) so they see it before the deal is recorded. Skip while
             // editing an already-recorded deal \u2014 that deal is already visible to them.
-            if (ui.editingDeal == null) { game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid }; persist(); }
+            if (ui.editingDeal == null) { game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat }; persist(); }
             else render();
           } }, ["Next: play the hand \u2192"])
         ])
@@ -2624,6 +2630,7 @@ window.SOMERSET_FB_CONFIG = {
   function startEditDeal(d) {
     ui.editingDeal = d.id;
     ui.bidTeam = d.bidTeam;
+    ui.bidderSeat = (d.bidderSeat != null) ? d.bidderSeat : d.bidTeam;
     ui.bid = d.bid;
     // ui.trump = d.trump || "";   // trump recording disabled for now
     ui.bidderPts = d.pts[d.bidTeam];
@@ -2651,15 +2658,16 @@ window.SOMERSET_FB_CONFIG = {
           saveHistory();
           game.archivedId = null;
         }
-        editing.bidTeam = ui.bidTeam; editing.bid = ui.bid; /* editing.trump = ui.trump.trim(); */ editing.pts = pts;
+        editing.bidTeam = ui.bidTeam; editing.bid = ui.bid; editing.bidderSeat = ui.bidderSeat; /* editing.trump = ui.trump.trim(); */ editing.pts = pts;
       }
       ui.editingDeal = null;
     } else {
-      game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, /* trump:ui.trump.trim(), */ pts:pts, dealer:dealerSeat() });
+      game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat, /* trump:ui.trump.trim(), */ pts:pts, dealer:dealerSeat() });
     }
     game.pendingBid = null;
     // reset form, alternate default bidder
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
+    ui.bidderSeat = ui.bidTeam;
     ui.bid = 6; /* ui.trump = ""; */ ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
     // Games archive themselves the moment they're won, so a result is never
@@ -2910,11 +2918,15 @@ window.SOMERSET_FB_CONFIG = {
     var byKey = {};
     gameHistory.forEach(function (rec) {
       if (rec.winner == null || !rec.players) return;
-      var moonsByTeam = [0, 0], setsByTeam = [0, 0], moonAttemptsByTeam = [0, 0];
+      // Bid outcomes (moons, sets) are credited to the seat that actually placed the
+      // bid. Deals recorded before bidder tracking existed have no bidderSeat, so
+      // they fall back to crediting both seats on the bidding team, as before.
+      var moonsBySeat = [0, 0, 0, 0], setsBySeat = [0, 0, 0, 0], moonAttemptsBySeat = [0, 0, 0, 0];
       (rec.deals || []).forEach(function (d) {
-        if (d.bid === POINTS_PER_DEAL) moonAttemptsByTeam[d.bidTeam]++;
-        if (isMoonMade(d)) moonsByTeam[d.bidTeam]++;
-        if (isDealSet(d)) setsByTeam[d.bidTeam]++;
+        var creditSeats = (d.bidderSeat != null) ? [d.bidderSeat] : [d.bidTeam, d.bidTeam + 2];
+        if (d.bid === POINTS_PER_DEAL) creditSeats.forEach(function (s) { moonAttemptsBySeat[s]++; });
+        if (isMoonMade(d)) creditSeats.forEach(function (s) { moonsBySeat[s]++; });
+        if (isDealSet(d)) creditSeats.forEach(function (s) { setsBySeat[s]++; });
       });
       var format = rec.tournament ? rec.tournament.format : "casual";
       var tournamentId = rec.tournament ? rec.tournament.id : null;
@@ -2933,7 +2945,7 @@ window.SOMERSET_FB_CONFIG = {
         p.games.push({
           recId: rec.id, date: rec.date, team: team, won: won, tie: tie,
           champion: !!(rec.tournament && rec.tournament.championship && won),
-          moons: moonsByTeam[team], sets: setsByTeam[team], moonAttempts: moonAttemptsByTeam[team],
+          moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
           partnerName: partnerName, opponentNames: opponentNames,
           format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin
         });
