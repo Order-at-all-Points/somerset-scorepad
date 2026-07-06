@@ -1846,9 +1846,12 @@ window.SOMERSET_FB_CONFIG = {
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
         var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
+          // Made moons get the accent color (set-flag's default red overridden inline);
+          // failed attempts keep set-flag's default red — mirrors success/failure so
+          // the color alone tells the story.
           innerKids = isMoonMade(d)
             ? [ nameEl, " shot the ", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
-            : [ nameEl, " shot the moon" ];
+            : [ nameEl, " shot the ", el("strong", { class:"set-flag disp" }, ["MOON"]) ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
           innerKids = [ nameEl, " bid ", bidNumEl ];
