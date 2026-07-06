@@ -432,6 +432,66 @@
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
   .history-footer { text-align:center; padding:12px; border-top:1px solid var(--cream-shade); }
   .history-footer .dot-sep { color:var(--ink-soft); margin:0 10px; }
+
+  /* ---- personal stats (History → Stats) ---- */
+  .stat-sort-row { display:flex; gap:8px; padding:10px 12px 12px; overflow-x:auto; }
+  .stat-sort-chip { flex:none; font-family:var(--font-text); font-size:13px; font-weight:600; padding:7px 14px;
+    border-radius:var(--r-pill); border:1px solid var(--rule); background:none; color:var(--ink-soft); cursor:pointer; white-space:nowrap; }
+  .stat-sort-chip.on { background:var(--ink); color:var(--cream); border-color:var(--ink); }
+  .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
+
+  .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
+  .rank-row:last-child { border-bottom:none; }
+  .rank-row:active { background:var(--cream-shade); }
+  .rank-num { flex:none; width:20px; text-align:center; font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink-soft); }
+  .rank-num.top { color:var(--brass-text); }
+  .rank-id { flex:1; min-width:0; }
+  .rank-name { font-size:15px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rank-bar-track { height:4px; background:var(--cream-shade); border-radius:2px; margin-top:5px; overflow:hidden; }
+  .rank-bar-fill { height:100%; background:var(--brass-text); border-radius:2px; }
+  .rank-metric { flex:none; text-align:right; font-size:15px; font-weight:600; color:var(--ink); min-width:56px; }
+  .rank-metric small { display:block; font-size:11px; font-weight:500; color:var(--ink-soft); }
+  .rank-chevron { flex:none; color:var(--ink-soft); font-size:15px; }
+
+  .stats-hero { text-align:center; padding:20px 16px 18px; border-bottom:1px solid var(--cream-shade); }
+  .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
+  .stats-hero-sub { font-size:13px; color:var(--ink-soft); margin:4px 0 0; }
+  .stats-hero-champ { display:inline-flex; align-items:center; gap:4px; margin-top:10px; font-size:12px; font-weight:600;
+    color:var(--brass-text); background:var(--felt-wash-strong); padding:4px 10px; border-radius:var(--r-pill); }
+
+  .stats-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--cream-shade); }
+  .stats-tile { background:var(--cream); padding:16px 14px; text-align:center; }
+  .stats-tile-num { font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--ink); line-height:1.1; }
+  .stats-tile-label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin-top:3px; }
+
+  .stats-section { padding:16px 16px 4px; }
+  .stats-section-title { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--brass-text); font-weight:600; margin:0 0 10px; }
+
+  .stats-form-strip { display:flex; gap:5px; padding-bottom:16px; }
+  .stats-form-pill { flex:1; height:26px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--cream); }
+  .stats-form-pill.w { background:var(--brass-text); }
+  .stats-form-pill.l { background:var(--red); }
+  .stats-form-pill.t { background:var(--ink-soft); }
+
+  .stats-wl-row { padding-bottom:18px; }
+  .stats-wl-bar { height:14px; border-radius:7px; overflow:hidden; display:flex; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 20%, transparent); }
+  .stats-wl-bar .seg-w { background:var(--brass-text); }
+  .stats-wl-bar .seg-l { background:var(--red); }
+  .stats-wl-labels { display:flex; justify-content:space-between; font-size:12px; color:var(--ink-soft); margin-top:6px; }
+  .stats-wl-labels b { color:var(--ink); font-weight:600; }
+
+  .stats-activity-row { display:flex; align-items:flex-end; gap:6px; height:64px; padding-bottom:16px; }
+  .stats-activity-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+  .stats-activity-bar { width:100%; max-width:22px; background:var(--brass-text); border-radius:3px 3px 1px 1px; opacity:.85; }
+  .stats-activity-bar.zero { background:var(--cream-shade); opacity:1; }
+  .stats-activity-label { font-size:10px; color:var(--ink-soft); }
+
+  .merge-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 2px; border-bottom:1px solid var(--cream-shade); }
+  .merge-row:last-of-type { border-bottom:none; margin-bottom:10px; }
+  .merge-row-txt { font-size:14px; color:var(--ink); }
+  .merge-undo { flex:none; width:26px; height:26px; border-radius:50%; border:1px solid var(--rule); background:none;
+    color:var(--red); font-size:15px; line-height:1; cursor:pointer; }
+  .merge-undo:active { background:var(--cream-shade); }
   .join-code-badge { display:inline-flex; align-items:center; gap:8px; }
   .join-code { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:17px; font-weight:600; letter-spacing:.2em; color:var(--ink); cursor:pointer; border:none; background:none; padding:0; }
   .join-code:active { opacity:.7; }
@@ -609,7 +669,8 @@ window.SOMERSET_FB_CONFIG = {
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
     openDeal:null, whoSheet:false, editingDeal:null,
-    series:null, offerSeries:null, seriesResult:null
+    series:null, offerSeries:null, seriesResult:null,
+    historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null
   };
 
   // ---- Display theme (light/dark/auto) ----
@@ -693,9 +754,31 @@ window.SOMERSET_FB_CONFIG = {
     nameBook = nameBook.filter(function (x) { return x.toLowerCase() !== nm.toLowerCase(); });
     saveNames(); softRender();
   }
+  // Per-device name aliases for Stats — lets a player fold "Daniel" and "Dan M"
+  // into one canonical "Dan" without touching the underlying game records.
+  // { [normalized variant key]: { display: "Daniel", canonical: "Dan" } }
+  var NAME_ALIASES_KEY = "somerset:dev-name-aliases";
+  function loadNameAliases() { try { var r = localStorage.getItem(NAME_ALIASES_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
+  function saveNameAliases() { try { localStorage.setItem(NAME_ALIASES_KEY, JSON.stringify(nameAliases)); } catch (e) {} }
+  function canonicalName(nm) {
+    var a = nameAliases[statKey(nm)];
+    return a ? a.canonical : nm;
+  }
+  // Merges fromDisplay into intoDisplay, and re-points any name already merged
+  // into fromDisplay so chained merges (A→B, then B→C) collapse to A→C.
+  function mergeNames(fromDisplay, intoDisplay) {
+    var fromKey = statKey(fromDisplay);
+    if (fromKey === statKey(intoDisplay)) return;
+    Object.keys(nameAliases).forEach(function (k) {
+      if (statKey(nameAliases[k].canonical) === fromKey) nameAliases[k].canonical = intoDisplay;
+    });
+    nameAliases[fromKey] = { display: fromDisplay, canonical: intoDisplay };
+    saveNameAliases();
+  }
   var gameHistory = loadHistory();
   var tourney = loadTourney();
   var nameBook = loadNames();
+  var nameAliases = loadNameAliases();
 
   // ---- "Which player am I?" identity, for auto-saving tournament games to my History ----
   var MY_NAME_KEY = "somerset:dev-my-name";         // { code, name } — which roster name is "me" for the active join code
@@ -1575,7 +1658,8 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet;
+           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
+           ui.mergeSheet != null;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -1603,7 +1687,11 @@ window.SOMERSET_FB_CONFIG = {
     gameViewEl.style.display = inGame ? "" : "none";
     viewRootEl.style.display = inGame ? "none" : "";
     if (inGame) { viewRootEl.innerHTML = ""; padEl.innerHTML = ""; renderScorePad(padEl, "solo"); renderSettings(); }
-    else if (ui.view === "history") renderHistory();
+    else if (ui.view === "history") {
+      if (ui.historySub === "board") renderStatsBoard();
+      else if (ui.historySub === "player") renderStatsPlayer();
+      else renderHistory();
+    }
     else if (ui.view === "tournament") renderTournament();
     renderModal(modalNoFade);
   }
@@ -2188,6 +2276,65 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; render(); } }, [wSheet]));
       return;
     }
+    if (ui.mergeSheet) {
+      var mStats = computePlayerStats();
+      var mPlayers = Object.keys(mStats).map(function (k) { return mStats[k].name; })
+        .sort(function (a, b) { return a.localeCompare(b); });
+      var closeMergeSheet = function () { ui.mergeSheet = null; render(); };
+      var mKids;
+      if (ui.mergeSheet.step === 2) {
+        mKids = [
+          el("h3", { class:"disp" }, ["Fold which name in?"]),
+          el("p", { class:"sub disp" }, ["Pick the name you want to combine into another player."])
+        ];
+        mPlayers.forEach(function (nm) {
+          mKids.push(el("button", { class:"sheet-btn disp",
+            onClick:function(){ ui.mergeSheet = { step:3, from:nm }; render(); } }, [nm]));
+        });
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:1 }; render(); } }, ["‹ Back"]));
+      } else if (ui.mergeSheet.step === 3) {
+        var fromNm = ui.mergeSheet.from;
+        var others = mPlayers.filter(function (nm) { return statKey(nm) !== statKey(fromNm); });
+        mKids = [
+          el("h3", { class:"disp" }, ["Fold “" + fromNm + "” into…"]),
+          el("p", { class:"sub disp" }, ["All of " + fromNm + "’s games will count for the player you pick."])
+        ];
+        if (others.length) {
+          others.forEach(function (nm) {
+            mKids.push(el("button", { class:"sheet-btn disp",
+              onClick:function(){ mergeNames(fromNm, nm); ui.mergeSheet = { step:1 }; render(); } }, [nm]));
+          });
+        } else {
+          mKids.push(el("p", { class:"sub disp" }, ["No other players yet — play a game with someone else first."]));
+        }
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:2 }; render(); } }, ["‹ Back"]));
+      } else {
+        var groups = {};
+        Object.keys(nameAliases).forEach(function (k) {
+          var a = nameAliases[k], ck = statKey(a.canonical);
+          (groups[ck] || (groups[ck] = { canonical:a.canonical, variants:[] })).variants.push({ key:k, display:a.display });
+        });
+        mKids = [
+          el("h3", { class:"disp" }, ["Merge names"]),
+          el("p", { class:"sub disp" }, ["Combine different spellings of the same player so their stats count as one."])
+        ];
+        Object.keys(groups).forEach(function (ck) {
+          groups[ck].variants.forEach(function (v) {
+            mKids.push(el("div", { class:"merge-row" }, [
+              el("span", { class:"merge-row-txt disp" }, [v.display + " → " + groups[ck].canonical]),
+              el("button", { class:"merge-undo", "aria-label":"Undo merge",
+                onClick:function(){ delete nameAliases[v.key]; saveNameAliases(); render(); } }, ["×"])
+            ]));
+          });
+        });
+        mKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.mergeSheet = { step:2 }; render(); } }, ["Merge two names…"]));
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeMergeSheet }, ["Done"]));
+      }
+      var mSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Merge names",
+        onClick:function(e){ e.stopPropagation(); } }, mKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:closeMergeSheet }, [mSheet]));
+      return;
+    }
     if (ui.seatMenu === null) return;
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
@@ -2694,11 +2841,228 @@ window.SOMERSET_FB_CONFIG = {
       footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
     }
     footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ fileInput.click(); } }, [gameHistory.length ? "Restore" : "Restore a backup"]));
+    footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
+    footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ ui.historySub = "board"; render(); } }, ["Stats"]));
     card.appendChild(el("div", { class:"history-footer" }, footerLinks));
     card.appendChild(fileInput);
     viewRootEl.appendChild(card);
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
     else applyScoreWrap();
+  }
+
+  // ---- Personal stats (History → Stats) ----
+  // Pure aggregation over gameHistory — nothing new persisted. Players are matched
+  // by trimmed, case-folded name, the same normalization dedupeNames() already
+  // uses for the per-device name book, so "Dan" and "dan " count as one player.
+  function statKey(name) { return (name || "").trim().toLowerCase(); }
+
+  function computePlayerStats() {
+    var byKey = {};
+    gameHistory.forEach(function (rec) {
+      if (rec.winner == null || !rec.players) return;
+      var moonsByTeam = [0, 0];
+      (rec.deals || []).forEach(function (d) { if (isMoonMade(d)) moonsByTeam[d.bidTeam]++; });
+      rec.players.forEach(function (raw, seat) {
+        var nm = (raw || "").trim();
+        if (!nm) return;
+        var resolved = canonicalName(nm);
+        var key = statKey(resolved), team = seat % 2;
+        var p = byKey[key] || (byKey[key] = { name: resolved, games: [] });
+        p.games.push({
+          date: rec.date, team: team,
+          won: rec.winner === team, tie: rec.winner === "tie",
+          champion: !!(rec.tournament && rec.tournament.championship && rec.winner === team),
+          moons: moonsByTeam[team]
+        });
+      });
+    });
+    Object.keys(byKey).forEach(function (key) { finalizePlayerStats(byKey[key]); });
+    return byKey;
+  }
+
+  function finalizePlayerStats(p) {
+    p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+    var wins = 0, losses = 0, moons = 0, champs = 0, longest = 0, run = 0;
+    p.games.forEach(function (g) {
+      if (g.champion) champs++;
+      moons += g.moons;
+      if (g.tie) { run = 0; }
+      else if (g.won) { wins++; run++; longest = Math.max(longest, run); }
+      else { losses++; run = 0; }
+    });
+    p.gamesPlayed = p.games.length;
+    p.wins = wins; p.losses = losses;
+    p.winPct = (wins + losses) ? Math.round((wins / (wins + losses)) * 100) : null;
+    p.longestStreak = longest;
+    p.moonsShot = moons;
+    p.championships = champs;
+  }
+
+  // Last `months` calendar months oldest-first, each bucketed with a game count —
+  // feeds the "Games by month" bar chart.
+  function playerMonthlyActivity(p, months) {
+    var now = new Date(), buckets = [], byKey = {};
+    for (var i = months - 1; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var key = d.getFullYear() + "-" + d.getMonth();
+      var b = { key: key, label: d.toLocaleDateString(undefined, { month: "short" }), count: 0 };
+      buckets.push(b); byKey[key] = b;
+    }
+    p.games.forEach(function (g) {
+      var d = new Date(g.date), key = d.getFullYear() + "-" + d.getMonth();
+      if (byKey[key]) byKey[key].count++;
+    });
+    return buckets;
+  }
+
+  var STAT_SORTS = [
+    ["wins", "Wins", function (p) { return p.wins; }],
+    ["winpct", "Win %", function (p) { return p.winPct == null ? -1 : p.winPct; }],
+    ["moons", "Moons", function (p) { return p.moonsShot; }],
+    ["streak", "Streak", function (p) { return p.longestStreak; }]
+  ];
+
+  function statMetricDisplay(p, sort) {
+    if (sort === "winpct") return { main: p.winPct == null ? "—" : (p.winPct + "%"), small: p.wins + "–" + p.losses };
+    if (sort === "moons") return { main: String(p.moonsShot), small: p.gamesPlayed + " game" + (p.gamesPlayed === 1 ? "" : "s") };
+    if (sort === "streak") return { main: String(p.longestStreak), small: "longest" };
+    return { main: p.wins + "–" + p.losses, small: p.winPct == null ? "—" : (p.winPct + "%") };
+  }
+
+  function renderRankRow(p, idx, sortDef, maxMetric) {
+    var val = Math.max(0, sortDef[2](p));
+    var pct = sortDef[0] === "winpct" ? (p.winPct || 0) : clamp(Math.round((val / maxMetric) * 100), 0, 100);
+    var disp = statMetricDisplay(p, sortDef[0]);
+    var champBadge = p.championships ? (" 🏆" + (p.championships > 1 ? ("×" + p.championships) : "")) : "";
+    return el("div", { class:"rank-row", role:"button",
+      onClick:function(){ ui.statsPlayer = p.name; ui.historySub = "player"; render(); } }, [
+      el("div", { class:"rank-num" + (idx < 3 ? " top" : "") }, [String(idx + 1)]),
+      el("div", { class:"rank-id" }, [
+        el("div", { class:"rank-name" }, [p.name + champBadge]),
+        el("div", { class:"rank-bar-track" }, [ el("div", { class:"rank-bar-fill", style:"width:" + pct + "%;" }, []) ])
+      ]),
+      el("div", { class:"rank-metric mono" }, [ disp.main, el("small", {}, [disp.small]) ]),
+      el("div", { class:"rank-chevron" }, ["›"])
+    ]);
+  }
+
+  function renderStatsBoard() {
+    viewRootEl.innerHTML = "";
+    var stats = computePlayerStats();
+    var players = Object.keys(stats).map(function (k) { return stats[k]; });
+    var sortDef = STAT_SORTS.find(function (s) { return s[0] === ui.statsSort; }) || STAT_SORTS[0];
+    players.sort(function (a, b) {
+      var d = sortDef[2](b) - sortDef[2](a);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
+    var maxMetric = Math.max(1, players.length ? sortDef[2](players[0]) : 0);
+
+    var card = el("div", { class:"pad fade" }, [
+      el("div", { class:"view-head disp" }, ["Stats"]),
+      el("div", { style:"padding:6px 6px 0;" }, [
+        el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = null; render(); } },
+          [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "History" ])
+      ]),
+      el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
+        return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
+          onClick:function(){ ui.statsSort = s[0]; render(); } }, [s[1]]);
+      }))
+    ]);
+
+    if (!players.length) {
+      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet — play a few to start building stats."]));
+    } else {
+      players.forEach(function (p, idx) { card.appendChild(renderRankRow(p, idx, sortDef, maxMetric)); });
+    }
+    if (players.length >= 2 || Object.keys(nameAliases).length) {
+      card.appendChild(el("div", { class:"history-footer" }, [
+        el("button", { class:"link-btn disp", onClick:function(){ ui.mergeSheet = { step:1 }; render(); } }, ["Merge names…"])
+      ]));
+    }
+    viewRootEl.appendChild(card);
+  }
+
+  function statTile(num, label) {
+    return el("div", { class:"stats-tile" }, [
+      el("div", { class:"stats-tile-num disp" }, [String(num)]),
+      el("div", { class:"stats-tile-label disp" }, [label])
+    ]);
+  }
+
+  function renderStatsPlayer() {
+    viewRootEl.innerHTML = "";
+    var stats = computePlayerStats();
+    var p = stats[statKey(ui.statsPlayer || "")];
+
+    var card = el("div", { class:"pad fade" }, [
+      el("div", { class:"view-head disp" }, [p ? p.name : (ui.statsPlayer || "Player")]),
+      el("div", { style:"padding:6px 6px 0;" }, [
+        el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; render(); } },
+          [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Stats" ])
+      ])
+    ]);
+
+    if (!p) {
+      card.appendChild(el("p", { class:"empty disp" }, ["No games found for this player."]));
+      viewRootEl.appendChild(card);
+      return;
+    }
+
+    card.appendChild(el("div", { class:"stats-hero" }, [
+      el("p", { class:"stats-hero-record mono disp" }, [p.wins + "–" + p.losses]),
+      el("p", { class:"stats-hero-sub disp" }, [
+        p.winPct == null
+          ? (p.gamesPlayed + " game" + (p.gamesPlayed === 1 ? "" : "s") + " played")
+          : (p.winPct + "% win rate over " + p.gamesPlayed + " game" + (p.gamesPlayed === 1 ? "" : "s"))
+      ]),
+      p.championships ? el("div", { class:"stats-hero-champ disp" },
+        ["🏆 " + p.championships + " tournament championship" + (p.championships === 1 ? "" : "s")]) : null
+    ]));
+
+    card.appendChild(el("div", { class:"stats-tile-grid" }, [
+      statTile(p.championships, "Championships"),
+      statTile(p.longestStreak, "Longest streak"),
+      statTile(p.moonsShot, "Moons shot"),
+      statTile(p.gamesPlayed, "Games played")
+    ]));
+
+    var recent = p.games.slice(-10);
+    card.appendChild(el("div", { class:"stats-section" }, [
+      el("p", { class:"stats-section-title disp" }, ["Recent form"]),
+      el("div", { class:"stats-form-strip" }, recent.map(function (g) {
+        return el("div", { class:"stats-form-pill " + (g.tie ? "t" : (g.won ? "w" : "l")) }, [g.tie ? "T" : (g.won ? "W" : "L")]);
+      }))
+    ]));
+
+    var wlTotal = p.wins + p.losses, wPct = wlTotal ? Math.round((p.wins / wlTotal) * 100) : 0;
+    card.appendChild(el("div", { class:"stats-section" }, [
+      el("p", { class:"stats-section-title disp" }, ["Win / loss"]),
+      el("div", { class:"stats-wl-row" }, [
+        el("div", { class:"stats-wl-bar" }, [
+          el("div", { class:"seg-w", style:"width:" + wPct + "%;" }, []),
+          el("div", { class:"seg-l", style:"width:" + (100 - wPct) + "%;" }, [])
+        ]),
+        el("div", { class:"stats-wl-labels" }, [
+          el("span", {}, [ el("b", {}, [String(p.wins)]), " win" + (p.wins === 1 ? "" : "s") ]),
+          el("span", {}, [ el("b", {}, [String(p.losses)]), " loss" + (p.losses === 1 ? "" : "es") ])
+        ])
+      ])
+    ]));
+
+    var months = playerMonthlyActivity(p, 6);
+    var maxCount = Math.max(1, Math.max.apply(null, months.map(function (m) { return m.count; })));
+    card.appendChild(el("div", { class:"stats-section" }, [
+      el("p", { class:"stats-section-title disp" }, ["Games by month"]),
+      el("div", { class:"stats-activity-row" }, months.map(function (m) {
+        var h = m.count ? Math.max(8, Math.round((m.count / maxCount) * 56)) : 3;
+        return el("div", { class:"stats-activity-col" }, [
+          el("div", { class:"stats-activity-bar" + (m.count ? "" : " zero"), style:"height:" + h + "px;" }, []),
+          el("div", { class:"stats-activity-label" }, [m.label])
+        ]);
+      }))
+    ]));
+
+    viewRootEl.appendChild(card);
   }
 
   // Bucket history into top-level sections: standalone (non-tournament) games
@@ -4058,6 +4422,11 @@ window.SOMERSET_FB_CONFIG = {
   }
   function closeTopLayer() {
     if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); return true; }
+    if (ui.mergeSheet) {
+      ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
+      render();
+      return true;
+    }
     if (ui.info != null) { ui.info = null; render(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; render(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
@@ -4071,6 +4440,12 @@ window.SOMERSET_FB_CONFIG = {
       return true;
     }
     if (ui.activeMatch) { leaveMatch(); return true; }
+    if (ui.view === "history" && ui.historySub) {
+      ui.historySub = (ui.historySub === "player") ? "board" : null;
+      if (ui.historySub !== "player") ui.statsPlayer = null;
+      render();
+      return true;
+    }
     if (ui.view !== "game") { ui.view = "game"; render(); return true; }
     return false;
   }
@@ -4083,6 +4458,7 @@ window.SOMERSET_FB_CONFIG = {
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); }
+    else if (ui.mergeSheet) { ui.mergeSheet = null; render(); }
     else if (ui.info) { ui.info = null; render(); }
     else if (ui.matchMenu) { ui.matchMenu = null; render(); }
     else if (ui.seatMenu !== null) { ui.seatMenu = null; ui.seatMenuMode = "menu"; render(); }
