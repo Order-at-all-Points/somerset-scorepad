@@ -354,6 +354,12 @@
      than sitting in a filled bar; the filled treatment is reserved for .banner moments. */
   .view-head { background:var(--cream); color:var(--ink); font-family:var(--font-display); text-align:center; padding:16px 12px 12px; font-size:20px; font-weight:600; border-bottom:3px double var(--brass); }
 
+  .seg-toggle { display:flex; gap:4px; margin:10px 12px 2px; padding:3px; background:var(--cream-shade); border-radius:var(--r-control); }
+  .seg-btn { flex:1; padding:8px 0; border:none; border-radius:calc(var(--r-control) - 3px); background:none;
+    font-family:var(--font-text); font-size:14px; font-weight:600; color:var(--ink-soft); cursor:pointer; }
+  .seg-btn.on { background:var(--cream); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.18); }
+  .seg-btn:active:not(.on) { opacity:.6; }
+
   /* ---- history ---- */
   .hist-date-group { border-bottom:2px solid var(--brass); }
   .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:12px; cursor:pointer; background:var(--cream-shade); }
@@ -2831,6 +2837,17 @@ window.SOMERSET_FB_CONFIG = {
     reader.readAsText(file);
   }
 
+  // Log/Stats switcher shown at the top of the History and Stats board views —
+  // `active` is "log" or "stats".
+  function renderHistoryViewToggle(active) {
+    return el("div", { class:"seg-toggle" }, [
+      el("button", { class:"seg-btn" + (active === "log" ? " on" : ""),
+        onClick:function(){ ui.historySub = null; render(); } }, ["Log"]),
+      el("button", { class:"seg-btn" + (active === "stats" ? " on" : ""),
+        onClick:function(){ ui.historySub = "board"; render(); } }, ["Stats"])
+    ]);
+  }
+
   function renderHistory() {
     viewRootEl.innerHTML = "";
     var fileInput = el("input", { type:"file", accept:"application/json", style:"display:none;", onChange:function () {
@@ -2838,7 +2855,8 @@ window.SOMERSET_FB_CONFIG = {
       fileInput.value = "";
     } }, []);
     var card = el("div", { class:"pad fade" }, [
-      el("div", { class:"view-head disp" }, ["Game History"])
+      el("div", { class:"view-head disp" }, ["History"]),
+      renderHistoryViewToggle("log")
     ]);
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
@@ -2859,8 +2877,6 @@ window.SOMERSET_FB_CONFIG = {
       footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
     }
     footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ fileInput.click(); } }, [gameHistory.length ? "Restore" : "Restore a backup"]));
-    footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
-    footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ ui.historySub = "board"; render(); } }, ["Stats"]));
     card.appendChild(el("div", { class:"history-footer" }, footerLinks));
     card.appendChild(fileInput);
     viewRootEl.appendChild(card);
@@ -3067,10 +3083,7 @@ window.SOMERSET_FB_CONFIG = {
 
     var card = el("div", { class:"pad fade" }, [
       el("div", { class:"view-head disp" }, ["Stats"]),
-      el("div", { style:"padding:6px 6px 0;" }, [
-        el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = null; render(); } },
-          [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "History" ])
-      ]),
+      renderHistoryViewToggle("stats"),
       el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
         return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
           onClick:function(){ ui.statsSort = s[0]; render(); } }, [s[1]]);
