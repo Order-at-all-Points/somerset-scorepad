@@ -366,7 +366,7 @@
   .hist-date-group { border-bottom:1px solid var(--rule); }
   .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:12px; cursor:pointer; background:var(--cream); }
   .hist-date-title { font-size:15px; font-weight:600; color:var(--brass-text); }
-  .hist-date-sum-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .hist-head-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
   .hist-date-sum { font-size:13px; color:var(--ink-soft); margin-left:24px; }
   .hist-t-group { border-top:1px solid var(--cream-shade); }
   .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 8px 24px; cursor:pointer; }
@@ -3504,26 +3504,27 @@ window.SOMERSET_FB_CONFIG = {
   function renderHistoryGroup(g) {
     var recs = g.records;
     var open = ui.historyGroupOpen[g.key] === true;   // default collapsed
-    var titleText = g.isTournament
-      ? (dateHeading(recs[0].date) + " · " + tournamentTitleLabel(g.tournament) + " Tournament")
-      : (dateHeading(recs[0].date) + " · " + (recs.length === 1 ? "Standard Game" : "Standard Games"));
-    var sumLeft, sumRight = "";
+    var chevron = open ? "▾ " : "▸ ";
+    var titleLeft, titleRight = "", sumLeft;
     if (g.isTournament) {
-      var teamCount = tournamentTeamCount(recs);
-      sumLeft = recs.length + " game" + (recs.length === 1 ? "" : "s") + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s");
+      titleLeft = chevron + dateHeading(recs[0].date);
       var stats = groupStats(recs);
-      sumRight = stats.champion ? ("🏆 " + stats.champion + " Won") : "";
+      titleRight = stats.champion ? ("🏆 " + stats.champion + " Won") : "";
+      var teamCount = tournamentTeamCount(recs);
+      sumLeft = recs.length + " game" + (recs.length === 1 ? "" : "s") + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s")
+        + ", " + tournamentTitleLabel(g.tournament).toLowerCase();
     } else {
+      titleLeft = chevron + dateHeading(recs[0].date) + " · " + (recs.length === 1 ? "Standard Game" : "Standard Games");
       sumLeft = statsSummaryText(recs);
     }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[g.key] = !open; render();
     } }, [
-      el("span", { class:"hist-date-title disp" }, [ (open ? "▾ " : "▸ ") + titleText ]),
-      el("div", { class:"hist-date-sum-row" }, [
-        el("span", { class:"hist-date-sum disp" }, [ sumLeft ]),
-        el("span", { class:"hist-win disp" }, [ sumRight ])
-      ])
+      el("div", { class:"hist-head-row" }, [
+        el("span", { class:"hist-date-title disp" }, [ titleLeft ]),
+        el("span", { class:"hist-win disp" }, [ titleRight ])
+      ]),
+      el("span", { class:"hist-date-sum disp" }, [ sumLeft ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
     if (open) recs.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
