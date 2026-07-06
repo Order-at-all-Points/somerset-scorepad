@@ -150,7 +150,8 @@
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
-  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignBidderNames */
+  .deal-desc-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn */
+  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignDealBidColumn */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -387,7 +388,8 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
-  .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignBidderNames */
+  .hh-bid-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn */
+  .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignDealBidColumn */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
@@ -1822,10 +1824,10 @@ window.SOMERSET_FB_CONFIG = {
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
     // Refs for the currently-open row's Trump/digit alignment (see alignDealDetail),
-    // and every row's bidder-name span (see alignBidderNames); reset each render
+    // and every row's bid-column parts (see alignDealBidColumn); reset each render
     // since a torn-down row's nodes would otherwise linger stale.
     target.__dealAlign = null;
-    target.__dealNameEls = [];
+    target.__dealBidRows = [];
     // A torn-down row's swipe (if any) no longer exists in the new DOM, so drop any
     // stale reference to it rather than let the global pointerdown listener above
     // try to close a detached row.
@@ -1841,16 +1843,15 @@ window.SOMERSET_FB_CONFIG = {
         // so they fall back to naming the team instead of a specific player.
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : game.teams[d.bidTeam];
         var nameEl = el("span", { class:"deal-bidder-name" }, [bidderLabel]);
-        target.__dealNameEls.push(nameEl);
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
-        var bidNumEl = null, descKids;
+        var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
-          descKids = [ nameEl, " shot the moon" ];
+          innerKids = [ nameEl, " shot the moon" ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
-          descKids = [ nameEl, " bid ", bidNumEl ];
+          innerKids = [ nameEl, " bid ", bidNumEl ];
         }
-        if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
+        if (isMoonMade(d)) innerKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (bidderLabel + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
@@ -1864,7 +1865,9 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"dash" }, ["|"]),
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null)
         ]);
-        var descEl = el("span", { class:"deal-desc disp" }, descKids);
+        var innerEl = el("span", { class:"deal-desc-inner" }, innerKids);
+        var descEl = el("span", { class:"deal-desc disp" }, [innerEl]);
+        target.__dealBidRows.push({ nameEl:nameEl, innerEl:innerEl, descEl:descEl });
         var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
           class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
           style:"transform:rotate(" + seatArrowRot + "deg);"
@@ -1969,10 +1972,10 @@ window.SOMERSET_FB_CONFIG = {
     // is already attached, so equalize now; it's a no-op without match names.
     target.__teamNameEls = teamNameEls;
     if (target.isConnected) equalizeTeamNames(teamNameEls);
-    // alignBidderNames must run first: it pads each row's bidder name to a fixed
-    // column width (shifting bidNumEl's position), and alignDealDetail then
-    // measures bidNumEl's *final* position to land the "took" digit underneath it.
-    if (target.isConnected) alignBidderNames(target.__dealNameEls);
+    // alignDealBidColumn must run first: it repositions each row's bid text
+    // (shifting bidNumEl's position), and alignDealDetail then measures bidNumEl's
+    // *final* position to land the "took" digit underneath it.
+    if (target.isConnected) alignDealBidColumn(target.__dealBidRows);
     if (target.isConnected) alignDealDetail(target.__dealAlign);
   }
 
@@ -1998,19 +2001,34 @@ window.SOMERSET_FB_CONFIG = {
     a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
   }
 
-  // Column-aligns "bid" down a list of hands: names vary in length, so each
-  // bidder-name span is padded (and right-aligned via CSS) to the widest name
-  // among the given elements — the longest name fills its box exactly and
-  // shorter ones sit flush against its right edge, so there's always exactly
-  // one space before "bid" (or "shot the moon") and it lands at the same x
-  // position on every row. Shared by the live deal history and the archived
-  // History detail table.
-  function alignBidderNames(nameEls) {
-    if (!nameEls || !nameEls.length) return;
-    var i, max = 0;
-    for (i = 0; i < nameEls.length; i++) nameEls[i].style.minWidth = "";
-    for (i = 0; i < nameEls.length; i++) max = Math.max(max, nameEls[i].getBoundingClientRect().width);
-    for (i = 0; i < nameEls.length; i++) nameEls[i].style.minWidth = max + "px";
+  // Column-aligns "bid" down a list of hands. Each row is { nameEl, innerEl, descEl }:
+  // nameEl is the bidder's name, innerEl wraps the row's full "<name> bid <n>" text,
+  // and descEl is the available space between the score and dealer columns.
+  // First, every nameEl is padded to the widest name in the list (and right-aligned
+  // via CSS), so there's always exactly one space before "bid" regardless of name
+  // length. Then the row with that longest name is used as a baseline: its innerEl
+  // is centered within its own descEl, and every other row's innerEl is shifted by
+  // that same pixel amount — not re-centered individually — so "bid" stays lined up
+  // beneath the baseline row's regardless of how wide the trailing bid number or
+  // moon/set suffix is. Shared by the live deal history and the archived History
+  // detail table.
+  function alignDealBidColumn(rows) {
+    if (!rows || !rows.length) return;
+    var i, ref = null, maxNameWidth = 0;
+    for (i = 0; i < rows.length; i++) {
+      rows[i].nameEl.style.minWidth = "";
+      rows[i].innerEl.style.transform = "";
+    }
+    for (i = 0; i < rows.length; i++) {
+      var w = rows[i].nameEl.getBoundingClientRect().width;
+      if (w > maxNameWidth) { maxNameWidth = w; ref = rows[i]; }
+    }
+    for (i = 0; i < rows.length; i++) rows[i].nameEl.style.minWidth = maxNameWidth + "px";
+    if (!ref) return;
+    var boxRect = ref.descEl.getBoundingClientRect();
+    var innerRect = ref.innerEl.getBoundingClientRect();
+    var delta = (boxRect.width - innerRect.width) / 2 - (innerRect.left - boxRect.left);
+    for (i = 0; i < rows.length; i++) rows[i].innerEl.style.transform = "translateX(" + delta + "px)";
   }
 
   // If one match name wraps to two lines, stack the other team's partner onto
@@ -3436,7 +3454,17 @@ window.SOMERSET_FB_CONFIG = {
   // one game's roster of names has no bearing on another's column width.
   function alignHistoryBidderNames() {
     var details = viewRootEl.querySelectorAll(".hist-detail");
-    for (var i = 0; i < details.length; i++) alignBidderNames(details[i].querySelectorAll(".hh-bidder"));
+    for (var i = 0; i < details.length; i++) {
+      var bidEls = details[i].querySelectorAll(".hh-bid"), rows = [];
+      for (var j = 0; j < bidEls.length; j++) {
+        rows.push({
+          descEl: bidEls[j],
+          innerEl: bidEls[j].querySelector(".hh-bid-inner"),
+          nameEl: bidEls[j].querySelector(".hh-bidder")
+        });
+      }
+      alignDealBidColumn(rows);
+    }
   }
 
   function renderHistoryItem(rec) {
@@ -3504,7 +3532,7 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
-        el("span", { class:"hh-bid disp" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]),
+        el("span", { class:"hh-bid disp" }, [ el("span", { class:"hh-bid-inner" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]) ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
     });
@@ -4002,7 +4030,7 @@ window.SOMERSET_FB_CONFIG = {
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
-    alignBidderNames(card.__dealNameEls);
+    alignDealBidColumn(card.__dealBidRows);
     alignDealDetail(card.__dealAlign);
   }
 
