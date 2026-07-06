@@ -1841,7 +1841,7 @@ window.SOMERSET_FB_CONFIG = {
         // Older deals recorded before bidder tracking existed have no bidderSeat,
         // so they fall back to naming the team instead of a specific player.
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : game.teams[d.bidTeam];
-        // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
+        // bidNumEl is null for a moon bid ("shot the moon" has no digit to show).
         var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
           // Made moons get the accent color (set-flag's default red overridden inline);
@@ -1893,7 +1893,7 @@ window.SOMERSET_FB_CONFIG = {
           var takenPts = d.pts[d.bidTeam];
           // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
           var takenNumEl = el("span", { class:"deal-desc-num" }, [String(takenPts)]);
-          var bidLineKids = [ bidderLabel + " took ", takenNumEl ];
+          var bidLineKids = [ game.teams[d.bidTeam] + " took ", takenNumEl ];
           if (isSet) bidLineKids.push(" (set)");
           // var trumpEl = el("span", { class:"deal-detail-trump" }, ["Trump:", el("b", {}, [trumpVal])]);
           // Kept as an empty spacer: alignDealDetail() sizes this to match .deal-score-block's
@@ -1906,7 +1906,7 @@ window.SOMERSET_FB_CONFIG = {
             bidLineEl,
             dealerNameEl
           ]));
-          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl };
+          target.__dealAlign = { scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl };
         }
       });
     }
@@ -1975,25 +1975,17 @@ window.SOMERSET_FB_CONFIG = {
     target.__teamNameEls = teamNameEls;
     target.__dealTableEl = pad.querySelector(".table");
     if (target.isConnected) equalizeTeamNames(teamNameEls);
-    // alignDealDesc must run first: it repositions each row's bid text (shifting
-    // bidNumEl's position), and alignDealDetail then measures bidNumEl's *final*
-    // position to land the "took" digit underneath it.
     if (target.isConnected) alignDealDesc(target.__dealBidRows, target.__dealTableEl);
     if (target.isConnected) alignDealDetail(target.__dealAlign);
   }
 
-  // The expanded deal row's Trump block and "took" digit are positioned by measuring
-  // the already-rendered collapsed row (same pattern as equalizeTeamNames above) —
-  // widths built from ch units + a bare glyph aren't reliably reproducible with a
-  // second, independent CSS declaration, so we copy the real rendered pixels instead.
+  // The expanded deal row's Trump block is positioned by measuring the already-
+  // rendered collapsed row (same pattern as equalizeTeamNames above) — widths built
+  // from ch units + a bare glyph aren't reliably reproducible with a second,
+  // independent CSS declaration, so we copy the real rendered pixels instead.
   function alignDealDetail(a) {
     if (!a) return;
     a.trumpEl.style.width = a.scoreBlockEl.getBoundingClientRect().width + "px";
-    a.bidLineEl.style.transform = "";
-    if (a.bidNumEl) {   // null for a moon bid — nothing to align the taken digit to
-      var delta = a.bidNumEl.getBoundingClientRect().left - a.takenNumEl.getBoundingClientRect().left;
-      a.bidLineEl.style.transform = "translateX(" + delta + "px)";
-    }
     // The dealer's name is right-aligned like the "Dealer" label above it, but for
     // short names a right-edge match leaves it floating under the arrow instead of
     // under the word "Dealer". Nudge it left to line up under the "D" — but never
