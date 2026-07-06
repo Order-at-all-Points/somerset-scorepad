@@ -487,6 +487,10 @@
   .series-dash { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:20px; color:var(--ink-soft); flex:none; }
   .series-sub { text-align:center; font-size:13px; color:var(--ink-soft); margin:2px 0 12px; }
   .series-game-label { flex:1; color:var(--ink); font-size:13px; }
+  .series-tracker { display:flex; align-items:baseline; justify-content:center; gap:6px; flex-wrap:wrap;
+    padding:8px 12px 0; font-size:13px; color:var(--ink-soft); text-align:center; }
+  .series-tracker b { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:15px;
+    font-weight:600; color:var(--ink); }
   .rr-row.series-next { background:color-mix(in srgb, var(--brass) 10%, transparent); }
   .rr-row.series-next .rr-result { color:var(--brass-text); }
   .rr-row.series-live { background:rgba(82,168,82,.12); }
@@ -1629,6 +1633,26 @@ window.SOMERSET_FB_CONFIG = {
       pad.appendChild(el("div", { class:"banner disp" }, [
         win === "tie" ? "Tied above the mark \u2014 play one more deal!" : (game.teams[win] + " win the game!")
       ]));
+    }
+
+    // Series win tracker \u2014 while a game is in progress, keep the running tally of
+    // games already won visible (e.g. "Us 1 \u2013 0 Them"), so it doesn't disappear the
+    // moment the next game starts. Once this game ends, the fuller series-score
+    // displays elsewhere (the "Play Game N" screen, or the bracket view) take over.
+    if (win === null) {
+      var seriesInfo = isMatch
+        ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
+        : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf } : null);
+      if (seriesInfo) {
+        pad.appendChild(el("div", { class:"series-tracker disp" }, [
+          el("span", {}, [game.teams[0]]),
+          el("b", {}, [String(seriesInfo.wins[0])]),
+          el("span", {}, ["\u2013"]),
+          el("b", {}, [String(seriesInfo.wins[1])]),
+          el("span", {}, [game.teams[1]]),
+          el("span", {}, ["\u00b7 Best of " + seriesInfo.bestOf])
+        ]));
+      }
     }
 
     // Totals
