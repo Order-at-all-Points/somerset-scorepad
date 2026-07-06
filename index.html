@@ -2549,7 +2549,7 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"phase-label disp" }, ["Step 2 \u00b7 after the hand"]),
       el("button", { class:"bid-summary disp", "aria-label":"Edit the bid",
         onClick:function(){ ui.entryStep = 1; render(); } }, [
-        game.teams[ui.bidTeam] + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
+        seatName(ui.bidderSeat) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
         el("span", { class:"edit-hint" }, ["edit"])
       ]),
     ]);
