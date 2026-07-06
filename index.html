@@ -150,8 +150,8 @@
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
   .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
-  .deal-desc-inner { display:inline-block; white-space:nowrap; }   /* positioned in JS, see alignDealBidColumn */
-  .deal-bidder-name { display:inline-block; text-align:right; white-space:nowrap; }   /* padded to the widest name in the list in JS, see alignDealBidColumn */
+  .deal-desc-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn; wraps rather than overlapping the dealer column when it doesn't fit */
+  .deal-bidder-name { display:inline-block; text-align:right; }   /* padded to the widest name in the list in JS, see alignDealBidColumn; wraps rather than overflowing if a name is too long to fit */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -388,8 +388,8 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
-  .hh-bid-inner { display:inline-block; white-space:nowrap; }   /* positioned in JS, see alignDealBidColumn */
-  .hh-bidder { display:inline-block; text-align:right; white-space:nowrap; }   /* padded to the widest name in the table in JS, see alignDealBidColumn */
+  .hh-bid-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn; wraps rather than overlapping the dealer column when it doesn't fit */
+  .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignDealBidColumn; wraps rather than overflowing if a name is too long to fit */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
@@ -2010,12 +2010,15 @@ window.SOMERSET_FB_CONFIG = {
   // and descEl is the available space between the score and dealer columns.
   // First, every nameEl is padded to the widest name in the list (and right-aligned
   // via CSS), so there's always exactly one space before "bid" regardless of name
-  // length. Then the row with that longest name is used as a baseline: its innerEl
-  // is centered within its own descEl, and every other row's innerEl is shifted by
-  // that same pixel amount — not re-centered individually — so "bid" stays lined up
-  // beneath the baseline row's regardless of how wide the trailing bid number or
-  // moon/set suffix is. Shared by the live deal history and the archived History
-  // detail table.
+  // length — capped to the row's own available width, so a name too long to fit
+  // wraps onto a second line instead of forcing every row to overflow. Then the row
+  // with that longest name is used as a baseline: its innerEl is centered within its
+  // own descEl, and every other row's innerEl is shifted by that same pixel amount —
+  // not re-centered individually — so "bid" stays lined up beneath the baseline
+  // row's regardless of how wide the trailing bid number or moon/set suffix is. The
+  // shift is clamped so it never pushes the baseline row's content past its own box
+  // edges — better to leave it flush and let it wrap than spill into the dealer
+  // column. Shared by the live deal history and the archived History detail table.
   function alignDealBidColumn(rows) {
     if (!rows || !rows.length) return;
     var i, ref = null, maxNameWidth = 0;
@@ -2027,11 +2030,15 @@ window.SOMERSET_FB_CONFIG = {
       var w = rows[i].nameEl.getBoundingClientRect().width;
       if (w > maxNameWidth) { maxNameWidth = w; ref = rows[i]; }
     }
-    for (i = 0; i < rows.length; i++) rows[i].nameEl.style.minWidth = maxNameWidth + "px";
     if (!ref) return;
+    maxNameWidth = Math.min(maxNameWidth, ref.descEl.getBoundingClientRect().width);
+    for (i = 0; i < rows.length; i++) rows[i].nameEl.style.minWidth = maxNameWidth + "px";
     var boxRect = ref.descEl.getBoundingClientRect();
     var innerRect = ref.innerEl.getBoundingClientRect();
-    var delta = (boxRect.width - innerRect.width) / 2 - (innerRect.left - boxRect.left);
+    var curLeft = innerRect.left - boxRect.left;
+    var delta = (boxRect.width - innerRect.width) / 2 - curLeft;
+    var minDelta = -curLeft, maxDelta = boxRect.width - innerRect.width - curLeft;
+    delta = (maxDelta >= minDelta) ? Math.max(minDelta, Math.min(maxDelta, delta)) : 0;
     for (i = 0; i < rows.length; i++) rows[i].innerEl.style.transform = "translateX(" + delta + "px)";
   }
 
