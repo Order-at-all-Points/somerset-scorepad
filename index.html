@@ -2016,9 +2016,10 @@ window.SOMERSET_FB_CONFIG = {
   // own descEl, and every other row's innerEl is shifted by that same pixel amount —
   // not re-centered individually — so "bid" stays lined up beneath the baseline
   // row's regardless of how wide the trailing bid number or moon/set suffix is. The
-  // shift is clamped so it never pushes the baseline row's content past its own box
-  // edges — better to leave it flush and let it wrap than spill into the dealer
-  // column. Shared by the live deal history and the archived History detail table.
+  // shift is clamped per row (not just for the baseline) so a row whose own content
+  // is wider than the baseline's — e.g. a "shot the MOON" suffix — never gets pushed
+  // past its own box edges into the dealer column; better to leave it off-center
+  // than spill. Shared by the live deal history and the archived History detail table.
   function alignDealBidColumn(rows) {
     if (!rows || !rows.length) return;
     var i, ref = null, maxNameWidth = 0;
@@ -2039,7 +2040,17 @@ window.SOMERSET_FB_CONFIG = {
     var delta = (boxRect.width - innerRect.width) / 2 - curLeft;
     var minDelta = -curLeft, maxDelta = boxRect.width - innerRect.width - curLeft;
     delta = (maxDelta >= minDelta) ? Math.max(minDelta, Math.min(maxDelta, delta)) : 0;
-    for (i = 0; i < rows.length; i++) rows[i].innerEl.style.transform = "translateX(" + delta + "px)";
+    for (i = 0; i < rows.length; i++) {
+      var rowDelta = delta;
+      if (rows[i] !== ref) {
+        var rBoxRect = rows[i].descEl.getBoundingClientRect();
+        var rInnerRect = rows[i].innerEl.getBoundingClientRect();
+        var rCurLeft = rInnerRect.left - rBoxRect.left;
+        var rMinDelta = -rCurLeft, rMaxDelta = rBoxRect.width - rInnerRect.width - rCurLeft;
+        rowDelta = (rMaxDelta >= rMinDelta) ? Math.max(rMinDelta, Math.min(rMaxDelta, delta)) : 0;
+      }
+      rows[i].innerEl.style.transform = "translateX(" + rowDelta + "px)";
+    }
   }
 
   // If one match name wraps to two lines, stack the other team's partner onto
