@@ -4745,7 +4745,7 @@ window.SOMERSET_FB_CONFIG = {
     var scores = scoreGame ? gameTotals(scoreGame) : null;
     function slot(idx, scoreIdx) {
       var isBye = idx == null && r === 0;
-      var label = idx == null ? (isBye ? "bye — advances automatically" : "—") : t.teams[idx].name;
+      var label = idx == null ? (isBye ? "bye" : "—") : t.teams[idx].name;
       var isWin = decided && idx != null && m.winner === idx;
       var kids = [ el("span", { class:"mbox-slot-name" + (isBye ? " bye" : "") }, [ label ]) ];
       if (scores) kids.push(el("span", { class:"mbox-score" }, [ String(scores[scoreIdx]) ]));
