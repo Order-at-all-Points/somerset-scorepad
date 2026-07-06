@@ -695,7 +695,7 @@ window.SOMERSET_FB_CONFIG = {
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
     openDeal:null, whoSheet:false, editingDeal:null, playingAsOpen:false,
     series:null, offerSeries:null, seriesResult:null,
-    historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null
+    historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all"
   };
 
   // ---- Display theme (light/dark/auto) ----
@@ -2950,20 +2950,27 @@ window.SOMERSET_FB_CONFIG = {
     } }, []);
     var card = el("div", { class:"pad fade" }, [
       el("div", { class:"view-head disp" }, ["History"]),
-      renderHistoryViewToggle("log")
+      renderHistoryViewToggle("log"),
+      renderHistoryFilterRow()
     ]);
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
     } else {
-      var groups = buildHistoryGroups();
-      // Expand all / Collapse all — hidden until the UI is polished; see setAllHistoryGroupsOpen.
-      // card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
-      //   el("div", {}, [
-      //     el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
-      //     el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
-      //   ])
-      // ]));
-      groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
+      var filterDef = HISTORY_FILTERS.find(function (f) { return f[0] === ui.historyFilter; }) || HISTORY_FILTERS[0];
+      var filtered = gameHistory.filter(filterDef[2]);
+      if (!filtered.length) {
+        card.appendChild(el("p", { class:"empty disp" }, ["No games match this filter."]));
+      } else {
+        var groups = buildHistoryGroups(filtered);
+        // Expand all / Collapse all — hidden until the UI is polished; see setAllHistoryGroupsOpen.
+        // card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
+        //   el("div", {}, [
+        //     el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
+        //     el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
+        //   ])
+        // ]));
+        groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
+      }
     }
     var footerLinks = [];
     if (gameHistory.length) {
@@ -3400,6 +3407,21 @@ window.SOMERSET_FB_CONFIG = {
   function dateKey(iso) {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
   }
+  // Log-view filter pills shown under the Log/Stats switcher — same predicate
+  // shape as STAT_SORTS. "today" compares local calendar day via dateKey, same
+  // normalization buildHistoryGroups already uses to group by day.
+  var HISTORY_FILTERS = [
+    ["all", "All", function () { return true; }],
+    ["today", "Today", function (rec) { return dateKey(rec.date) === dateKey(new Date().toISOString()); }],
+    ["standard", "Standard Games", function (rec) { return !(rec.tournament && rec.tournament.id != null); }],
+    ["tournaments", "Tournaments", function (rec) { return !!(rec.tournament && rec.tournament.id != null); }]
+  ];
+  function renderHistoryFilterRow() {
+    return el("div", { class:"stat-sort-row" }, HISTORY_FILTERS.map(function (f) {
+      return el("button", { class:"stat-sort-chip" + (ui.historyFilter === f[0] ? " on" : ""),
+        onClick:function(){ ui.historyFilter = f[0]; render(); } }, [f[1]]);
+    }));
+  }
   function dateHeading(iso) {
     try {
       var d = new Date(iso);
@@ -3408,9 +3430,9 @@ window.SOMERSET_FB_CONFIG = {
       return mm + "/" + dd + "/" + d.getFullYear();
     } catch (e) { return ""; }
   }
-  function buildHistoryGroups() {
+  function buildHistoryGroups(records) {
     var groups = [], byKey = {};
-    gameHistory.forEach(function (rec) {
+    (records || gameHistory).forEach(function (rec) {
       var isTournament = rec.tournament && rec.tournament.id != null;
       var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
       var g = byKey[key];
@@ -3442,6 +3464,7 @@ window.SOMERSET_FB_CONFIG = {
     ui.historyGroupOpen[key] = true;
     ui.historyOpen = rec.id;
     ui.jumpToRecordId = rec.id;
+    ui.historyFilter = "all";
     ui.view = "history"; ui.historySub = null;
     render();
   }
