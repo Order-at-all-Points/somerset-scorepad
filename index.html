@@ -3482,20 +3482,21 @@ window.SOMERSET_FB_CONFIG = {
     });
     return { champion: champion };
   }
-  // Distinct team names across a tournament's match records — matches only
-  // carry their own two teams, so the bracket-wide participant count is the
+  // Distinct team names across a group's match records — each record only
+  // carries its own two teams, so the group-wide participant count is the
   // union across every recorded match.
-  function tournamentTeamCount(records) {
+  function uniqueTeamCount(records) {
     var seen = {};
     records.forEach(function (rec) {
       (rec.teams || []).forEach(function (name) { if (name) seen[name] = true; });
     });
     return Object.keys(seen).length;
   }
-  // "N Games, Standard" — no per-team win/loss breakdown here, that detail
-  // lives in the group header.
+  // "N games, M teams, standard"
   function statsSummaryText(records) {
-    return records.length + (records.length === 1 ? " Game" : " Games") + ", Standard";
+    var teamCount = uniqueTeamCount(records);
+    return records.length + (records.length === 1 ? " game" : " games")
+      + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s") + ", standard";
   }
   // "Best of 5", "Double Elimination", etc. — short form for the group header title.
   function tournamentTitleLabel(t) {
@@ -3510,7 +3511,7 @@ window.SOMERSET_FB_CONFIG = {
       titleLeft = chevron + dateHeading(recs[0].date);
       var stats = groupStats(recs);
       titleRight = stats.champion ? ("🏆 " + stats.champion + " Won") : "";
-      var teamCount = tournamentTeamCount(recs);
+      var teamCount = uniqueTeamCount(recs);
       sumLeft = recs.length + " game" + (recs.length === 1 ? "" : "s") + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s")
         + ", " + tournamentTitleLabel(g.tournament).toLowerCase();
     } else {
