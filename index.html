@@ -365,7 +365,8 @@
   /* ---- history ---- */
   .hist-date-group { border-bottom:1px solid var(--rule); }
   .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:12px; cursor:pointer; background:var(--cream); }
-  .hist-date-title { font-size:15px; font-weight:600; color:var(--ink); }
+  .hist-date-title { font-size:15px; font-weight:600; color:var(--brass-text); }
+  .hist-date-sum-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
   .hist-date-sum { font-size:13px; color:var(--ink-soft); margin-left:24px; }
   .hist-t-group { border-top:1px solid var(--cream-shade); }
   .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 8px 24px; cursor:pointer; }
@@ -3473,7 +3474,7 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
   // The tournament champion (if any) for a set of records — used for the 🏆
-  // badge shown when a tournament group is collapsed.
+  // "... Won" line shown when a tournament group is collapsed.
   function groupStats(records) {
     var champion = null;
     records.forEach(function (rec) {
@@ -3481,13 +3482,20 @@ window.SOMERSET_FB_CONFIG = {
     });
     return { champion: champion };
   }
-  // "N Games, Tournament" or "N Games, Standard" — no per-team win/loss
-  // breakdown or specific format name here, that detail lives in the group
-  // header (tournament) or is implied (standard).
-  function statsSummaryText(records, isTournament) {
-    var txt = records.length + (records.length === 1 ? " Game" : " Games");
-    txt += ", " + (isTournament ? "Tournament" : "Standard");
-    return txt;
+  // Distinct team names across a tournament's match records — matches only
+  // carry their own two teams, so the bracket-wide participant count is the
+  // union across every recorded match.
+  function tournamentTeamCount(records) {
+    var seen = {};
+    records.forEach(function (rec) {
+      (rec.teams || []).forEach(function (name) { if (name) seen[name] = true; });
+    });
+    return Object.keys(seen).length;
+  }
+  // "N Games, Standard" — no per-team win/loss breakdown here, that detail
+  // lives in the group header.
+  function statsSummaryText(records) {
+    return records.length + (records.length === 1 ? " Game" : " Games") + ", Standard";
   }
   // "Best of 5", "Double Elimination", etc. — short form for the group header title.
   function tournamentTitleLabel(t) {
@@ -3497,18 +3505,25 @@ window.SOMERSET_FB_CONFIG = {
     var recs = g.records;
     var open = ui.historyGroupOpen[g.key] === true;   // default collapsed
     var titleText = g.isTournament
-      ? (dateHeading(recs[0].date) + " · " + tournamentTitleLabel(g.tournament))
-      : dateHeading(recs[0].date);
-    var champBadge = "";
+      ? (dateHeading(recs[0].date) + " · " + tournamentTitleLabel(g.tournament) + " Tournament")
+      : (dateHeading(recs[0].date) + " · " + (recs.length === 1 ? "Standard Game" : "Standard Games"));
+    var sumLeft, sumRight = "";
     if (g.isTournament) {
+      var teamCount = tournamentTeamCount(recs);
+      sumLeft = recs.length + " game" + (recs.length === 1 ? "" : "s") + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s");
       var stats = groupStats(recs);
-      champBadge = stats.champion ? ", 🏆 " + stats.champion : "";
+      sumRight = stats.champion ? ("🏆 " + stats.champion + " Won") : "";
+    } else {
+      sumLeft = statsSummaryText(recs);
     }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
       ui.historyGroupOpen[g.key] = !open; render();
     } }, [
-      el("span", { class:"hist-date-title disp", style: g.isTournament ? "color:var(--brass-text);" : "" }, [ (open ? "▾ " : "▸ ") + titleText ]),
-      el("span", { class:"hist-date-sum disp" }, [ statsSummaryText(recs, g.isTournament) + champBadge ])
+      el("span", { class:"hist-date-title disp" }, [ (open ? "▾ " : "▸ ") + titleText ]),
+      el("div", { class:"hist-date-sum-row" }, [
+        el("span", { class:"hist-date-sum disp" }, [ sumLeft ]),
+        el("span", { class:"hist-win disp" }, [ sumRight ])
+      ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
     if (open) recs.forEach(function (rec) { wrap.appendChild(renderHistoryItem(rec)); });
