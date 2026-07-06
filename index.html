@@ -463,6 +463,9 @@
   .stats-tile { background:var(--cream); padding:16px 14px; text-align:center; }
   .stats-tile-num { font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--ink); line-height:1.1; }
   .stats-tile-label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin-top:3px; }
+  .stats-tile[role="button"] { cursor:pointer; }
+  .stats-tile[role="button"] .stats-tile-label { border-bottom:1px dotted var(--ink-soft); display:inline-block; }
+  .stats-tile[role="button"]:active { background:var(--cream-shade); }
 
   .stats-section { padding:16px 16px 4px; }
   .stats-section-title { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--brass-text); font-weight:600; margin:0 0 10px; }
@@ -489,6 +492,9 @@
   .stats-pair-list { padding-bottom:6px; }
   .stats-pair-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--cream-shade); }
   .stats-pair-row:last-child { border-bottom:none; }
+  .stats-pair-row[role="button"] { cursor:pointer; }
+  .stats-pair-row[role="button"]:active { background:var(--cream-shade); }
+  .stats-pair-row[role="button"] .stats-pair-label { border-bottom:1px dotted var(--ink-soft); }
   .stats-pair-label { font-size:13px; color:var(--ink-soft); flex:none; }
   .stats-pair-id { text-align:right; min-width:0; }
   .stats-pair-value { font-size:14px; font-weight:600; color:var(--ink); }
@@ -2922,13 +2928,17 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Best/worst-record pairing (min 2 games together), win% over decided (non-tie) games.
+  // Only qualifies if the record actually leans the right way (winning for best partner,
+  // losing for nemesis) — otherwise a single lopsided opponent could get crowned by default.
   function bestOrWorstPairing(byKey, wantBest) {
     var best = null;
     Object.keys(byKey).forEach(function (k) {
       var e = byKey[k];
       if (e.games < 2) return;
       var decided = e.wins + e.losses;
-      var pct = decided ? e.wins / decided : 0;
+      if (!decided) return;
+      var pct = e.wins / decided;
+      if (wantBest ? pct <= 0.5 : pct >= 0.5) return;
       if (!best) { best = { rec: e, pct: pct }; return; }
       var better = wantBest ? (pct > best.pct) : (pct < best.pct);
       if (better || (pct === best.pct && e.games > best.rec.games)) best = { rec: e, pct: pct };
@@ -3070,8 +3080,13 @@ window.SOMERSET_FB_CONFIG = {
     viewRootEl.appendChild(card);
   }
 
-  function statTile(num, label) {
-    return el("div", { class:"stats-tile" }, [
+  function statTile(num, label, explain) {
+    var props = { class:"stats-tile" };
+    if (explain) {
+      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain;
+      props.onClick = function(){ ui.info = explain; render(); };
+    }
+    return el("div", props, [
       el("div", { class:"stats-tile-num disp" }, [String(num)]),
       el("div", { class:"stats-tile-label disp" }, [label])
     ]);
@@ -3088,8 +3103,13 @@ window.SOMERSET_FB_CONFIG = {
 
   // Label + value row used by the Best partner / Nemesis / Best win / Game length
   // sections — same shape, so one row builder covers all of them.
-  function statsPairRow(label, value, sub, valueClass) {
-    return el("div", { class:"stats-pair-row" }, [
+  function statsPairRow(label, value, sub, valueClass, explain) {
+    var props = { class:"stats-pair-row" };
+    if (explain) {
+      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain;
+      props.onClick = function(){ ui.info = explain; render(); };
+    }
+    return el("div", props, [
       el("div", { class:"stats-pair-label disp" }, [label]),
       el("div", { class:"stats-pair-id" }, [
         el("div", { class:"stats-pair-value" + (valueClass ? " " + valueClass : "") }, [value]),
@@ -3130,17 +3150,25 @@ window.SOMERSET_FB_CONFIG = {
     ]));
 
     card.appendChild(el("div", { class:"stats-tile-grid" }, [
-      statTile(p.championships, "Championships"),
-      statTile(p.longestStreak, "Longest streak"),
-      statTile(p.moonsShot, "Moons shot"),
-      statTile(p.gamesPlayed, "Games played")
+      statTile(p.gamesPlayed, "Games played",
+        "Total games this player has finished, across standard games and tournaments."),
+      statTile(p.championships, "Championships",
+        "Number of tournaments this player has won."),
+      statTile(p.longestStreak, "Longest streak",
+        "The longest run of consecutive wins this player has ever put together."),
+      statTile(currentStreakText(p.currentStreak), "Current streak",
+        "The player's active run of consecutive wins or losses, as of their most recent game. A tie resets it.")
     ]));
 
     card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px;" }, [
-      statTile(currentStreakText(p.currentStreak), "Current streak"),
-      statTile(p.timesSet, "Times set"),
-      statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon conv. rate"),
-      statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin")
+      statTile(p.timesSet, "Times set",
+        "How many times this player's team bid and then fell short of it, losing the bid amount from their score."),
+      statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin",
+        "The largest point gap this player's team has ever finished a game with."),
+      statTile(p.moonsShot, "Moons shot",
+        "How many times this player's team bid to sweep every point in the hand — and made it."),
+      statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon conv. rate",
+        "The share of this player's moon bids (betting to sweep the hand) that actually came through.")
     ]));
 
     var recent = p.games.slice(-10);
@@ -3170,11 +3198,13 @@ window.SOMERSET_FB_CONFIG = {
       var pairRows = [];
       if (p.bestPartner) {
         pairRows.push(statsPairRow("Best partner", p.bestPartner.name,
-          p.bestPartner.wins + "–" + p.bestPartner.losses + " together (" + p.bestPartner.winPct + "%)"));
+          p.bestPartner.wins + "–" + p.bestPartner.losses + " together (" + p.bestPartner.winPct + "%)", null,
+          "The teammate this player has the best winning record with, among partners they've played at least 2 games alongside."));
       }
       if (p.nemesis) {
         pairRows.push(statsPairRow("Nemesis", p.nemesis.name,
-          p.nemesis.wins + "–" + p.nemesis.losses + " against (" + p.nemesis.winPct + "%)", "bad"));
+          p.nemesis.wins + "–" + p.nemesis.losses + " against (" + p.nemesis.winPct + "%)", "bad",
+          "The opponent this player has the worst losing record against, among opponents they've faced at least 2 games."));
       }
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp" }, ["Partners & rivals"]),
@@ -3186,13 +3216,16 @@ window.SOMERSET_FB_CONFIG = {
       var hlRows = [];
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
-          "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date)));
+          "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date), null,
+          "This player's largest final point margin in a single game."));
       }
       if (p.longestGame) {
-        hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date)));
+        hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
+          "The most hands any of this player's games has gone the distance for."));
       }
       if (p.shortestGame) {
-        hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date)));
+        hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date), null,
+          "The fewest hands any of this player's games has taken to finish."));
       }
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp" }, ["Highlights"]),
@@ -4448,7 +4481,7 @@ window.SOMERSET_FB_CONFIG = {
     if (t.champion != null) {
       var champMsg = t.format === "series"
         ? (t.teams[t.champion].name + " win the series " + seriesWins(t)[t.champion] + "–" + seriesWins(t)[1 - t.champion] + "!")
-        : ("Champion: " + t.teams[t.champion].name);
+        : ("Champions: " + t.teams[t.champion].name);
       card.appendChild(el("div", { class:"banner disp" }, [champMsg]));
       // In a shared tournament only the host can restart it (it spins up a new synced
       // session); guests follow automatically. Local tournaments: anyone can restart.
