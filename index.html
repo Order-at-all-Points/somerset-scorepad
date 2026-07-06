@@ -149,7 +149,8 @@
   .score-digits { width:2ch; text-align:center; }
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
-  .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:center; }   /* nudged onto the seating diagram's center in JS, see alignDealDesc */
+  .deal-desc { flex:1; min-width:0; font-size:13px; color:var(--ink-soft); text-align:left; }
+  .deal-bidder-name { display:inline-block; text-align:left; }   /* padded to the widest name in the list in JS, see alignBidderNames */
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -386,6 +387,7 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
+  .hh-bidder { display:inline-block; text-align:left; }   /* padded to the widest name in the table in JS, see alignBidderNames */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
@@ -1820,10 +1822,10 @@ window.SOMERSET_FB_CONFIG = {
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
     // Refs for the currently-open row's Trump/digit alignment (see alignDealDetail),
-    // and every row's "We bid X" line (see alignDealDesc); reset each render since a
-    // torn-down row's nodes would otherwise linger stale.
+    // and every row's bidder-name span (see alignBidderNames); reset each render
+    // since a torn-down row's nodes would otherwise linger stale.
     target.__dealAlign = null;
-    target.__dealDescEls = [];
+    target.__dealNameEls = [];
     // A torn-down row's swipe (if any) no longer exists in the new DOM, so drop any
     // stale reference to it rather than let the global pointerdown listener above
     // try to close a detached row.
@@ -1838,13 +1840,15 @@ window.SOMERSET_FB_CONFIG = {
         // Older deals recorded before bidder tracking existed have no bidderSeat,
         // so they fall back to naming the team instead of a specific player.
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : game.teams[d.bidTeam];
+        var nameEl = el("span", { class:"deal-bidder-name" }, [bidderLabel]);
+        target.__dealNameEls.push(nameEl);
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to align to).
         var bidNumEl = null, descKids;
         if (d.bid === POINTS_PER_DEAL) {
-          descKids = [ bidderLabel + " shot the moon" ];
+          descKids = [ nameEl, " shot the moon" ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
-          descKids = [ bidderLabel + " bid ", bidNumEl ];
+          descKids = [ nameEl, " bid ", bidNumEl ];
         }
         if (isMoonMade(d)) descKids.push(el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]));
         var setMsg = isSet ? (bidderLabel + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
@@ -1861,7 +1865,6 @@ window.SOMERSET_FB_CONFIG = {
           scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null)
         ]);
         var descEl = el("span", { class:"deal-desc disp" }, descKids);
-        target.__dealDescEls.push(descEl);
         var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
           class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
           style:"transform:rotate(" + seatArrowRot + "deg);"
@@ -1965,12 +1968,11 @@ window.SOMERSET_FB_CONFIG = {
     // after this returns, so measuring here would read 0). Solo mode's target
     // is already attached, so equalize now; it's a no-op without match names.
     target.__teamNameEls = teamNameEls;
-    target.__dealTableEl = pad.querySelector(".table");
     if (target.isConnected) equalizeTeamNames(teamNameEls);
-    // alignDealDesc must run first: it shifts the "We bid X" line (which contains
-    // bidNumEl) to center on the seating diagram, and alignDealDetail measures
-    // bidNumEl's *final* position to land the "took" digit underneath it.
-    if (target.isConnected) alignDealDesc(target.__dealDescEls, target.__dealTableEl);
+    // alignBidderNames must run first: it pads each row's bidder name to a fixed
+    // column width (shifting bidNumEl's position), and alignDealDetail then
+    // measures bidNumEl's *final* position to land the "took" digit underneath it.
+    if (target.isConnected) alignBidderNames(target.__dealNameEls);
     if (target.isConnected) alignDealDetail(target.__dealAlign);
   }
 
@@ -1996,20 +1998,17 @@ window.SOMERSET_FB_CONFIG = {
     a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
   }
 
-  // Each collapsed row's "We bid X" line is nudged so its own center lands on the
-  // seating diagram's center (the ".table" element above the history), rather than
-  // just the center of the flex space left over between the score block and dealer
-  // arrow — those two widths vary row to row and don't share a center line.
-  function alignDealDesc(descEls, tableEl) {
-    if (!descEls || !descEls.length || !tableEl) return;
-    var tableRect = tableEl.getBoundingClientRect();
-    var tableCenter = tableRect.left + tableRect.width / 2;
-    descEls.forEach(function (d) {
-      d.style.transform = "";
-      var rect = d.getBoundingClientRect();
-      var delta = tableCenter - (rect.left + rect.width / 2);
-      d.style.transform = "translateX(" + delta + "px)";
-    });
+  // Column-aligns "bid" down a list of hands: names vary in length, so each
+  // bidder-name span is padded to the widest name among the given elements —
+  // the longest name sits flush left and shorter ones reserve the same space,
+  // landing "bid" (or "shot the moon") at the same x position on every row.
+  // Shared by the live deal history and the archived History detail table.
+  function alignBidderNames(nameEls) {
+    if (!nameEls || !nameEls.length) return;
+    var i, max = 0;
+    for (i = 0; i < nameEls.length; i++) nameEls[i].style.minWidth = "";
+    for (i = 0; i < nameEls.length; i++) max = Math.max(max, nameEls[i].getBoundingClientRect().width);
+    for (i = 0; i < nameEls.length; i++) nameEls[i].style.minWidth = max + "px";
   }
 
   // If one match name wraps to two lines, stack the other team's partner onto
@@ -2891,8 +2890,9 @@ window.SOMERSET_FB_CONFIG = {
     card.appendChild(el("div", { class:"history-footer" }, footerLinks));
     card.appendChild(fileInput);
     viewRootEl.appendChild(card);
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyScoreWrap);
-    else applyScoreWrap();
+    var afterHistoryPaint = function(){ applyScoreWrap(); alignHistoryBidderNames(); };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(afterHistoryPaint);
+    else afterHistoryPaint();
     if (ui.jumpToRecordId != null) {
       var jumpId = ui.jumpToRecordId;
       ui.jumpToRecordId = null;
@@ -3430,6 +3430,13 @@ window.SOMERSET_FB_CONFIG = {
     }
   }
 
+  // Each open game's hand table column-aligns "bid" independently of the others —
+  // one game's roster of names has no bearing on another's column width.
+  function alignHistoryBidderNames() {
+    var details = viewRootEl.querySelectorAll(".hist-detail");
+    for (var i = 0; i < details.length; i++) alignBidderNames(details[i].querySelectorAll(".hh-bidder"));
+  }
+
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
     var isChamp = !!(rec.tournament && rec.tournament.championship);
@@ -3489,13 +3496,13 @@ window.SOMERSET_FB_CONFIG = {
       var bidderName = (d.bidderSeat != null)
         ? ((rec.players[d.bidderSeat] && rec.players[d.bidderSeat].trim()) ? rec.players[d.bidderSeat].trim() : ("Seat " + (d.bidderSeat + 1)))
         : rec.teams[d.bidTeam];
-      var bid = bidderName + (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid));
+      var bidSuffix = (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid)) + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : ""));
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
-        el("span", { class:"hh-bid disp" }, [ bid + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : "")) ]),
+        el("span", { class:"hh-bid disp" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
     });
@@ -3993,7 +4000,7 @@ window.SOMERSET_FB_CONFIG = {
     renderScorePad(card, "match");
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
-    alignDealDesc(card.__dealDescEls, card.__dealTableEl);
+    alignBidderNames(card.__dealNameEls);
     alignDealDetail(card.__dealAlign);
   }
 
