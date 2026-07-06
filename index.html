@@ -1729,7 +1729,7 @@ window.SOMERSET_FB_CONFIG = {
     navEl.innerHTML = "";
     [["game","Game"],["history","History"],["tournament","Tournament"]].forEach(function (v) {
       navEl.appendChild(el("button", { class:"nav-btn disp" + (ui.view === v[0] ? " on" : ""),
-        onClick:function(){ ui.view = v[0]; ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null; ui.showEntry = false; ui.editNames = false; render(); } }, [v[1]]));
+        onClick:function(){ ui.view = v[0]; if (v[0] === "history") { ui.historySub = null; ui.statsPlayer = null; } ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null; ui.showEntry = false; ui.editNames = false; render(); } }, [v[1]]));
     });
   }
 
