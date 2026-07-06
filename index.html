@@ -693,7 +693,7 @@ window.SOMERSET_FB_CONFIG = {
     view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
-    openDeal:null, whoSheet:false, editingDeal:null,
+    openDeal:null, whoSheet:false, editingDeal:null, playingAsOpen:false,
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null
   };
@@ -934,10 +934,18 @@ window.SOMERSET_FB_CONFIG = {
     if (changed) { saveHistory(); saveArchivedMatches(); }
   }
 
+  // ---- Firebase sync state ----
+  var SYNC_CODE_KEY = "somerset:dev-sync-code";
+  var SYNC_ROLE_KEY = "somerset:dev-sync-role";
+  var fb = null;              // firebase.database() instance
+  var syncCode = null;        // active 6-char join code
+  var syncRole = null;        // "host" | "guest"
+  var syncStatus = "offline"; // "offline" | "connecting" | "live" | "error"
+
   // Reconnect to an in-progress shared tournament on page load
   (function() {
-    var code = localStorage.getItem("somerset:dev-sync-code");
-    var role = localStorage.getItem("somerset:dev-sync-role");
+    var code = localStorage.getItem(SYNC_CODE_KEY);
+    var role = localStorage.getItem(SYNC_ROLE_KEY);
     if (code && tourney && initFb()) {
       syncCode = code; syncRole = role || "guest";
       subscribeToTourney(code);
@@ -946,14 +954,6 @@ window.SOMERSET_FB_CONFIG = {
 
   var bracketScroll = 0;     // preserve horizontal scroll across bracket re-renders
   var suppressFade = false;  // skip the fade-in animation on in-place updates
-
-  // ---- Firebase sync state ----
-  var SYNC_CODE_KEY = "somerset:dev-sync-code";
-  var SYNC_ROLE_KEY = "somerset:dev-sync-role";
-  var fb = null;              // firebase.database() instance
-  var syncCode = null;        // active 6-char join code
-  var syncRole = null;        // "host" | "guest"
-  var syncStatus = "offline"; // "offline" | "connecting" | "live" | "error"
 
   // Per-device ID for match locking
   var DEVICE_ID_KEY = "somerset:dev-device-id";
@@ -4630,18 +4630,29 @@ window.SOMERSET_FB_CONFIG = {
           });
         } catch(e) {}
       } }, [codeStr]);
+      var meNow = myNameForCurrentTourney();
+      var playingAsToggle = el("button", {
+        class:"link-btn disp",
+        "aria-expanded": ui.playingAsOpen ? "true" : "false",
+        "aria-label": ui.playingAsOpen ? "Hide player info" : "Show player info",
+        onClick:function(){ ui.playingAsOpen = !ui.playingAsOpen; render(); }
+      }, [ ui.playingAsOpen ? "▾" : "▸" ]);
       card.appendChild(el("div", { class:"sync-bar" }, [
         el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])]),
-        el("span", { class:"join-code-badge" }, [
-          el("span", { class:"sync-label disp" }, ["Code: "]),
-          codeBtn
+        el("span", { style:"display:inline-flex; align-items:center; gap:10px;" }, [
+          el("span", { class:"join-code-badge" }, [
+            el("span", { class:"sync-label disp" }, ["Code: "]),
+            codeBtn
+          ]),
+          playingAsToggle
         ])
       ]));
-      var meNow = myNameForCurrentTourney();
-      card.appendChild(el("div", { class:"sync-bar", style:"padding-top:0;" }, [
-        el("span", { class:"sync-label disp" }, [ meNow ? ("Playing as: " + meNow) : "Not tagged as a player" ]),
-        el("button", { class:"link-btn disp", onClick:function(){ ui.whoSheet = true; render(); } }, [ meNow ? "Change" : "I'm playing as…" ])
-      ]));
+      if (ui.playingAsOpen) {
+        card.appendChild(el("div", { class:"sync-bar" }, [
+          el("span", { class:"sync-label disp" }, [ meNow ? ("Playing as: " + meNow) : "Not tagged as a player" ]),
+          el("button", { class:"link-btn disp", onClick:function(){ ui.whoSheet = true; render(); } }, [ meNow ? "Change" : "I'm playing as…" ])
+        ]));
+      }
     }
 
     if (t.champion != null) {
