@@ -62,6 +62,7 @@
     --control:#FCF5E6;
     --mast:var(--cream); --mast-soft:var(--rule);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
+    --seat-rule:var(--rule);
   }
   /* Light default: Linen Daylight — felt goes pale for the first time, so text
      that sits on it has to flip dark (--mast/--mast-soft below) instead of
@@ -81,6 +82,7 @@
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
+    --seat-rule:var(--rule);
   }
   /* Rocket Fuel: originally an additional pinnable dark option alongside
      Mahogany Parlor (not tied to Auto) — eggplant baize, warm gold instead
@@ -99,6 +101,7 @@
     --control:#FCF6E6;
     --mast:var(--cream); --mast-soft:var(--rule);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
+    --seat-rule:var(--rule);
   }
   /* Rocket Fuel Light: Linen Daylight's background/paper/ink untouched
      (--felt, --cream*, --control, --ink*, --mast*, --felt-wash*). The two
@@ -120,6 +123,7 @@
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
+    --seat-rule:var(--brass);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
@@ -331,7 +335,7 @@
   .table { position:relative; width:100%; max-width:300px; height:172px; margin:16px auto 16px; }
   .seat { position:absolute; transform:translate(-50%,-50%); width:96px; max-width:42%; text-align:center;
     background:var(--control);
-    border:1.5px solid var(--rule); border-radius:var(--r-control); padding:6px 4px; cursor:pointer; overflow:hidden;
+    border:1.5px solid var(--seat-rule); border-radius:var(--r-control); padding:6px 4px; cursor:pointer; overflow:hidden;
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease; }
   .seat:active { transform:translate(-50%,-50%) scale(.93); box-shadow:none; }
