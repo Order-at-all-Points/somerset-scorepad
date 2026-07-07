@@ -86,6 +86,19 @@
     --mast:var(--cream); --mast-soft:var(--rule);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
   }
+  /* Rocket Fuel Light: Linen Daylight's background/paper/ink untouched
+     (--felt, --cream*, --control, --ink*, --mast*, --felt-wash*) — only the
+     two accent tokens change to Rocket Fuel's purple (--rule, a lightened
+     tint of that theme's eggplant --felt) and gold (--brass/--brass-text,
+     reused verbatim). Internal key "aubergine-light" mirrors "aubergine". */
+  [data-theme="aubergine-light"] {
+    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
+    --rule:#9A7FA3; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#B98B3A;
+    --brass-text:#7C5C24;
+    --control:#FFFFFF;
+    --mast:var(--ink); --mast-soft:#675D4C;
+    --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
+  }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
   /* Root background matches the gradient's deep edge (and theme-color) so the iOS
@@ -717,7 +730,7 @@ window.SOMERSET_FB_CONFIG = {
   var THEME_KEY = "somerset:theme-pref";
   function loadThemePref() { try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { return "auto"; } }
   function saveThemePref(pref) { try { localStorage.setItem(THEME_KEY, pref); } catch (e) {} }
-  var THEME_COLORS = { dark:"#371318", light:"#DCD3BA", aubergine:"#1A0E22" };
+  var THEME_COLORS = { dark:"#371318", light:"#DCD3BA", aubergine:"#1A0E22", "aubergine-light":"#DCD3BA" };
   function applyTheme() {
     var pref = loadThemePref();
     var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2206,7 +2219,7 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Display"]),
         el("p", { class:"sub disp" }, ["Match your device, or pin a theme"]),
         el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
-          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel"]].map(function (opt) {
+          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel"],["aubergine-light","Rocket Fuel Light"]].map(function (opt) {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); render(); } }, [opt[1]]);
           })),
