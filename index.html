@@ -4524,9 +4524,10 @@ window.SOMERSET_FB_CONFIG = {
                   : (m.completedGame && m.completedGame.deals && m.completedGame.deals.length) ? m.completedGame : null;
     var scores = scoreGame ? gameTotals(scoreGame) : null;
     function slot(idx, si) {
-      var label = idx == null ? "TBD" : t.teams[idx].name;
+      var isBye = idx == null && am.bracket === "wb" && am.ri === 0;
+      var label = idx == null ? (isBye ? "bye" : "TBD") : t.teams[idx].name;
       var isWin = decided && idx != null && m.winner === idx;
-      var kids = [el("span", { class:"mbox-slot-name" }, [label])];
+      var kids = [el("span", { class:"mbox-slot-name" + (isBye ? " bye" : "") }, [label])];
       if (scores) kids.push(el("span", { class:"mbox-score" }, [String(scores[si])]));
       return el("div", { class:"mbox-slot" + (isWin ? " win" : "") }, kids);
     }
