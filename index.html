@@ -345,7 +345,13 @@
      wildly different weights across platforms and are easy to miss on the felt. */
   .deal-arrow { position:absolute; left:50%; top:50%; width:30px; height:30px; color:var(--brass);
     pointer-events:none; transition:transform .45s ease; }
-  .deal-arrow svg { display:block; width:100%; height:100%; filter:drop-shadow(0 1px 1px rgba(0,0,0,.45)); }
+  /* The shadow lives on its own copy behind the arrow instead of a drop-shadow filter on
+     the arrow itself — filter forces the browser to rasterize the whole element, which
+     softens the crisp vector edges along with the shadow. Splitting them keeps the
+     arrowhead sharp while the shadow copy is the only thing blurred. */
+  .deal-arrow-shadow, .deal-arrow-face { position:absolute; inset:0; display:block; }
+  .deal-arrow-shadow { color:#000; opacity:.4; filter:blur(1px); transform:translateY(1px); }
+  .deal-arrow-shadow svg, .deal-arrow-face svg { display:block; width:100%; height:100%; }
   .dealer-line { text-align:right; font-size:13px; color:var(--ink-soft); margin:0; }
   .dealer-line b { font-weight:600; color:var(--ink); }
   .entry-head { margin:0 0 12px; }
@@ -2589,7 +2595,8 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"pteam disp", style:"color:" + (team === 0 ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(game.teams[team].length, 1)))) + "px;" }, [game.teams[team]])
       ]);
     });
-    var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true", html:DEALER_ARROW_SVG,
+    var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
+      html:'<span class="deal-arrow-shadow">' + DEALER_ARROW_SVG + '</span><span class="deal-arrow-face">' + DEALER_ARROW_SVG + '</span>',
       style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" });
 
     var children = [el("div", { class:"table" }, seats.concat([arrow]))];
