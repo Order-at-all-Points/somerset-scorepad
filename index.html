@@ -221,6 +221,7 @@
   .row { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
   .label { color:var(--ink); font-size:15px; }
   .who { display:flex; gap:8px; margin-bottom:12px; }
+  .who.grid4 { display:grid; grid-template-columns:1fr 1fr; }
   .who button { flex:1; padding:12px 0; border-radius:var(--r-control); font-size:15px; font-weight:600; cursor:pointer;
     border:1.5px solid var(--rule);
     background:var(--control);
@@ -715,11 +716,15 @@ window.SOMERSET_FB_CONFIG = {
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
   function seatName(i) { return (game.players[i] && game.players[i].trim()) ? game.players[i] : ("Seat " + (i + 1)); }
+  // Gates the seat-level bid picker: quick games (no one named) only ever record
+  // bidTeam, matching the pre-bidder-tracking deal shape the stats/history code
+  // already falls back to below (see creditSeats, bidderLabel, seatName(ui.bidderSeat)).
+  function allPlayersNamed() { return game.players.every(function (p) { return p && p.trim(); }); }
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
-    bidTeam:0, bidderSeat:0, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
+    bidTeam:0, bidderSeat:null, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
@@ -1997,7 +2002,7 @@ window.SOMERSET_FB_CONFIG = {
       }
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; render(); scrollEntryIntoView(); } },
+        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; render(); scrollEntryIntoView(); } },
           ["Record Deal " + dealNo])
       ]));
     }
@@ -2610,19 +2615,29 @@ window.SOMERSET_FB_CONFIG = {
 
     // ---- Step 1: before the hand \u2014 bid ----
     if (ui.entryStep === 1) {
-      var who = el("div", { class:"who" }, [0,1].map(function (i) {
-        return el("button", { class:"disp"+(ui.bidTeam===i?" on":""), onClick:function(){ ui.bidTeam=i; ui.bidderSeat=i; softRender(); } },
-          [ game.teams[i] + " bid" ]);
-      }));
-      var whoPlayer = el("div", { class:"who" }, [ui.bidTeam, ui.bidTeam + 2].map(function (seat) {
-        return el("button", { class:"disp"+(ui.bidderSeat===seat?" on":""), onClick:function(){ ui.bidderSeat=seat; softRender(); } },
-          [ seatName(seat) ]);
-      }));
+      var named = allPlayersNamed();
+      // Quick games (nobody named) only ever pick a team \u2014 bidderSeat stays null,
+      // same shape as the legacy pre-bidder-tracking deals the stats/history code
+      // already falls back to (creditSeats, bidderLabel, seatName(ui.bidderSeat) below).
+      // Once every seat has a name, one tap on a seat sets both bidTeam and bidderSeat.
+      var whoKids = named
+        ? [
+            el("p", { class:"phase-label disp" }, ["Who bid?"]),
+            el("div", { class:"who grid4" }, [0,1,2,3].map(function (seat) {
+              return el("button", { class:"disp"+(ui.bidderSeat===seat?" on":""),
+                onClick:function(){ ui.bidTeam = seat % 2; ui.bidderSeat = seat; softRender(); } },
+                [ seatName(seat) ]);
+            }))
+          ]
+        : [
+            el("div", { class:"who" }, [0,1].map(function (i) {
+              return el("button", { class:"disp"+(ui.bidTeam===i?" on":""), onClick:function(){ ui.bidTeam=i; ui.bidderSeat=null; softRender(); } },
+                [ game.teams[i] + " bid" ]);
+            }))
+          ];
       var kids1 = header.concat([
-        el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"]),
-        who,
-        el("p", { class:"phase-label disp", style:"margin-top:8px;" }, ["Who bid?"]),
-        whoPlayer,
+        el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"])
+      ]).concat(whoKids).concat([
         el("div", { class:"row", style:"padding:10px 0; margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
         /* Trump recording disabled for now.
         el("div", { style:"margin-bottom:14px;" }, [
@@ -2663,7 +2678,7 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"phase-label disp" }, ["Step 2 \u00b7 after the hand"]),
       el("button", { class:"bid-summary disp", "aria-label":"Edit the bid",
         onClick:function(){ ui.entryStep = 1; render(); } }, [
-        seatName(ui.bidderSeat) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
+        (ui.bidderSeat != null ? seatName(ui.bidderSeat) : game.teams[ui.bidTeam]) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
         el("span", { class:"edit-hint" }, ["edit"])
       ]),
     ]);
@@ -2747,7 +2762,7 @@ window.SOMERSET_FB_CONFIG = {
   function startEditDeal(d) {
     ui.editingDeal = d.id;
     ui.bidTeam = d.bidTeam;
-    ui.bidderSeat = (d.bidderSeat != null) ? d.bidderSeat : d.bidTeam;
+    ui.bidderSeat = allPlayersNamed() ? ((d.bidderSeat != null) ? d.bidderSeat : d.bidTeam) : null;
     ui.bid = d.bid;
     // ui.trump = d.trump || "";   // trump recording disabled for now
     ui.bidderPts = d.pts[d.bidTeam];
@@ -2784,7 +2799,7 @@ window.SOMERSET_FB_CONFIG = {
     game.pendingBid = null;
     // reset form, alternate default bidder
     ui.bidTeam = ui.bidTeam === 0 ? 1 : 0;
-    ui.bidderSeat = ui.bidTeam;
+    ui.bidderSeat = null;
     ui.bid = 6; /* ui.trump = ""; */ ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
     // Games archive themselves the moment they're won, so a result is never
