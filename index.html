@@ -4843,17 +4843,26 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     var isSeries = t.format === "series";
+    // Ending destroys the bracket for whoever holds it locally, so only the host —
+    // the device that actually created the shared session — gets that button. Guests
+    // get a non-destructive "leave" instead: it just detaches their own device (see
+    // saveTourney's else-branch, which never touches the Firebase record), so the
+    // host's tournament keeps running untouched and the guest is free to join or
+    // start a different one.
+    var isHost = !syncCode || syncRole === "host";
     if (ui.confirmEndT) {
+      var endLabel = isHost ? (isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?")
+                             : "Leave this tournament? It'll keep going for everyone else — you can rejoin with the code or start your own.";
       card.appendChild(el("div", { class:"dealer-confirm fade" }, [
-        el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" }, [isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?"]),
+        el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" }, [endLabel]),
         el("div", { style:"display:flex; gap:8px;" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; render(); } }, ["Keep it"]),
-          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, ["Yes, end it"])
+          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, [isHost ? "Yes, end it" : "Yes, leave"])
         ])
       ]));
     } else {
       card.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; render(); } }, [isSeries ? "End Series" : "End Tournament"])
+        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; render(); } }, [isHost ? (isSeries ? "End Series" : "End Tournament") : "Leave Tournament"])
       ]));
     }
     viewRootEl.appendChild(card);
