@@ -87,14 +87,17 @@
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
   }
   /* Rocket Fuel Light: Linen Daylight's background/paper/ink untouched
-     (--felt, --cream*, --control, --ink*, --mast*, --felt-wash*) — only the
-     two accent tokens change to Rocket Fuel's purple (--rule, a lightened
-     tint of that theme's eggplant --felt) and gold (--brass/--brass-text,
-     reused verbatim). Internal key "aubergine-light" mirrors "aubergine". */
+     (--felt, --cream*, --control, --ink*, --mast*, --felt-wash*). The two
+     accent tokens are both reused verbatim from Rocket Fuel dark, swapped
+     from the original light-variant pass so the eggplant reads as the
+     prominent color: --brass/--brass-text are that theme's --felt/--felt-deep
+     (buttons, banner, chip.on — the large surfaces), and --rule takes over
+     its gold (borders/dividers — the restrained accent). Internal key
+     "aubergine-light" mirrors "aubergine". */
   [data-theme="aubergine-light"] {
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
-    --rule:#9A7FA3; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#B98B3A;
-    --brass-text:#7C5C24;
+    --rule:#C9A24A; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2E1B3A;
+    --brass-text:#1A0E22;
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
