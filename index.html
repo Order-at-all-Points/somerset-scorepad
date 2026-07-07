@@ -77,7 +77,7 @@
      warm gold instead of antique brass. Same dark-on-felt aliasing as
      [data-theme="dark"] above since felt stays dark here too. Internal
      key/selector stay "aubergine" (describes the palette); only the
-     user-facing chip label is "Rocket Fuel". */
+     user-facing chip label is "Rocket Fuel Dark". */
   [data-theme="aubergine"] {
     --felt:#2E1B3A; --felt-deep:#1A0E22; --cream:#F6EEDC; --cream-shade:#ECE0C2;
     --rule:#C9A24A; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B98B3A;
@@ -2227,7 +2227,7 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Display"]),
         el("p", { class:"sub disp" }, ["Match your device, or pin a theme"]),
         el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
-          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel"],["aubergine-light","Rocket Fuel Light"]].map(function (opt) {
+          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel Dark"],["aubergine-light","Rocket Fuel Light"]].map(function (opt) {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); render(); } }, [opt[1]]);
           })),
