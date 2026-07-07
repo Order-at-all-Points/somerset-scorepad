@@ -533,8 +533,12 @@
     color:var(--brass-text); background:var(--felt-wash-strong); padding:4px 10px; border-radius:var(--r-pill); }
 
   .stats-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--cream-shade); }
+  /* An odd number of tiles leaves the last one dangling in a lone column — span it
+     across the full row instead of leaving a blank cell beside it. */
+  .stats-tile-grid > .stats-tile:last-child:nth-child(odd) { grid-column:1 / -1; }
   .stats-tile { background:var(--cream); padding:16px 14px; text-align:center; }
   .stats-tile-num { font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--ink); line-height:1.1; }
+  .stats-tile-sub { font-size:12px; color:var(--ink-soft); margin-top:1px; }
   .stats-tile-label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin-top:3px; }
   .stats-tile[role="button"] { cursor:pointer; }
   .stats-tile[role="button"] .stats-tile-label { border-bottom:1px dotted var(--ink-soft); display:inline-block; }
@@ -3119,11 +3123,13 @@ window.SOMERSET_FB_CONFIG = {
       // bid. Deals recorded before bidder tracking existed have no bidderSeat, so
       // they fall back to crediting both seats on the bidding team, as before.
       var moonsBySeat = [0, 0, 0, 0], setsBySeat = [0, 0, 0, 0], moonAttemptsBySeat = [0, 0, 0, 0];
+      var bidsBySeat = [0, 0, 0, 0], bidPtsBySeat = [0, 0, 0, 0];
       (rec.deals || []).forEach(function (d) {
         var creditSeats = (d.bidderSeat != null) ? [d.bidderSeat] : [d.bidTeam, d.bidTeam + 2];
         if (d.bid === POINTS_PER_DEAL) creditSeats.forEach(function (s) { moonAttemptsBySeat[s]++; });
         if (isMoonMade(d)) creditSeats.forEach(function (s) { moonsBySeat[s]++; });
         if (isDealSet(d)) creditSeats.forEach(function (s) { setsBySeat[s]++; });
+        creditSeats.forEach(function (s) { bidsBySeat[s]++; bidPtsBySeat[s] += d.bid; });
       });
       var format = rec.tournament ? rec.tournament.format : "casual";
       var tournamentId = rec.tournament ? rec.tournament.id : null;
@@ -3143,6 +3149,7 @@ window.SOMERSET_FB_CONFIG = {
           recId: rec.id, date: rec.date, team: team, won: won, tie: tie,
           champion: !!(rec.tournament && rec.tournament.championship && won),
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
+          bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
           partnerName: partnerName, opponentNames: opponentNames,
           format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin
         });
@@ -3183,19 +3190,21 @@ window.SOMERSET_FB_CONFIG = {
 
   function finalizePlayerStats(p) {
     p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
-    var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0;
+    var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0, longestLoss = 0, lossRun = 0;
     var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null;
+    var totalBids = 0, totalBidPoints = 0;
     var byFormat = {};
     p.games.forEach(function (g) {
       if (g.champion) champs++;
       moons += g.moons; sets += g.sets; moonAttempts += g.moonAttempts;
+      totalBids += g.bids || 0; totalBidPoints += g.bidPoints || 0;
       if (g.tournamentId != null) tournamentIds[g.tournamentId] = true;
-      if (g.tie) { run = 0; curType = null; curRun = 0; }
+      if (g.tie) { run = 0; lossRun = 0; curType = null; curRun = 0; }
       else if (g.won) {
-        wins++; run++; longest = Math.max(longest, run);
+        wins++; run++; longest = Math.max(longest, run); lossRun = 0;
         curType === "w" ? curRun++ : (curType = "w", curRun = 1);
       } else {
-        losses++; run = 0;
+        losses++; run = 0; lossRun++; longestLoss = Math.max(longestLoss, lossRun);
         curType === "l" ? curRun++ : (curType = "l", curRun = 1);
       }
       if (g.won && g.margin != null && (!bestWin || g.margin > bestWin.margin)) {
@@ -3212,11 +3221,14 @@ window.SOMERSET_FB_CONFIG = {
     p.wins = wins; p.losses = losses;
     p.winPct = (wins + losses) ? Math.round((wins / (wins + losses)) * 100) : null;
     p.longestStreak = longest;
+    p.longestLossStreak = longestLoss;
     p.currentStreak = { type: curType, count: curRun };
     p.moonsShot = moons;
     p.timesSet = sets;
     p.moonAttempts = moonAttempts;
     p.moonConversionRate = moonAttempts ? Math.round((moons / moonAttempts) * 100) : null;
+    p.avgBidsPerGame = p.gamesPlayed ? (totalBids / p.gamesPlayed) : null;
+    p.avgPointsPerBid = totalBids ? (totalBidPoints / totalBids) : null;
     p.championships = champs;
     p.tournamentsPlayed = Object.keys(tournamentIds).length;
     p.bestWin = bestWin;
@@ -3312,16 +3324,17 @@ window.SOMERSET_FB_CONFIG = {
     viewRootEl.appendChild(card);
   }
 
-  function statTile(num, label, explain) {
+  function statTile(num, label, explain, sub) {
     var props = { class:"stats-tile" };
     if (explain) {
-      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain;
+      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain + (sub ? (" (" + sub + ")") : "");
       props.onClick = function(){ ui.info = explain; render(); };
     }
     return el("div", props, [
       el("div", { class:"stats-tile-num disp" }, [String(num)]),
+      sub ? el("div", { class:"stats-tile-sub disp" }, [sub]) : null,
       el("div", { class:"stats-tile-label disp" }, [label])
-    ]);
+    ].filter(function (x) { return x; }));
   }
 
   function currentStreakText(cs) {
@@ -3396,8 +3409,10 @@ window.SOMERSET_FB_CONFIG = {
         "Total games this player has finished, across standard games and tournaments."),
       statTile(p.championships, "Championships",
         "Number of tournaments this player has won."),
-      statTile(p.longestStreak, "Longest streak",
+      statTile(p.longestStreak, "Longest winning streak",
         "The longest run of consecutive wins this player has ever put together."),
+      statTile(p.longestLossStreak, "Longest losing streak",
+        "The longest run of consecutive losses this player has ever suffered."),
       statTile(currentStreakText(p.currentStreak), "Current streak",
         "The player's active run of consecutive wins or losses, as of their most recent game.")
     ]));
@@ -3409,8 +3424,11 @@ window.SOMERSET_FB_CONFIG = {
         "The largest point gap this player's team has ever finished a game with."),
       statTile(p.moonsShot, "Moons shot",
         "How many times this player personally bid to sweep every point in the hand — and made it."),
-      statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon conv. rate",
-        "The share of this player's moon bids (betting to sweep the hand) that actually came through.")
+      statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon shot success",
+        "The share of this player's moon bids (betting to sweep the hand) that actually came through."),
+      statTile(p.avgBidsPerGame == null ? "—" : p.avgBidsPerGame.toFixed(1), "Avg bids per game",
+        "How many hands this player personally bids on, on average, per game.",
+        p.avgPointsPerBid == null ? null : (p.avgPointsPerBid.toFixed(1) + " pts/bid"))
     ]));
 
     var recent = p.games.slice(-10);
