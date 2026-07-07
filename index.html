@@ -1875,7 +1875,7 @@ window.SOMERSET_FB_CONFIG = {
         nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
           onChange:function(e){ game.teams[i] = e.target.value; persist(); } });
       }
-      var scoreColor = (win === i) ? "var(--brass)" : "var(--ink)";
+      var scoreColor = "var(--ink)";
       var bar = el("div", { class:"track", role:"img",
         "aria-label":game.teams[i]+": "+t[i]+" of "+game.target+" points" }, [
         el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(i===0?"#2E1B3A":"var(--rule)")+";" })
