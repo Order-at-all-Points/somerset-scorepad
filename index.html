@@ -31,7 +31,7 @@
 
 <style>
   :root {
-    /* Two named themes, switched by [data-theme] on <html> (see the early
+    /* Named themes, switched by [data-theme] on <html> (see the early
        inline script and applyTheme() in the main script). Derived tints
        outside this block read the vars via color-mix() rather than hardcoding
        a re-based literal, so a future theme needs no manual re-basing. */
@@ -71,6 +71,20 @@
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
+  }
+  /* Rocket Fuel: an additional pinnable dark option (not tied to Auto),
+     picked alongside Mahogany Parlor in the Display sheet — eggplant baize,
+     warm gold instead of antique brass. Same dark-on-felt aliasing as
+     [data-theme="dark"] above since felt stays dark here too. Internal
+     key/selector stay "aubergine" (describes the palette); only the
+     user-facing chip label is "Rocket Fuel". */
+  [data-theme="aubergine"] {
+    --felt:#2E1B3A; --felt-deep:#1A0E22; --cream:#F6EEDC; --cream-shade:#ECE0C2;
+    --rule:#C9A24A; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B98B3A;
+    --brass-text:#7C5C24;
+    --control:#FCF6E6;
+    --mast:var(--cream); --mast-soft:var(--rule);
+    --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
@@ -703,7 +717,7 @@ window.SOMERSET_FB_CONFIG = {
   var THEME_KEY = "somerset:theme-pref";
   function loadThemePref() { try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { return "auto"; } }
   function saveThemePref(pref) { try { localStorage.setItem(THEME_KEY, pref); } catch (e) {} }
-  var THEME_COLORS = { dark:"#371318", light:"#DCD3BA" };
+  var THEME_COLORS = { dark:"#371318", light:"#DCD3BA", aubergine:"#1A0E22" };
   function applyTheme() {
     var pref = loadThemePref();
     var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2192,7 +2206,7 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Display"]),
         el("p", { class:"sub disp" }, ["Match your device, or pin a theme"]),
         el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
-          [["auto","Auto"],["light","Light"],["dark","Dark"]].map(function (opt) {
+          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel"]].map(function (opt) {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); render(); } }, [opt[1]]);
           })),
