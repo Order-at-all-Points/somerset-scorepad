@@ -21,7 +21,7 @@
     var pref = "auto";
     try { pref = localStorage.getItem("somerset:theme-pref") || "auto"; } catch (e) {}
     var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var effective = pref === "auto" ? (dark ? "dark" : "light") : pref;
+    var effective = pref === "auto" ? (dark ? "aubergine" : "aubergine-light") : pref;
     document.documentElement.setAttribute("data-theme", effective);
   })();
 </script>
@@ -52,7 +52,9 @@
      New Game button, inactive nav tabs) rather than on the --cream paper —
      here felt is dark, so they alias to the existing light paper/rule tones.
      User-facing chip label "Classic Dark"; hidden from the Display sheet as
-     of 2026-07-07 in favor of the "Dark" (aubergine) chip below — may return. */
+     of 2026-07-07 in favor of the "Dark" (aubergine) chip below — may return.
+     Auto no longer resolves here as of 2026-07-07 — see the aubergine block
+     below for the current Auto-dark target. */
   [data-theme="dark"] {
     --felt:#4C2026; --felt-deep:#371318; --cream:#F7EDDC; --cream-shade:#EBDEC3;
     --rule:#CBAA82; --ink:#332B25; --ink-soft:#6F6052; --red:#A32C2C; --brass:#A57E28;
@@ -69,7 +71,9 @@
      aliased, because --ink-soft only measures ~3.6:1 on this felt (fails AA
      at small sizes) where --mast-soft measures ~4.96:1.
      User-facing chip label "Classic Light"; hidden from the Display sheet as
-     of 2026-07-07 in favor of the "Light" (aubergine-light) chip below — may return. */
+     of 2026-07-07 in favor of the "Light" (aubergine-light) chip below — may return.
+     Auto no longer resolves here as of 2026-07-07 — see the aubergine-light
+     block below for the current Auto-light target. */
   [data-theme="light"] {
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#B9AC85; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2F5D48;
@@ -78,13 +82,16 @@
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
   }
-  /* Rocket Fuel: an additional pinnable dark option (not tied to Auto),
-     picked alongside Mahogany Parlor in the Display sheet — eggplant baize,
-     warm gold instead of antique brass. Same dark-on-felt aliasing as
-     [data-theme="dark"] above since felt stays dark here too. Internal
-     key/selector stay "aubergine" (describes the palette); user-facing chip
-     label was "Rocket Fuel Dark", renamed to plain "Dark" 2026-07-07 once
-     Classic Dark was hidden and this became the only visible dark option. */
+  /* Rocket Fuel: originally an additional pinnable dark option alongside
+     Mahogany Parlor (not tied to Auto) — eggplant baize, warm gold instead
+     of antique brass. Same dark-on-felt aliasing as [data-theme="dark"]
+     above since felt stays dark here too. Internal key/selector stay
+     "aubergine" (describes the palette); user-facing chip label was
+     "Rocket Fuel Dark", renamed to plain "Dark" 2026-07-07 once Classic
+     Dark was hidden and this became the only visible dark option.
+     As of 2026-07-07, Auto's dark resolution also points here instead of
+     Classic Dark (see applyTheme() and the early inline theme script) —
+     this is now both the pinnable dark option and the Auto-dark target. */
   [data-theme="aubergine"] {
     --felt:#2E1B3A; --felt-deep:#1A0E22; --cream:#F6EEDC; --cream-shade:#ECE0C2;
     --rule:#C9A24A; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B98B3A;
@@ -102,7 +109,10 @@
      its gold (borders/dividers — the restrained accent). Internal key
      "aubergine-light" mirrors "aubergine". User-facing chip label was
      "Rocket Fuel Light", renamed to plain "Light" 2026-07-07 once Classic
-     Light was hidden and this became the only visible light option. */
+     Light was hidden and this became the only visible light option.
+     As of 2026-07-07, Auto's light resolution also points here instead of
+     Classic Light — this is now both the pinnable light option and the
+     Auto-light target. */
   [data-theme="aubergine-light"] {
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#C9A24A; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2E1B3A;
@@ -751,7 +761,7 @@ window.SOMERSET_FB_CONFIG = {
   function applyTheme() {
     var pref = loadThemePref();
     var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var effective = pref === "auto" ? (prefersDark ? "dark" : "light") : pref;
+    var effective = pref === "auto" ? (prefersDark ? "aubergine" : "aubergine-light") : pref;
     document.documentElement.setAttribute("data-theme", effective);
     var metaEl = document.getElementById("themeColorMeta");
     if (metaEl) metaEl.setAttribute("content", THEME_COLORS[effective]);
