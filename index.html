@@ -48,7 +48,9 @@
   /* Dark default: Mahogany Parlor — wine baize, warm parchment, antique gold.
      --mast/--mast-soft are text/chrome sitting directly on --felt (masthead,
      New Game button, inactive nav tabs) rather than on the --cream paper —
-     here felt is dark, so they alias to the existing light paper/rule tones. */
+     here felt is dark, so they alias to the existing light paper/rule tones.
+     User-facing chip label "Classic Dark"; hidden from the Display sheet as
+     of 2026-07-07 in favor of the "Dark" (aubergine) chip below — may return. */
   [data-theme="dark"] {
     --felt:#4C2026; --felt-deep:#371318; --cream:#F7EDDC; --cream-shade:#EBDEC3;
     --rule:#CBAA82; --ink:#332B25; --ink-soft:#6F6052; --red:#A32C2C; --brass:#A57E28;
@@ -63,7 +65,9 @@
      --brass legitimately becomes green here — Linen Daylight promotes felt's
      green to the accent; --mast-soft is a custom tone, not var(--ink-soft)
      aliased, because --ink-soft only measures ~3.6:1 on this felt (fails AA
-     at small sizes) where --mast-soft measures ~4.96:1. */
+     at small sizes) where --mast-soft measures ~4.96:1.
+     User-facing chip label "Classic Light"; hidden from the Display sheet as
+     of 2026-07-07 in favor of the "Light" (aubergine-light) chip below — may return. */
   [data-theme="light"] {
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#B9AC85; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2F5D48;
@@ -76,8 +80,9 @@
      picked alongside Mahogany Parlor in the Display sheet — eggplant baize,
      warm gold instead of antique brass. Same dark-on-felt aliasing as
      [data-theme="dark"] above since felt stays dark here too. Internal
-     key/selector stay "aubergine" (describes the palette); only the
-     user-facing chip label is "Rocket Fuel Dark". */
+     key/selector stay "aubergine" (describes the palette); user-facing chip
+     label was "Rocket Fuel Dark", renamed to plain "Dark" 2026-07-07 once
+     Classic Dark was hidden and this became the only visible dark option. */
   [data-theme="aubergine"] {
     --felt:#2E1B3A; --felt-deep:#1A0E22; --cream:#F6EEDC; --cream-shade:#ECE0C2;
     --rule:#C9A24A; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B98B3A;
@@ -93,7 +98,9 @@
      prominent color: --brass/--brass-text are that theme's --felt/--felt-deep
      (buttons, banner, chip.on — the large surfaces), and --rule takes over
      its gold (borders/dividers — the restrained accent). Internal key
-     "aubergine-light" mirrors "aubergine". */
+     "aubergine-light" mirrors "aubergine". User-facing chip label was
+     "Rocket Fuel Light", renamed to plain "Light" 2026-07-07 once Classic
+     Light was hidden and this became the only visible light option. */
   [data-theme="aubergine-light"] {
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#C9A24A; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2E1B3A;
@@ -2227,7 +2234,8 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Display"]),
         el("p", { class:"sub disp" }, ["Match your device, or pin a theme"]),
         el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
-          [["auto","Auto"],["light","Light"],["dark","Dark"],["aubergine","Rocket Fuel Dark"],["aubergine-light","Rocket Fuel Light"]].map(function (opt) {
+          [["auto","Auto"],["light","Classic Light",true],["dark","Classic Dark",true],["aubergine","Dark"],["aubergine-light","Light"]]
+            .filter(function (opt) { return !opt[2]; }).map(function (opt) {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); render(); } }, [opt[1]]);
           })),
