@@ -3325,15 +3325,22 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function statTile(num, label, explain, sub) {
+    var lines = Array.isArray(label) ? label : [label];
+    var labelText = lines.join(" ");
     var props = { class:"stats-tile" };
     if (explain) {
-      props.role = "button"; props.tabindex = "0"; props["aria-label"] = label + ": " + explain + (sub ? (" (" + sub + ")") : "");
+      props.role = "button"; props.tabindex = "0"; props["aria-label"] = labelText + ": " + explain + (sub ? (" (" + sub + ")") : "");
       props.onClick = function(){ ui.info = explain; render(); };
     }
+    var labelChildren = lines.reduce(function (acc, line, i) {
+      if (i > 0) acc.push(el("br", {}, []));
+      acc.push(line);
+      return acc;
+    }, []);
     return el("div", props, [
       el("div", { class:"stats-tile-num disp" }, [String(num)]),
       sub ? el("div", { class:"stats-tile-sub disp" }, [sub]) : null,
-      el("div", { class:"stats-tile-label disp" }, [label])
+      el("div", { class:"stats-tile-label disp" }, labelChildren)
     ].filter(function (x) { return x; }));
   }
 
@@ -3409,9 +3416,9 @@ window.SOMERSET_FB_CONFIG = {
         "Total games this player has finished, across standard games and tournaments."),
       statTile(p.championships, "Championships",
         "Number of tournaments this player has won."),
-      statTile(p.longestStreak, "Longest winning streak",
+      statTile(p.longestStreak, ["Longest", "Winning Streak"],
         "The longest run of consecutive wins this player has ever put together."),
-      statTile(p.longestLossStreak, "Longest losing streak",
+      statTile(p.longestLossStreak, ["Longest", "Losing Streak"],
         "The longest run of consecutive losses this player has ever suffered."),
       statTile(currentStreakText(p.currentStreak), "Current streak",
         "The player's active run of consecutive wins or losses, as of their most recent game.")
