@@ -2670,6 +2670,7 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"])
       ]).concat(whoKids).concat([
         el("div", { class:"row", style:"padding:10px 0; margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
+        (named && ui.bidderSeat == null) ? el("p", { class:"table-label disp" }, ["Tap a seat above to select who bid"]) : null,
         /* Trump recording disabled for now.
         el("div", { style:"margin-bottom:14px;" }, [
           el("span", { class:"label disp", style:"display:block; margin-bottom:6px;" }, ["Trump (optional)"]),
@@ -2683,7 +2684,8 @@ window.SOMERSET_FB_CONFIG = {
             ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
             if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
           } }, ["Cancel"]),
-          el("button", { class:"btn btn-record disp", onClick:function(){
+          el("button", { class:"btn btn-record disp", disabled: named && ui.bidderSeat == null, onClick:function(){
+            if (named && ui.bidderSeat == null) return;
             ui.bidderPts = ui.bid; ui.entryStep=2;
             // Broadcast the confirmed bid to observers (join-by-code guests watching a
             // locked match) so they see it before the deal is recorded. Skip while
