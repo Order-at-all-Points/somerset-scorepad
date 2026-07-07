@@ -345,7 +345,7 @@
      wildly different weights across platforms and are easy to miss on the felt. */
   .deal-arrow { position:absolute; left:50%; top:50%; width:30px; height:30px; color:var(--brass);
     pointer-events:none; transition:transform .45s ease; }
-  .deal-arrow svg { display:block; width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+  .deal-arrow svg { display:block; width:100%; height:100%; filter:drop-shadow(0 1px 1px rgba(0,0,0,.45)); }
   .dealer-line { text-align:right; font-size:13px; color:var(--ink-soft); margin:0; }
   .dealer-line b { font-weight:600; color:var(--ink); }
   .entry-head { margin:0 0 12px; }
@@ -353,7 +353,7 @@
   .dealer-confirm { background:var(--cream-shade); border:1px solid var(--rule); border-radius:var(--r-card); padding:12px; margin:0 12px 12px; }
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center;
     padding:24px max(24px, env(safe-area-inset-left)); z-index:60; }
-  .sheet { background:var(--cream); border-radius:var(--r-sheet); width:100%; max-width:320px; padding:20px 16px 12px;
+  .sheet { background:var(--cream); border-radius:var(--r-sheet); width:100%; max-width:320px; padding:20px 16px 8px;
     box-shadow:0 2px 6px rgba(0,0,0,.15), 0 18px 44px rgba(0,0,0,.3); }
   /* Centered modals fade opacity-only: the .fade translateY would make the
      auto-selected name's blue highlight visibly slide as the sheet settles. */
@@ -362,7 +362,7 @@
   /* Phones: anchor dialogs to the bottom (thumb reach) and slide them up. */
   @media (max-width:520px) {
     .overlay { align-items:flex-end; padding:0; }
-    .sheet { max-width:none; border-radius:var(--r-sheet) var(--r-sheet) 0 0; padding:20px 16px calc(16px + env(safe-area-inset-bottom));
+    .sheet { max-width:none; border-radius:var(--r-sheet) var(--r-sheet) 0 0; padding:20px 16px calc(12px + env(safe-area-inset-bottom));
       box-shadow:0 -2px 6px rgba(0,0,0,.12), 0 -16px 40px rgba(0,0,0,.28); }
     .sheet.fade { animation:sheet-up .3s ease both; }
   }
@@ -388,7 +388,7 @@
   .sheet-btn.ghost:active { opacity:.6; }
   /* text inputs hold at 16px — the one size off the scale — so iOS doesn't zoom the page on focus */
   .sheet-input { width:100%; padding:12px; box-sizing:border-box; border:1.5px solid var(--rule); border-radius:var(--r-control);
-    font-size:16px; font-family:var(--font-text); color:var(--ink); background:#fff; margin-bottom:12px; }
+    font-size:16px; font-family:var(--font-text); color:var(--ink); background:#fff; margin:8px 0 12px; }
   button:focus-visible, input:focus-visible { outline:2px solid var(--brass); outline-offset:2px; }
 
   .storage-warn { display:none; background:#fff3f3; border:1px solid var(--red); color:var(--red); border-radius:var(--r-control); font-size:13px; padding:8px 12px; margin:0 0 12px; text-align:center; }
