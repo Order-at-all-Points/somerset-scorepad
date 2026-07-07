@@ -753,7 +753,7 @@ window.SOMERSET_FB_CONFIG = {
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
-    bidTeam:0, bidderSeat:null, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
+    bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
@@ -2031,7 +2031,7 @@ window.SOMERSET_FB_CONFIG = {
       }
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; render(); scrollEntryIntoView(); } },
+        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; render(); scrollEntryIntoView(); } },
           ["Record Deal " + dealNo])
       ]));
     }
@@ -2656,9 +2656,10 @@ window.SOMERSET_FB_CONFIG = {
             el("p", { class:"phase-label disp" }, ["Who bid?"]),
             el("div", { class:"who grid4" }, [0,1,2,3].map(function (seat) {
               return el("button", { class:"disp"+(ui.bidderSeat===seat?" on":""),
-                onClick:function(){ ui.bidTeam = seat % 2; ui.bidderSeat = seat; softRender(); } },
+                onClick:function(){ ui.bidTeam = seat % 2; ui.bidderSeat = seat; ui.bidderWarn = false; softRender(); } },
                 [ seatName(seat) ]);
-            }))
+            })),
+            ui.bidderWarn ? el("p", { class:"warn disp", role:"alert" }, ["Select who bid before continuing."]) : null
           ]
         : [
             el("div", { class:"who" }, [0,1].map(function (i) {
@@ -2670,7 +2671,6 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"])
       ]).concat(whoKids).concat([
         el("div", { class:"row", style:"padding:10px 0; margin-bottom:4px;" }, [ el("span", { class:"label disp" }, ["Bid"]), stepper(ui.bid, function(v){ ui.bid=v; softRender(); }, 6, POINTS_PER_DEAL, "bid") ]),
-        (named && ui.bidderSeat == null) ? el("p", { class:"table-label disp" }, ["Tap a seat above to select who bid"]) : null,
         /* Trump recording disabled for now.
         el("div", { style:"margin-bottom:14px;" }, [
           el("span", { class:"label disp", style:"display:block; margin-bottom:6px;" }, ["Trump (optional)"]),
@@ -2684,8 +2684,8 @@ window.SOMERSET_FB_CONFIG = {
             ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
             if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
           } }, ["Cancel"]),
-          el("button", { class:"btn btn-record disp", disabled: named && ui.bidderSeat == null, onClick:function(){
-            if (named && ui.bidderSeat == null) return;
+          el("button", { class:"btn btn-record disp", onClick:function(){
+            if (named && ui.bidderSeat == null) { ui.bidderWarn = true; softRender(); return; }
             ui.bidderPts = ui.bid; ui.entryStep=2;
             // Broadcast the confirmed bid to observers (join-by-code guests watching a
             // locked match) so they see it before the deal is recorded. Skip while
@@ -2796,6 +2796,7 @@ window.SOMERSET_FB_CONFIG = {
     ui.editingDeal = d.id;
     ui.bidTeam = d.bidTeam;
     ui.bidderSeat = allPlayersNamed() ? ((d.bidderSeat != null) ? d.bidderSeat : d.bidTeam) : null;
+    ui.bidderWarn = false;
     ui.bid = d.bid;
     // ui.trump = d.trump || "";   // trump recording disabled for now
     ui.bidderPts = d.pts[d.bidTeam];
