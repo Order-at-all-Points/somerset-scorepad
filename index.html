@@ -3424,7 +3424,7 @@ window.SOMERSET_FB_CONFIG = {
         "The player's active run of consecutive wins or losses, as of their most recent game.")
     ]));
 
-    card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px;" }, [
+    card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px; border-top:1px dashed var(--cream-shade);" }, [
       statTile(p.timesSet, "Times set",
         "How many times this player personally bid and then fell short of it, losing the bid amount from their team's score."),
       statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin",
