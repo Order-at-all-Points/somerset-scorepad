@@ -369,6 +369,8 @@
      auto-selected name's blue highlight visibly slide as the sheet settles. */
   .sheet.fade { animation:sheet-in .35s ease both; }
   @keyframes sheet-in { from { opacity:0; } to { opacity:1; } }
+  .sheet.sheet-game { max-width:420px; max-height:80vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  @media (max-width:520px) { .sheet.sheet-game { max-height:85vh; } }
   /* Phones: anchor dialogs to the bottom (thumb reach) and slide them up. */
   @media (max-width:520px) {
     .overlay { align-items:flex-end; padding:0; }
@@ -755,12 +757,13 @@ window.SOMERSET_FB_CONFIG = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
-    view:"game", historyOpen:null, historyGroupOpen:{}, jumpToRecordId:null, tSetup:null, confirmEndT:false,
+    view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
     openDeal:null, whoSheet:false, editingDeal:null, playingAsOpen:false,
     series:null, offerSeries:null, seriesResult:null,
-    historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all"
+    historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
+    gameDetailRecId:null
   };
 
   // ---- Display theme (light/dark/auto) ----
@@ -1752,7 +1755,7 @@ window.SOMERSET_FB_CONFIG = {
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
-           ui.mergeSheet != null;
+           ui.mergeSheet != null || ui.gameDetailRecId != null;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -2264,6 +2267,36 @@ window.SOMERSET_FB_CONFIG = {
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; render(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; render(); } }, [themeSheet]));
+      return;
+    }
+    if (ui.gameDetailRecId != null) {
+      var gdRec = gameHistory.find(function (r) { return r.id === ui.gameDetailRecId; });
+      if (!gdRec) { ui.gameDetailRecId = null; }
+      else {
+        var closeGameDetail = function(){ ui.gameDetailRecId = null; render(); };
+        var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
+        var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
+        var gdWinTxt = gdRec.winner === "tie" ? "Tie" : (gdRec.teams[gdRec.winner] + " won");
+        var gdScoreRow = function (i) {
+          return el("div", { class:"hs-row" }, [
+            el("span", { class:"hs-name" }, [ gdRec.teams[i] ]),
+            gdManual ? null : el("span", { class:"hs-score mono" }, [ String(gdRec.totals[i]) ])
+          ].filter(function (x) { return x; }));
+        };
+        var gdSheet = el("div", { class:sheetCls + " sheet-game", role:"dialog", "aria-modal":"true", "aria-label":"Game detail",
+          onClick:function(e){ e.stopPropagation(); } }, [
+          el("h3", { class:"disp" }, ["Game Detail"]),
+          el("p", { class:"sub disp" },
+            [fmtTime(gdRec.date) + " · " + (gdRec.tournament ? (gdIsChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game")]),
+          el("div", { class:"hist-line" }, [
+            el("div", { class:"hist-score" }, [ gdScoreRow(0), gdScoreRow(1) ]),
+            el("span", { class:"hist-win disp" }, [ (gdIsChamp ? "🏆 " : "") + gdWinTxt ])
+          ]),
+          renderHistoryDetail(gdRec, closeGameDetail),
+          el("button", { class:"sheet-btn ghost disp", onClick:closeGameDetail }, ["Close"])
+        ]);
+        modalRoot.appendChild(el("div", { class:"overlay", onClick:closeGameDetail }, [gdSheet]));
+      }
       return;
     }
     if (ui.info) {
@@ -3064,16 +3097,6 @@ window.SOMERSET_FB_CONFIG = {
     var afterHistoryPaint = function(){ applyScoreWrap(); alignHistoryBidderNames(); };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(afterHistoryPaint);
     else afterHistoryPaint();
-    if (ui.jumpToRecordId != null) {
-      var jumpId = ui.jumpToRecordId;
-      ui.jumpToRecordId = null;
-      var scrollToJumpTarget = function () {
-        var target = viewRootEl.querySelector('[data-rec-id="' + jumpId + '"]');
-        if (target) target.scrollIntoView({ behavior:"smooth", block:"start" });
-      };
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(scrollToJumpTarget);
-      else scrollToJumpTarget();
-    }
   }
 
   // ---- Personal stats (History → Stats) ----
@@ -3436,15 +3459,15 @@ window.SOMERSET_FB_CONFIG = {
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
           "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date), null,
-          function(){ goToGameRecord(p.bestWin.recId); }));
+          function(){ ui.gameDetailRecId = p.bestWin.recId; render(); }));
       }
       if (p.longestGame) {
         hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
-          function(){ goToGameRecord(p.longestGame.recId); }));
+          function(){ ui.gameDetailRecId = p.longestGame.recId; render(); }));
       }
       if (p.shortestGame) {
         hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date), null,
-          function(){ goToGameRecord(p.shortestGame.recId); }));
+          function(){ ui.gameDetailRecId = p.shortestGame.recId; render(); }));
       }
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp" }, ["Highlights"]),
@@ -3532,21 +3555,6 @@ window.SOMERSET_FB_CONFIG = {
       }
     });
     return groups;
-  }
-  // Jumps from a personal-stats highlight (biggest win, longest/shortest game) to
-  // that exact game in History: expands its date/tournament group, opens its
-  // detail, and scrolls it into view once rendered (see renderHistory's rAF below).
-  function goToGameRecord(recId) {
-    var rec = gameHistory.find(function (r) { return r.id === recId; });
-    if (!rec) return;
-    var isTournament = rec.tournament && rec.tournament.id != null;
-    var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
-    ui.historyGroupOpen[key] = true;
-    ui.historyOpen = rec.id;
-    ui.jumpToRecordId = rec.id;
-    ui.historyFilter = "all";
-    ui.view = "history"; ui.historySub = null;
-    render();
   }
   function setAllHistoryGroupsOpen(groups, openVal) {
     groups.forEach(function (g) { ui.historyGroupOpen[g.key] = openVal; });
@@ -3688,7 +3696,7 @@ window.SOMERSET_FB_CONFIG = {
     return rec.teams[teamIdx] + (roster && roster !== rec.teams[teamIdx] ? (": " + roster) : "");
   }
 
-  function renderHistoryDetail(rec) {
+  function renderHistoryDetail(rec, onDeleted) {
     var wrap = el("div", { class:"hist-detail" }, [
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
@@ -3722,7 +3730,9 @@ window.SOMERSET_FB_CONFIG = {
     wrap.appendChild(el("div", { class:"hist-del" }, [
       el("button", { class:"link-btn danger disp", onClick:function(){
         gameHistory = gameHistory.filter(function (g) { return g.id !== rec.id; });
-        ui.historyOpen = null; saveHistory(); render();
+        saveHistory();
+        if (onDeleted) onDeleted(); else ui.historyOpen = null;
+        render();
       } }, ["Delete this game"])
     ]));
     return wrap;
@@ -4912,6 +4922,7 @@ window.SOMERSET_FB_CONFIG = {
     try { history.pushState({ somerset: 1 }, "", ""); backArmed = true; } catch (e) {}
   }
   function closeTopLayer() {
+    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; render(); return true; }
     if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); return true; }
     if (ui.mergeSheet) {
       ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
@@ -4948,7 +4959,8 @@ window.SOMERSET_FB_CONFIG = {
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); }
+    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; render(); }
+    else if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); }
     else if (ui.mergeSheet) { ui.mergeSheet = null; render(); }
     else if (ui.info) { ui.info = null; render(); }
     else if (ui.matchMenu) { ui.matchMenu = null; render(); }
