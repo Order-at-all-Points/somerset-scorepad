@@ -728,7 +728,7 @@
     <p class="subtitle disp" id="subtitle"></p>
   </header>
   <nav class="nav" id="nav"></nav>
-  <div class="storage-warn disp" id="storageWarn">Heads up — scores can't be saved on this device (storage is full or blocked), so they'll be lost when you close the app.</div>
+  <div class="storage-warn disp" id="storageWarn">Heads up: scores can't be saved on this device (storage is full or blocked), so they'll be lost when you close the app.</div>
   <div id="gameView">
     <div class="pad fade" id="pad"></div>
     <div style="text-align:center; margin-top:14px;">
@@ -1444,7 +1444,7 @@ window.SOMERSET_FB_CONFIG = {
       // Write failed — fall back to local-only (no join code)
       syncStatus = "offline";
       tourney = t; saveTourney(); ui.tSetup = null;
-      ui.syncError = "Couldn't start shared tournament — Firebase write failed. The tournament is saved locally only.";
+      ui.syncError = "Couldn't start shared tournament: Firebase write failed. The tournament is saved locally only.";
       render();
     });
   }
@@ -1481,7 +1481,7 @@ window.SOMERSET_FB_CONFIG = {
       if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt new joiners to tag themselves
       render();
     }).catch(function() {
-      syncStatus = "offline"; onError("Couldn't connect — check your internet connection.");
+      syncStatus = "offline"; onError("Couldn't connect. Check your internet connection.");
     });
   }
 
@@ -1887,7 +1887,7 @@ window.SOMERSET_FB_CONFIG = {
       var bannerKids = [game.teams[win] + " win the game!"];
       if (winDetail.tieBreak) {
         bannerKids.push(el("span", { class:"banner-note disp" },
-          ["Both teams landed on the same score \u2014 " + game.teams[win] + " take it as the high bidder."]));
+          ["Both teams landed on the same score, so " + game.teams[win] + " take it as the high bidder."]));
       }
       pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
     }
@@ -1986,7 +1986,7 @@ window.SOMERSET_FB_CONFIG = {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
           innerKids = [ bidderLabel + " bid ", bidNumEl ];
         }
-        var setMsg = isSet ? (bidderLabel + " went SET this hand — they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
+        var setMsg = isSet ? (bidderLabel + " went SET this hand: they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
         // the table's dealer arrow (renderTable) — rather than four distinct icons, which read as
@@ -2009,7 +2009,7 @@ window.SOMERSET_FB_CONFIG = {
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
-          "aria-label":"Deal " + (idx+1) + " \u2014 show dealer and options",
+          "aria-label":"Deal " + (idx+1) + ", show dealer and options",
           onClick:function(){ ui.openDeal = isOpen ? null : d.id; softRender(); }
         }, [
           scoreBlockEl,
@@ -2055,10 +2055,10 @@ window.SOMERSET_FB_CONFIG = {
     if (!isMatch) settingsToggleEl.style.display = (gameOver || !game.deals.length) ? "none" : "";
     if (isReadOnly) {
       var viewBarText = gameOver
-        ? ("Match complete \u2014 " + game.teams[win] + " won")
+        ? ("Match complete: " + game.teams[win] + " Won")
         : (game.pendingBid
-            ? ((game.pendingBid.bidderSeat != null ? seatName(game.pendingBid.bidderSeat) : game.teams[game.pendingBid.bidTeam]) + (game.pendingBid.bid === POINTS_PER_DEAL ? " bid 14 (moon)" : (" bid " + game.pendingBid.bid)) + " \u2014 playing the hand")
-            : "Viewing \u2014 being edited on another device");
+            ? ((game.pendingBid.bidderSeat != null ? seatName(game.pendingBid.bidderSeat) : game.teams[game.pendingBid.bidTeam]) + (game.pendingBid.bid === POINTS_PER_DEAL ? " bid 14 (moon)" : (" bid " + game.pendingBid.bid)) + ", playing the hand")
+            : "Viewing: being edited on another device");
       pad.appendChild(el("div", { class:"view-only-bar disp" }, [viewBarText]));
     } else if (ui.showEntry) {
       pad.appendChild(renderEntry(dealNo));
@@ -2281,7 +2281,7 @@ window.SOMERSET_FB_CONFIG = {
           onClick:function(e){ e.stopPropagation(); } }, [
           el("h3", { class:"disp" }, ["Play again?"]),
           el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
-            [game.teams[os.seedWinner] + " won!"]),
+            [game.teams[os.seedWinner] + " Won!"]),
           el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Rematch? Best of 3?"]),
           el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
           el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
@@ -2290,7 +2290,7 @@ window.SOMERSET_FB_CONFIG = {
         return;
       }
       var offerMsg = ui.seriesResult
-        ? (game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
+        ? (game.teams[ui.seriesResult.winnerIdx] + " Won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
         : "Play a best-of-5 series?";
       var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
         onClick:function(e){ e.stopPropagation(); } }, [
@@ -2339,7 +2339,7 @@ window.SOMERSET_FB_CONFIG = {
         var closeGameDetail = function(){ ui.gameDetailRecId = null; softRender(); };
         var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
         var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
-        var gdWinTxt = gdRec.winner === "tie" ? "Tie" : (gdRec.teams[gdRec.winner] + " won");
+        var gdWinTxt = historyWinnerText(gdRec);
         var gdScoreRow = function (i) {
           return el("div", { class:"hs-row" }, [
             el("span", { class:"hs-name" }, [ gdRec.teams[i] ]),
@@ -2413,8 +2413,8 @@ window.SOMERSET_FB_CONFIG = {
           ].concat(actionBtns);
         } else {
           var doneMsg = mm.bracket
-            ? ("Match complete — " + curName + " advanced. Undo subsequent results first to clear this one.")
-            : ("Can't change — " + curName + " has already played in the next round. Undo that result first.");
+            ? ("Match complete: " + curName + " advanced. Undo subsequent results first to clear this one.")
+            : ("Can't change: " + curName + " has already played in the next round. Undo that result first.");
           mkids = [
             el("h3", { class:"disp" }, [TA.name + " vs " + TB.name]),
             el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" }, [doneMsg]),
@@ -2474,8 +2474,8 @@ window.SOMERSET_FB_CONFIG = {
             el("button", { class:"sheet-btn primary disp", onClick:function(){ startMatchAm(mm); } },
               [ hasGame ? ("Resume game (" + matchScoreStr(mt) + ")") : "Play in app" ]),
             el("p", { class:"sub disp", style:"margin:10px 0 6px;" }, ["Or record the result without playing:"]),
-            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.a); } }, [ TA.name + " won" ]),
-            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.b); } }, [ TB.name + " won" ]),
+            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.a); } }, [ TA.name + " Won" ]),
+            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.b); } }, [ TB.name + " Won" ]),
             el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
           ];
         }
@@ -2489,7 +2489,7 @@ window.SOMERSET_FB_CONFIG = {
       var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Bracket not updated", onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Update the bracket?"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
-          ["This match has a winner. The game is already saved to History — return to the bracket to advance it, or leave the match marked in-progress."]),
+          ["This match has a winner. The game is already saved to History, so return to the bracket to advance it, or leave the match marked in-progress."]),
         el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; returnToBracket(); } }, ["Return to Bracket"]),
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
           ui.backConfirm = false; releaseLock(bcAm);
@@ -2577,7 +2577,7 @@ window.SOMERSET_FB_CONFIG = {
               onClick:function(){ mergeNames(fromNm, nm); ui.mergeSheet = { step:1 }; softRender(); } }, [nm]));
           });
         } else {
-          mKids.push(el("p", { class:"sub disp" }, ["No other players yet — play a game with someone else first."]));
+          mKids.push(el("p", { class:"sub disp" }, ["No other players yet. Play a game with someone else first."]));
         }
         mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:2 }; softRender(); } }, ["‹ Back"]));
       } else {
@@ -2648,7 +2648,7 @@ window.SOMERSET_FB_CONFIG = {
     } else if (ui.seatMenuMode === "swap") {
       sheetKids = [
         el("h3", { class:"disp" }, ["Swap seats"]),
-        el("p", { class:"sub disp" }, ["Move " + seatName(i) + " to —"])
+        el("p", { class:"sub disp" }, ["Move " + seatName(i) + " to:"])
       ];
       [0,1,2,3].filter(function (j) { return j !== i; }).forEach(function (j) {
         sheetKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ swapSeats(i, j); } },
@@ -2823,13 +2823,13 @@ window.SOMERSET_FB_CONFIG = {
 
     if (willBeSet) {
       kids.push(el("p", { class:"warn strong disp" }, [
-        game.teams[ui.bidTeam] + " went set \u2014 bid of " + ui.bid + " subtracted from " + (ui.bidTeam === 0 ? "our" : "their") + " score."
+        game.teams[ui.bidTeam] + " went set: bid of " + ui.bid + " subtracted from " + (ui.bidTeam === 0 ? "our" : "their") + " score."
       ]));
     } else if (moonBid && ui.bidderPts === POINTS_PER_DEAL) {
       kids.push(el("p", { class:"warn strong disp" }, [
         preTotal >= 0
           ? (game.teams[ui.bidTeam] + " shot the MOON! " + game.teams[ui.bidTeam] + " win the game!")
-          : (game.teams[ui.bidTeam] + " take all 14, but are below zero \u2014 no moon, no win.")
+          : (game.teams[ui.bidTeam] + " take all 14, but are below zero: no moon, no win.")
       ]));
     }
 
@@ -3113,7 +3113,7 @@ window.SOMERSET_FB_CONFIG = {
       });
       gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
       saveHistory();
-      ui.info = added ? ("Restored " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to restore — they're already in your History.";
+      ui.info = added ? ("Restored " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to restore. They're already in your History.";
       render();
     };
     reader.readAsText(file);
@@ -3438,7 +3438,7 @@ window.SOMERSET_FB_CONFIG = {
     ]);
 
     if (!players.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet — play a few to start building stats."]));
+      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Play a few to start building stats."]));
     } else {
       players.forEach(function (p, idx) { card.appendChild(renderRankRow(p, idx, sortDef, maxMetric)); });
     }
@@ -3558,7 +3558,7 @@ window.SOMERSET_FB_CONFIG = {
       statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin",
         "The largest point gap this player's team has ever finished a game with."),
       statTile(p.moonsShot, "Moons shot",
-        "How many times this player personally bid to sweep every point in the hand — and made it."),
+        "How many times this player personally bid to sweep every point in the hand, and made it."),
       statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon shot success",
         "The share of this player's moon bids (betting to sweep the hand) that actually came through."),
       statTile(p.avgBidsPerGame == null ? "—" : p.avgBidsPerGame.toFixed(1), "Avg bids per game",
@@ -3851,11 +3851,20 @@ window.SOMERSET_FB_CONFIG = {
     ]);
   }
 
+  // Prefer the winning side's named players over the generic "We"/"They" (or
+  // tournament team name) label, once names have actually been entered for it —
+  // falls back to rosterLine's own logic for "no names entered"/"already named".
+  function historyWinnerText(rec) {
+    if (rec.winner === "tie") return "Tie";
+    var roster = rosterLine(rec, rec.winner);
+    return (roster || rec.teams[rec.winner]) + " Won";
+  }
+
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
     var isChamp = !!(rec.tournament && rec.tournament.championship);
     var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
-    var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
+    var winTxt = historyWinnerText(rec);
     // Category drives the left spine (see .hist-entry[data-cat]) — a championship is a
     // kind of tournament match, distinguished from a plain match by its gold wash.
     var cat = rec.tournament ? (isChamp ? "champ" : "tourney") : "standard";
@@ -3925,7 +3934,7 @@ window.SOMERSET_FB_CONFIG = {
     }).filter(function (x) { return x; }));
     if (rec.tieBreak) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
-        ["Both teams landed on the same score — " + rec.teams[rec.winner] + " took it as the high bidder."]));
+        ["Both teams landed on the same score, so " + rec.teams[rec.winner] + " took it as the high bidder."]));
     }
     if (rec.tournament && rec.tournament.manual) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
@@ -4435,11 +4444,11 @@ window.SOMERSET_FB_CONFIG = {
     var bracketLabel = !am.bracket ? ("Round " + (am.ri + 1))
       : am.bracket === "wb" ? ("Winners · Round " + (am.ri + 1))
       : am.bracket === "lb" ? ("Losers · Round " + (am.ri + 1))
-      : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " — Reset" : ""))
+      : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " (Reset)" : ""))
       : am.bracket === "series" ? ("Game " + (am.gi + 1) + " of up to " + tourney.bestOf)
       : (am.bracket === "rr" && am.isFinal) ? "Championship Final"
       : "Round Robin";
-    var headLabel = isCompleted ? bracketLabel + " — complete" : bracketLabel + " match";
+    var headLabel = isCompleted ? bracketLabel + " complete" : bracketLabel + " match";
     var card = el("div", { class:"pad" }, [
       el("div", { class:"view-head disp" }, [headLabel]),
       el("div", { class:"match-bar" }, [
@@ -4812,7 +4821,7 @@ window.SOMERSET_FB_CONFIG = {
       gfWrap.appendChild(el("p", { class:"empty disp", style:"padding:10px 0 4px;" }, ["Awaiting finalists"]));
     }
     if (t.grandFinal.m2) {
-      gfWrap.appendChild(el("div", { class:"gf-match-label", style:"margin-top:8px;" }, ["Match 2 — Reset"]));
+      gfWrap.appendChild(el("div", { class:"gf-match-label", style:"margin-top:8px;" }, ["Match 2 (Reset)"]));
       gfWrap.appendChild(renderMBox(t, t.grandFinal.m2, { bracket: "gf", match: 2 }));
     }
     gfDiv.appendChild(gfWrap); sections.push(gfDiv);
@@ -4849,7 +4858,7 @@ window.SOMERSET_FB_CONFIG = {
       var decided = m.winner != null;
       var ready = !decided;
       var resultEl = decided
-        ? el("span", { class:"rr-result set" }, [t.teams[m.winner].name + " won"])
+        ? el("span", { class:"rr-result set" }, [t.teams[m.winner].name + " Won"])
         : el("span", { class:"rr-result" }, ["–"]);
       var row = el("div", { class:"rr-row" }, [
         el("span", { class:"rr-teams" }, [t.teams[m.a].name, el("span", { class:"rr-vs" }, ["vs"]), t.teams[m.b].name]),
@@ -4915,7 +4924,7 @@ window.SOMERSET_FB_CONFIG = {
         var live = ipIdx >= 0, hIdx = hintIdx;
         scoreSection.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;",
           onClick:function(){ ui.matchMenu = { bracket: "series", gi: hIdx, confirm: null }; render(); } },
-          [ live ? ("Game " + (hIdx + 1) + " in progress — tap to watch") : ("Next up: Game " + (hIdx + 1) + " — tap to play") ]));
+          [ live ? ("Game " + (hIdx + 1) + " in progress. Tap to watch") : ("Next up: Game " + (hIdx + 1) + ". Tap to play") ]));
       }
     }
     sections.push(scoreSection);
@@ -4932,7 +4941,7 @@ window.SOMERSET_FB_CONFIG = {
       var scores = scoreGame ? gameTotals(scoreGame) : null;
       var resultEl;
       if (gdecided) {
-        resultEl = el("span", { class:"rr-result set" }, [t.teams[g.winner].name + " won" + (scores ? " " + scores[g.winner] + "–" + scores[1 - g.winner] : "")]);
+        resultEl = el("span", { class:"rr-result set" }, [t.teams[g.winner].name + " Won" + (scores ? " " + scores[g.winner] + "–" + scores[1 - g.winner] : "")]);
       } else if (inProg) {
         resultEl = el("span", { class:"rr-result live" }, ["in progress · " + scores[0] + "–" + scores[1]]);
       } else {
@@ -4977,7 +4986,7 @@ window.SOMERSET_FB_CONFIG = {
     if (syncCode) {
       var offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
       var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : syncStatus) });
-      var statusTxt = offline ? "Offline — sync paused" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
+      var statusTxt = offline ? "Offline: sync paused" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
       var codeStr = syncCode;
       var codeBtn = el("button", { class:"join-code", title:"Tap to copy", onClick:function(){
         try {
@@ -5021,7 +5030,7 @@ window.SOMERSET_FB_CONFIG = {
       // session); guests follow automatically. Local tournaments: anyone can restart.
       if (!syncCode || syncRole === "host") {
         card.appendChild(el("div", { class:"rematch" }, [
-          el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch — same teams"]),
+          el("button", { class:"btn btn-new disp", style:"margin-bottom:8px;", onClick:rematchSameTeams }, ["Rematch with same teams"]),
           el("button", { class:"btn btn-add disp", onClick:redrawAndReplay }, ["Redraw teams & play again"])
         ]));
       } else {
@@ -5031,7 +5040,7 @@ window.SOMERSET_FB_CONFIG = {
       var nx = nextMatch(t);
       if (nx) {
         var nxRi = nx.ri, nxMi = nx.mi;
-        card.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;", onClick:function(){ ui.matchMenu = { ri:nxRi, mi:nxMi, confirm:null }; render(); } }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), " — tap to play"]));
+        card.appendChild(el("p", { class:"tnext disp", style:"cursor:pointer;", onClick:function(){ ui.matchMenu = { ri:nxRi, mi:nxMi, confirm:null }; render(); } }, ["Next up: ", el("b", {}, [t.teams[nx.a].name]), " vs ", el("b", {}, [t.teams[nx.b].name]), ". Tap to play"]));
       }
     }
     if (t.format === "single") {
@@ -5054,7 +5063,7 @@ window.SOMERSET_FB_CONFIG = {
     var isHost = !syncCode || syncRole === "host";
     if (ui.confirmEndT) {
       var endLabel = isHost ? (isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?")
-                             : "Leave this tournament? It'll keep going for everyone else — you can rejoin with the code or start your own.";
+                             : "Leave this tournament? It'll keep going for everyone else. You can rejoin with the code or start your own.";
       card.appendChild(el("div", { class:"dealer-confirm fade" }, [
         el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" }, [endLabel]),
         el("div", { style:"display:flex; gap:8px;" }, [
