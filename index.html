@@ -479,6 +479,12 @@
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
   .link-btn:active { color:var(--ink); }
   .link-btn.danger { color:var(--red); }
+  /* Single smart Expand/Collapse-all toggle in the History log — one link whose
+     label flips with state; the glyph rotates 180° when everything is open. */
+  .hist-expand-toggle { display:inline-flex; align-items:center; gap:6px; }
+  .hist-expand-gl { font-size:11px; transition:transform .18s ease; }
+  .hist-expand-toggle.all-open .hist-expand-gl { transform:rotate(180deg); }
+  @media (prefers-reduced-motion: reduce) { .hist-expand-gl { transition:none; } }
 
   /* ---- tournament setup ---- */
   .tplayers { padding:12px 12px 0; }
@@ -3126,10 +3132,18 @@ window.SOMERSET_FB_CONFIG = {
       } else {
         var groups = buildHistoryGroups(filtered);
         if (groups.length > 1) {
+          // A single toggle instead of two competing links: it reflects the current
+          // state — "Collapse all" when every group is already open (matching the
+          // per-group open logic in renderHistoryGroup, where group 0 defaults open),
+          // otherwise "Expand all" — and one tap flips them all the other way.
+          var allGroupsOpen = groups.every(function (g, i) {
+            return ui.historyGroupOpen.hasOwnProperty(g.key) ? ui.historyGroupOpen[g.key] === true : i === 0;
+          });
           card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
-            el("div", {}, [
-              el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
-              el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
+            el("button", { class:"link-btn disp hist-expand-toggle" + (allGroupsOpen ? " all-open" : ""),
+              onClick:function(){ setAllHistoryGroupsOpen(groups, !allGroupsOpen); } }, [
+              el("span", { class:"disp" }, [ allGroupsOpen ? "Collapse all" : "Expand all" ]),
+              el("span", { class:"hist-expand-gl" }, ["▾"])
             ])
           ]));
         }
