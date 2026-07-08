@@ -472,6 +472,7 @@
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
   .hist-hand .hh-bid { color:var(--ink-soft); }
+  .hist-hand .hh-bid.red { color:var(--red); }
   .hh-bid-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn; wraps rather than overlapping the dealer column when it doesn't fit */
   .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignDealBidColumn; wraps rather than overflowing if a name is too long to fit */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
@@ -3893,13 +3894,17 @@ window.SOMERSET_FB_CONFIG = {
       var bidderName = (d.bidderSeat != null)
         ? ((rec.players[d.bidderSeat] && rec.players[d.bidderSeat].trim()) ? rec.players[d.bidderSeat].trim() : ("Seat " + (d.bidderSeat + 1)))
         : rec.teams[d.bidTeam];
-      var bidSuffix = (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid)) + (isSet ? " (set)" : (isMoonMade(d) ? " (moon)" : ""));
+      // "(set)" used to be appended as text here, but on narrow rows it pushed the
+      // line past the column width and wrapped, throwing off vertical alignment
+      // down the table — the hh-sc red already marks the set team's score, so the
+      // bid line itself now just turns red instead of adding more text.
+      var bidSuffix = (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid)) + (isMoonMade(d) ? " (moon)" : "");
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
         el("span", { class:"mono" }, ["|"]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
-        el("span", { class:"hh-bid disp" }, [ el("span", { class:"hh-bid-inner" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]) ]),
+        el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [ el("span", { class:"hh-bid-inner" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]) ]),
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
     });
