@@ -3111,7 +3111,7 @@ window.SOMERSET_FB_CONFIG = {
       if (fileInput.files && fileInput.files[0]) importHistoryFile(fileInput.files[0]);
       fileInput.value = "";
     } }, []);
-    var card = el("div", { class:"pad fade" }, [
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
       el("div", { class:"view-head disp" }, ["Log"]),
       renderHistoryViewToggle("log"),
       renderHistoryFilterRow()
@@ -3149,6 +3149,7 @@ window.SOMERSET_FB_CONFIG = {
     card.appendChild(el("div", { class:"history-footer" }, footerLinks));
     card.appendChild(fileInput);
     viewRootEl.appendChild(card);
+    suppressFade = false;
     var afterHistoryPaint = function(){ applyScoreWrap(); alignHistoryBidderNames(); };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(afterHistoryPaint);
     else afterHistoryPaint();
@@ -3394,12 +3395,12 @@ window.SOMERSET_FB_CONFIG = {
     });
     var maxMetric = Math.max(1, players.length ? sortDef[2](players[0]) : 0);
 
-    var card = el("div", { class:"pad fade" }, [
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
       el("div", { class:"view-head disp" }, ["Stats"]),
       renderHistoryViewToggle("stats"),
       el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
         return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
-          onClick:function(){ ui.statsSort = s[0]; render(); } }, [s[1]]);
+          onClick:function(){ ui.statsSort = s[0]; softRender(); } }, [s[1]]);
       }))
     ]);
 
@@ -3414,6 +3415,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
     viewRootEl.appendChild(card);
+    suppressFade = false;
   }
 
   function statTile(num, label, explain, sub) {
@@ -3658,7 +3660,7 @@ window.SOMERSET_FB_CONFIG = {
   function renderHistoryFilterRow() {
     return el("div", { class:"stat-sort-row" }, HISTORY_FILTERS.map(function (f) {
       return el("button", { class:"stat-sort-chip" + (ui.historyFilter === f[0] ? " on" : ""),
-        onClick:function(){ ui.historyFilter = f[0]; render(); } }, [f[1]]);
+        onClick:function(){ ui.historyFilter = f[0]; softRender(); } }, [f[1]]);
     }));
   }
   function dateHeading(iso) {
@@ -3694,7 +3696,7 @@ window.SOMERSET_FB_CONFIG = {
   }
   function setAllHistoryGroupsOpen(groups, openVal) {
     groups.forEach(function (g) { ui.historyGroupOpen[g.key] = openVal; });
-    render();
+    softRender();
   }
   // The tournament champion (if any) for a set of records — used for the 🏆
   // "... Won" line shown when a tournament group is collapsed.
@@ -3742,7 +3744,7 @@ window.SOMERSET_FB_CONFIG = {
       sumLeft = statsSummaryText(recs);
     }
     var head = el("div", { class:"hist-date-head", role:"button", onClick:function () {
-      ui.historyGroupOpen[g.key] = !open; render();
+      ui.historyGroupOpen[g.key] = !open; softRender();
     } }, [
       el("div", { class:"hist-head-row" }, [
         el("span", { class:"hist-date-title disp" }, [ titleLeft ]),
@@ -3808,7 +3810,7 @@ window.SOMERSET_FB_CONFIG = {
       ].filter(function (x) { return x; }));
     };
     var summary = el("div", { class:"hist-item", role:"button",
-      onClick:function(){ ui.historyOpen = open ? null : rec.id; render(); } }, [
+      onClick:function(){ ui.historyOpen = open ? null : rec.id; softRender(); } }, [
       el("div", { class:"hist-line" }, [
         el("div", { class:"hist-score" }, [
           hsRow(0),
