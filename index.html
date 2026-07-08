@@ -231,7 +231,7 @@
   .swipe-action-btn.delete { background:var(--red); }
   .swipe-action-btn:active { filter:brightness(.92); }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
-  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:10px 10px 10px 16px; display:flex; align-items:center; gap:10px; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.3); z-index:60; white-space:nowrap; overflow:hidden; }
+  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:max(20px, calc(env(safe-area-inset-bottom) + 12px)); background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:10px 10px 10px 16px; display:flex; align-items:center; gap:10px; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.3); z-index:60; white-space:nowrap; overflow:hidden; }
   .undo-toast.leaving { animation:undo-out .25s ease both; }
   @keyframes undo-out { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(6px); } }
   @media (prefers-reduced-motion: reduce) { .undo-toast.leaving { animation:none; } }
@@ -2817,7 +2817,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // ---- deal removal with undo (no confirm dialogs in the core loop) ----
-  var UNDO_TOAST_MS = 6000, UNDO_LEAVE_MS = 250;
+  var UNDO_TOAST_MS = 5000, UNDO_LEAVE_MS = 250;
   var undoToastEl = null, undoTimer = null, undoLeaveTimer = null;
   // instant=true skips the leaving animation — used when a new toast is about to
   // replace this one immediately, so there's nothing gained by fading out first.
