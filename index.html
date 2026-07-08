@@ -172,6 +172,7 @@
   @media (prefers-reduced-motion: reduce) { .fade { animation:none; } }
 
   .banner { background:var(--brass-text); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
+  .banner-note { display:block; font-size:12px; font-weight:400; margin-top:3px; opacity:.85; }
 
   .totals { display:grid; grid-template-columns:1fr 1px 1fr; border-bottom:1px solid var(--rule); }
   .team { padding:16px 12px 12px; text-align:center; }
@@ -566,6 +567,7 @@
 
   .stats-section { padding:16px 16px 4px; }
   .stats-section-title { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--brass-text); font-weight:600; margin:0 0 10px; }
+  .stats-section-title[role="button"] { cursor:pointer; border-bottom:1px dotted var(--brass-text); display:inline-block; }
 
   .stats-form-strip { display:flex; gap:5px; padding-bottom:16px; }
   .stats-form-pill { flex:1; height:26px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--cream); }
@@ -1519,21 +1521,27 @@ window.SOMERSET_FB_CONFIG = {
     });
     return s;
   }
-  function gameWinner(g) {
+  // A game can't end in a tie: if both teams clear the target on the same hand
+  // with equal scores, the bidding team on that hand wins it (they took the
+  // risk). gameWinnerDetail exposes that so the UI can explain the rare case;
+  // gameWinner just hands back the plain 0/1/null most call sites want.
+  function gameWinnerDetail(g) {
     var tgt = g.target, s = [0, 0];
     for (var i = 0; i < g.deals.length; i++) {
       var d = g.deals[i];
       var delta = dealDelta(d, s);
       s[0] += delta[0]; s[1] += delta[1];
       // Moon win: score jumped to 50 (>= target)
-      if (isMoonMade(d) && s[d.bidTeam] >= tgt) return d.bidTeam;
+      if (isMoonMade(d) && s[d.bidTeam] >= tgt) return { winner: d.bidTeam, tieBreak: false };
     }
-    if (s[0] < tgt && s[1] < tgt) return null;
-    if (s[0] === s[1]) return "tie";
-    return s[0] > s[1] ? 0 : 1;
+    if (s[0] < tgt && s[1] < tgt) return { winner: null, tieBreak: false };
+    if (s[0] === s[1]) return { winner: d.bidTeam, tieBreak: true };
+    return { winner: s[0] > s[1] ? 0 : 1, tieBreak: false };
   }
+  function gameWinner(g) { return gameWinnerDetail(g).winner; }
   function totals() { return gameTotals(game); }
   function winner() { return gameWinner(game); }
+  function winnerDetail() { return gameWinnerDetail(game); }
 
   // ---- Helpers ----
   function el(tag, props, children) {
@@ -1845,15 +1853,18 @@ window.SOMERSET_FB_CONFIG = {
     var _m = _am && getActiveMatchObj(ui.activeMatch);
     var isReadOnly = _am && (!isMineOrUnlocked(ui.activeMatch) || (_m && !_m.game && _m.winner !== null));
     subtitleEl.textContent = "";
-    var t = totals(), win = winner(), dealNo = game.deals.length + 1;
+    var t = totals(), winDetail = winnerDetail(), win = winDetail.winner, dealNo = game.deals.length + 1;
 
     var pad = el("div", {});
 
     // Winner banner
     if (win !== null) {
-      pad.appendChild(el("div", { class:"banner disp" }, [
-        win === "tie" ? "Tied above the mark \u2014 play one more deal!" : (game.teams[win] + " win the game!")
-      ]));
+      var bannerKids = [game.teams[win] + " win the game!"];
+      if (winDetail.tieBreak) {
+        bannerKids.push(el("span", { class:"banner-note disp" },
+          ["Both teams landed on the same score \u2014 " + game.teams[win] + " take it as the high bidder."]));
+      }
+      pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
     }
 
     // Series win tracker \u2014 while a game is in progress, keep the running tally of
@@ -2019,7 +2030,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!isMatch) settingsToggleEl.style.display = (gameOver || !game.deals.length) ? "none" : "";
     if (isReadOnly) {
       var viewBarText = gameOver
-        ? ("Match complete \u2014 " + (win === "tie" ? "Tied" : (game.teams[win] + " won")))
+        ? ("Match complete \u2014 " + game.teams[win] + " won")
         : (game.pendingBid
             ? ((game.pendingBid.bidderSeat != null ? seatName(game.pendingBid.bidderSeat) : game.teams[game.pendingBid.bidTeam]) + (game.pendingBid.bid === POINTS_PER_DEAL ? " bid 14 (moon)" : (" bid " + game.pendingBid.bid)) + " \u2014 playing the hand")
             : "Viewing \u2014 being edited on another device");
@@ -2929,8 +2940,8 @@ window.SOMERSET_FB_CONFIG = {
 
   function archiveCurrentGame(meta) {
     if (!game.deals.length) return;
-    var win = winner();
-    if (win === null) return;   // only archive completed games
+    var detail = winnerDetail();
+    if (detail.winner === null) return;   // only archive completed games
     var id = Date.now();
     gameHistory.unshift({
       id: id,
@@ -2940,7 +2951,8 @@ window.SOMERSET_FB_CONFIG = {
       dealerStart: game.dealerStart,
       target: game.target,
       totals: totals(),
-      winner: win,                 // 0, 1, or "tie"
+      winner: detail.winner,       // 0 or 1
+      tieBreak: detail.tieBreak,   // true if both teams finished level and the bidder took it
       deals: JSON.parse(JSON.stringify(game.deals)),
       tournament: meta || null
     });
@@ -3530,8 +3542,11 @@ window.SOMERSET_FB_CONFIG = {
     if (p.games.length >= 3) {
       var trendWindow = Math.min(10, p.games.length);
       var trend = playerFormTrend(p, trendWindow);
+      var trendExplain = "Each point is this player's win percentage over their trailing " + trendWindow +
+        " game" + (trendWindow === 1 ? "" : "s") + ", so the line shows momentum over time rather than just the last 10 results.";
       card.appendChild(el("div", { class:"stats-section" }, [
-        el("p", { class:"stats-section-title disp" }, ["Form trend"]),
+        el("p", { class:"stats-section-title disp", role:"button", tabindex:"0", "aria-label":"Form trend: " + trendExplain,
+          onClick:function(){ ui.info = trendExplain; render(); } }, ["Form trend"]),
         el("div", { class:"stats-trend" }, [
           el("div", { class:"stats-trend-chart", html: formTrendSvg(trend) }),
           el("div", { class:"stats-trend-labels" }, [
@@ -3839,6 +3854,10 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
       el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
     ]);
+    if (rec.tieBreak) {
+      wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
+        ["Both teams landed on the same score — " + rec.teams[rec.winner] + " took it as the high bidder."]));
+    }
     if (rec.tournament && rec.tournament.manual) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
         ["No hands recorded."]));
