@@ -586,6 +586,9 @@
   .stats-activity-bar.zero { background:var(--cream-shade); opacity:1; }
   .stats-activity-label { font-size:10px; color:var(--ink-soft); }
 
+  .stats-trend-chart svg { display:block; width:100%; height:auto; }
+  .stats-trend-labels { display:flex; justify-content:space-between; font-size:10px; color:var(--ink-soft); margin-top:4px; }
+
   .stats-pair-list { padding-bottom:6px; }
   .stats-pair-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--cream-shade); }
   .stats-pair-row:last-child { border-bottom:none; }
@@ -3296,6 +3299,47 @@ window.SOMERSET_FB_CONFIG = {
     return buckets;
   }
 
+  // Rolling win% across a player's full game history (ties count as half a
+  // win) — one point per game, using up to `window` trailing games. Feeds
+  // the "Form trend" sparkline, distinct from the "Recent form" pill strip
+  // which only shows the last 10 games as discrete W/L/T results.
+  function playerFormTrend(p, window) {
+    var queue = [], pts = [];
+    p.games.forEach(function (g) {
+      queue.push(g.tie ? 0.5 : (g.won ? 1 : 0));
+      if (queue.length > window) queue.shift();
+      var sum = queue.reduce(function (a, b) { return a + b; }, 0);
+      pts.push(Math.round((sum / queue.length) * 100));
+    });
+    return pts;
+  }
+
+  function shortDate(iso) {
+    try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+    catch (e) { return ""; }
+  }
+
+  function formTrendSvg(pts) {
+    var W = 300, H = 60, padY = 6, n = pts.length;
+    var coords = pts.map(function (pct, i) {
+      var x = n > 1 ? (i / (n - 1)) * W : W / 2;
+      var y = padY + (1 - pct / 100) * (H - 2 * padY);
+      return x.toFixed(1) + "," + y.toFixed(1);
+    });
+    var last = coords[coords.length - 1].split(",");
+    var lastColor = pts[pts.length - 1] >= 50 ? "var(--brass-text)" : "var(--red)";
+    var baseline = (H - padY).toFixed(1);
+    var yMid = ((padY + (H - padY)) / 2).toFixed(1);
+    return (
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+        '<line x1="0" y1="' + yMid + '" x2="' + W + '" y2="' + yMid + '" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3,3"/>' +
+        '<polygon points="0,' + baseline + ' ' + coords.join(" ") + ' ' + W + ',' + baseline + '" fill="color-mix(in srgb, var(--brass-text) 16%, transparent)" stroke="none"/>' +
+        '<polyline points="' + coords.join(" ") + '" fill="none" stroke="var(--brass-text)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="3.5" fill="' + lastColor + '"/>' +
+      '</svg>'
+    );
+  }
+
   var STAT_SORTS = [
     ["games", "Games Played", function (p) { return p.gamesPlayed; }],
     ["wins", "Wins", function (p) { return p.wins; }],
@@ -3470,8 +3514,9 @@ window.SOMERSET_FB_CONFIG = {
       statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon shot success",
         "The share of this player's moon bids (betting to sweep the hand) that actually came through."),
       statTile(p.avgBidsPerGame == null ? "—" : p.avgBidsPerGame.toFixed(1), "Avg bids per game",
-        "How many hands this player personally bids on, on average, per game.",
-        p.avgPointsPerBid == null ? null : (p.avgPointsPerBid.toFixed(1) + " pts/bid"))
+        "How many hands this player personally bids on, on average, per game."),
+      statTile(p.avgPointsPerBid == null ? "—" : p.avgPointsPerBid.toFixed(1), "Avg points per bid",
+        "The average number of points this player has earned per hand they've personally bid on.")
     ]));
 
     var recent = p.games.slice(-10);
@@ -3481,6 +3526,21 @@ window.SOMERSET_FB_CONFIG = {
         return el("div", { class:"stats-form-pill " + (g.tie ? "t" : (g.won ? "w" : "l")) }, [g.tie ? "T" : (g.won ? "W" : "L")]);
       }))
     ]));
+
+    if (p.games.length >= 3) {
+      var trendWindow = Math.min(10, p.games.length);
+      var trend = playerFormTrend(p, trendWindow);
+      card.appendChild(el("div", { class:"stats-section" }, [
+        el("p", { class:"stats-section-title disp" }, ["Form trend"]),
+        el("div", { class:"stats-trend" }, [
+          el("div", { class:"stats-trend-chart", html: formTrendSvg(trend) }),
+          el("div", { class:"stats-trend-labels" }, [
+            el("span", {}, [shortDate(p.games[0].date)]),
+            el("span", {}, [shortDate(p.games[p.games.length - 1].date) + " · " + trend[trend.length - 1] + "%"])
+          ])
+        ])
+      ]));
+    }
 
     var wlTotal = p.wins + p.losses, wPct = wlTotal ? Math.round((p.wins / wlTotal) * 100) : 0;
     card.appendChild(el("div", { class:"stats-section" }, [
