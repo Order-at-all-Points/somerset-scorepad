@@ -919,12 +919,12 @@ window.SOMERSET_FB_CONFIG = {
     try { localStorage.setItem(MY_NAME_KEY, JSON.stringify(myIdentity)); } catch (e) {}
     ui.whoSheet = false;
     syncMyHistoryFromTourney();
-    render();
+    softRender();
   }
   function clearIdentity() {
     myIdentity = null;
     try { localStorage.removeItem(MY_NAME_KEY); } catch (e) {}
-    ui.whoSheet = false; render();
+    ui.whoSheet = false; softRender();
   }
   // Stable id for a match within a synced tournament, so a completed match is
   // archived to a player's History at most once even as snapshots re-arrive.
@@ -1485,7 +1485,7 @@ window.SOMERSET_FB_CONFIG = {
       else localStorage.setItem(STORAGE_KEY, JSON.stringify(soloGame));
     }
     catch (e) { ui.storageOk = false; }
-    render();
+    softRender();
   }
 
   // ---- Scoring ----
@@ -1985,7 +1985,7 @@ window.SOMERSET_FB_CONFIG = {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
           "aria-label":"Deal " + (idx+1) + " \u2014 show dealer and options",
-          onClick:function(){ ui.openDeal = isOpen ? null : d.id; render(); }
+          onClick:function(){ ui.openDeal = isOpen ? null : d.id; softRender(); }
         }, [
           scoreBlockEl,
           descEl,
@@ -2072,7 +2072,7 @@ window.SOMERSET_FB_CONFIG = {
       }
     } else {
       pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; render(); scrollEntryIntoView(); } },
+        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); } },
           ["Record Deal " + dealNo])
       ]));
     }
@@ -2215,7 +2215,7 @@ window.SOMERSET_FB_CONFIG = {
     els.forEach(function (e) { e.style.minHeight = h + "px"; });
   }
 
-  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; render(); }
+  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; softRender(); }
 
   // Tournament match team names are always "PlayerA & PlayerB", derived live from
   // the seats — never hand-typed (unlike the solo game's freely-editable "We"/"They").
@@ -2243,7 +2243,7 @@ window.SOMERSET_FB_CONFIG = {
     if (dealerSeat() === i) { closeSeatMenu(); return; }   // already dealing
     ui.seatMenu = null; ui.seatMenuMode = "menu";
     if (game.deals.length === 0) { game.dealerStart = i; persist(); }   // free pick pre-game
-    else { ui.pendingDealer = i; render(); }                            // mid-game needs confirm
+    else { ui.pendingDealer = i; softRender(); }                            // mid-game needs confirm
   }
 
   function renderModal(noFade) {
@@ -2285,9 +2285,9 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
           [ resetDone ? "This game is finished and saved in History." : "The current score will be discarded." ]),
         el("button", { class:"sheet-btn primary disp", onClick:newGame }, ["Yes, start fresh"]),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; render(); } }, ["Keep playing"])
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; softRender(); } }, ["Keep playing"])
       ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; render(); } }, [resetSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
       return;
     }
     if (ui.showThemeSheet) {
@@ -2300,18 +2300,18 @@ window.SOMERSET_FB_CONFIG = {
           [["auto","Auto"],["light","Classic Light",true],["dark","Classic Dark",true],["aubergine","Dark"],["aubergine-light","Light"]]
             .filter(function (opt) { return !opt[2]; }).map(function (opt) {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
-              onClick:function(){ saveThemePref(opt[0]); applyTheme(); render(); } }, [opt[1]]);
+              onClick:function(){ saveThemePref(opt[0]); applyTheme(); softRender(); } }, [opt[1]]);
           })),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; render(); } }, ["Done"])
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; render(); } }, [themeSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
       return;
     }
     if (ui.gameDetailRecId != null) {
       var gdRec = gameHistory.find(function (r) { return r.id === ui.gameDetailRecId; });
       if (!gdRec) { ui.gameDetailRecId = null; }
       else {
-        var closeGameDetail = function(){ ui.gameDetailRecId = null; render(); };
+        var closeGameDetail = function(){ ui.gameDetailRecId = null; softRender(); };
         var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
         var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
         var gdWinTxt = gdRec.winner === "tie" ? "Tie" : (gdRec.teams[gdRec.winner] + " won");
@@ -2342,9 +2342,9 @@ window.SOMERSET_FB_CONFIG = {
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Set"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" }, [ui.info]),
-        el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.info = null; render(); } }, ["Got it"])
+        el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.info = null; softRender(); } }, ["Got it"])
       ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.info = null; render(); } }, [infoSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.info = null; softRender(); } }, [infoSheet]));
       return;
     }
     if (ui.matchMenu) {
@@ -2368,7 +2368,7 @@ window.SOMERSET_FB_CONFIG = {
             actionBtns.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
               clearMatchWinner(tourney, mm.ri, mm.mi);
               setMatchWinner(tourney, mm.ri, mm.mi, otherIdx);
-              ui.matchMenu = null; saveTourney(); render();
+              ui.matchMenu = null; saveTourney(); softRender();
             } }, ["Change winner to " + otherName]));
           }
           actionBtns.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
@@ -2378,9 +2378,9 @@ window.SOMERSET_FB_CONFIG = {
             else if (mm.bracket === "gf") clearGFWinner(tourney, mm.match);
             else if (mm.bracket === "rr") { if (mm.isFinal) clearRRFinalWinner(tourney); else clearRRWinner(tourney, mm.idx); }
             else if (mm.bracket === "series") clearSeriesWinner(tourney, mm.gi);
-            ui.matchMenu = null; saveTourney(); render();
+            ui.matchMenu = null; saveTourney(); softRender();
           } }, ["Clear result"]));
-          actionBtns.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Cancel"]));
+          actionBtns.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"]));
           mkids = [
             el("h3", { class:"disp" }, [TA.name + " vs " + TB.name]),
             el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" },
@@ -2393,7 +2393,7 @@ window.SOMERSET_FB_CONFIG = {
           mkids = [
             el("h3", { class:"disp" }, [TA.name + " vs " + TB.name]),
             el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" }, [doneMsg]),
-            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Got it"])
+            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Got it"])
           ];
         }
       } else if (mm.confirm != null) {
@@ -2412,9 +2412,9 @@ window.SOMERSET_FB_CONFIG = {
                 : ("This match has an unfinished game. Discard it and set " + tourney.teams[wT].name + " as the winner?") ]),
           el("button", { class:"sheet-btn primary disp", onClick:function(){
               recordManualMatchWin(mm, getActiveMatchObj(mm), wT);
-              ui.matchMenu = null; saveTourney(); render();
+              ui.matchMenu = null; saveTourney(); softRender();
             } }, [ !cHasGame ? "Set winner" : cComplete ? "Save & set winner" : "Discard & set winner" ]),
-          el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; render(); } }, ["Cancel"])
+          el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; softRender(); } }, ["Cancel"])
         ];
       } else if (mm.watchPick) {
         var wpNames = dedupeNames((TA.players || []).concat(TB.players || []).filter(Boolean));
@@ -2426,7 +2426,7 @@ window.SOMERSET_FB_CONFIG = {
           mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ identifyAs(nm); watchMatchAm(mm); } }, [nm]));
         });
         mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ watchMatchAm(mm); } }, ["Just observing"]));
-        mkids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ mm.watchPick = false; render(); } }, ["Back"]));
+        mkids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ mm.watchPick = false; softRender(); } }, ["Back"]));
       } else {
         // Ready match — play or pick winner; respect lock
         var locked = !isMineOrUnlocked(mm);
@@ -2437,10 +2437,10 @@ window.SOMERSET_FB_CONFIG = {
               ["This game is being edited on another device."]),
             mt.game ? el("button", { class:"sheet-btn primary disp", onClick:function(){
               if (myNameForCurrentTourney()) watchMatchAm(mm);
-              else { mm.watchPick = true; render(); }
+              else { mm.watchPick = true; softRender(); }
             } }, ["Watch game"]) : null,
             el("button", { class:"sheet-btn disp", onClick:function(){ startMatchAm(mm); } }, ["Take over editing"]),
-            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Cancel"])
+            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
           ];
         } else {
           var demoted = "font-size:15px; min-height:40px; padding:8px 0; color:var(--ink-soft);";
@@ -2451,12 +2451,12 @@ window.SOMERSET_FB_CONFIG = {
             el("p", { class:"sub disp", style:"margin:10px 0 6px;" }, ["Or record the result without playing:"]),
             el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.a); } }, [ TA.name + " won" ]),
             el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.b); } }, [ TB.name + " won" ]),
-            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; render(); } }, ["Cancel"])
+            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
           ];
         }
       }
       var msheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; render(); } }, [msheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; softRender(); } }, [msheet]));
       return;
     }
     if (ui.backConfirm && ui.activeMatch) {
@@ -2469,11 +2469,11 @@ window.SOMERSET_FB_CONFIG = {
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
           ui.backConfirm = false; releaseLock(bcAm);
           ui.activeMatch = null; ui.showEntry = false;
-          saveTourney(); render();
+          saveTourney(); softRender();
         } }, ["Leave without updating bracket"]),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.backConfirm = false; render(); } }, ["Stay"])
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.backConfirm = false; softRender(); } }, ["Stay"])
       ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.backConfirm = false; render(); } }, [bcSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.backConfirm = false; softRender(); } }, [bcSheet]));
       return;
     }
     if (ui.joinSheet) {
@@ -2494,13 +2494,13 @@ window.SOMERSET_FB_CONFIG = {
       if (ui.joinError) jKids.push(el("p", { class:"join-error disp" }, [ui.joinError]));
       jKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
         var code = joinInput.value.trim().toUpperCase();
-        if (code.length < 6) { ui.joinError = "Code must be 6 characters."; render(); return; }
-        joinTournament(code, function(msg){ ui.joinError = msg; render(); });
+        if (code.length < 6) { ui.joinError = "Code must be 6 characters."; softRender(); return; }
+        joinTournament(code, function(msg){ ui.joinError = msg; softRender(); });
       } }, ["Join →"]));
-      jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, ["Cancel"]));
+      jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, ["Cancel"]));
       var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
         onClick:function(e){ e.stopPropagation(); } }, jKids);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; render(); } }, [jSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
       return;
     }
@@ -2517,17 +2517,17 @@ window.SOMERSET_FB_CONFIG = {
       if (meNow) {
         wKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:clearIdentity }, ["Not playing / clear"]));
       }
-      wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.whoSheet = false; render(); } }, ["Cancel"]));
+      wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.whoSheet = false; softRender(); } }, ["Cancel"]));
       var wSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Identify yourself",
         onClick:function(e){ e.stopPropagation(); } }, wKids);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; render(); } }, [wSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; softRender(); } }, [wSheet]));
       return;
     }
     if (ui.mergeSheet) {
       var mStats = computePlayerStats();
       var mPlayers = Object.keys(mStats).map(function (k) { return mStats[k].name; })
         .sort(function (a, b) { return a.localeCompare(b); });
-      var closeMergeSheet = function () { ui.mergeSheet = null; render(); };
+      var closeMergeSheet = function () { ui.mergeSheet = null; softRender(); };
       var mKids;
       if (ui.mergeSheet.step === 2) {
         mKids = [
@@ -2536,9 +2536,9 @@ window.SOMERSET_FB_CONFIG = {
         ];
         mPlayers.forEach(function (nm) {
           mKids.push(el("button", { class:"sheet-btn disp",
-            onClick:function(){ ui.mergeSheet = { step:3, from:nm }; render(); } }, [nm]));
+            onClick:function(){ ui.mergeSheet = { step:3, from:nm }; softRender(); } }, [nm]));
         });
-        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:1 }; render(); } }, ["‹ Back"]));
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:1 }; softRender(); } }, ["‹ Back"]));
       } else if (ui.mergeSheet.step === 3) {
         var fromNm = ui.mergeSheet.from;
         var others = mPlayers.filter(function (nm) { return statKey(nm) !== statKey(fromNm); });
@@ -2549,12 +2549,12 @@ window.SOMERSET_FB_CONFIG = {
         if (others.length) {
           others.forEach(function (nm) {
             mKids.push(el("button", { class:"sheet-btn disp",
-              onClick:function(){ mergeNames(fromNm, nm); ui.mergeSheet = { step:1 }; render(); } }, [nm]));
+              onClick:function(){ mergeNames(fromNm, nm); ui.mergeSheet = { step:1 }; softRender(); } }, [nm]));
           });
         } else {
           mKids.push(el("p", { class:"sub disp" }, ["No other players yet — play a game with someone else first."]));
         }
-        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:2 }; render(); } }, ["‹ Back"]));
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:2 }; softRender(); } }, ["‹ Back"]));
       } else {
         var groups = {};
         Object.keys(nameAliases).forEach(function (k) {
@@ -2570,11 +2570,11 @@ window.SOMERSET_FB_CONFIG = {
             mKids.push(el("div", { class:"merge-row" }, [
               el("span", { class:"merge-row-txt disp" }, [v.display + " → " + groups[ck].canonical]),
               el("button", { class:"merge-undo", "aria-label":"Undo merge",
-                onClick:function(){ delete nameAliases[v.key]; saveNameAliases(); render(); } }, ["×"])
+                onClick:function(){ delete nameAliases[v.key]; saveNameAliases(); softRender(); } }, ["×"])
             ]));
           });
         });
-        mKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.mergeSheet = { step:2 }; render(); } }, ["Merge two names…"]));
+        mKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.mergeSheet = { step:2 }; softRender(); } }, ["Merge two names…"]));
         mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeMergeSheet }, ["Done"]));
       }
       var mSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Merge names",
@@ -2618,7 +2618,7 @@ window.SOMERSET_FB_CONFIG = {
         sheetKids.push(qa);
       }
       sheetKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ saveName(input.value); } }, ["Save"]));
-      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; render(); } }, ["Cancel"]));
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; softRender(); } }, ["Cancel"]));
       if (!ui.editNames) setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
     } else if (ui.seatMenuMode === "swap") {
       sheetKids = [
@@ -2629,13 +2629,13 @@ window.SOMERSET_FB_CONFIG = {
         sheetKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ swapSeats(i, j); } },
           [ seatName(j) + " · seat " + (j + 1) ]));
       });
-      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; render(); } }, ["Cancel"]));
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; softRender(); } }, ["Cancel"]));
     } else {
       sheetKids = [
         el("h3", { class:"disp" }, [seatName(i)]),
         el("p", { class:"sub disp" }, [game.teams[i % 2] + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; render(); } }, ["Edit name"]),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "swap"; render(); } }, ["Swap seats"]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; softRender(); } }, ["Edit name"]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "swap"; softRender(); } }, ["Swap seats"]),
         el("button", { class:"sheet-btn primary disp", disabled:isDealer, onClick:function(){ chooseDealerFromMenu(i); } },
           [ isDealer ? "Already dealing" : "Set as dealer" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:closeSeatMenu }, ["Cancel"])
@@ -2686,7 +2686,7 @@ window.SOMERSET_FB_CONFIG = {
         el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" },
           ["Change the dealer to ", el("b", {}, [seatName(pd)]), " mid-game? The clockwise rotation will continue from there."]),
         el("div", { style:"display:flex; gap:8px;" }, [
-          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.pendingDealer = null; render(); } }, ["Keep current"]),
+          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.pendingDealer = null; softRender(); } }, ["Keep current"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
             game.dealerStart = ((pd - game.deals.length) % 4 + 4) % 4;
             ui.pendingDealer = null; persist();
@@ -2753,7 +2753,7 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"actions" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){
             ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
-            if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
+            if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
           } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
             if (named && ui.bidderSeat == null) { ui.bidderWarn = true; softRender(); return; }
@@ -2762,7 +2762,7 @@ window.SOMERSET_FB_CONFIG = {
             // locked match) so they see it before the deal is recorded. Skip while
             // editing an already-recorded deal \u2014 that deal is already visible to them.
             if (ui.editingDeal == null) { game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat }; persist(); }
-            else render();
+            else softRender();
           } }, ["Next: play the hand \u2192"])
         ])
       ]);
@@ -2781,7 +2781,7 @@ window.SOMERSET_FB_CONFIG = {
     var kids = header.concat([
       el("p", { class:"phase-label disp" }, ["Step 2 \u00b7 after the hand"]),
       el("button", { class:"bid-summary disp", "aria-label":"Edit the bid",
-        onClick:function(){ ui.entryStep = 1; render(); } }, [
+        onClick:function(){ ui.entryStep = 1; softRender(); } }, [
         (ui.bidderSeat != null ? seatName(ui.bidderSeat) : game.teams[ui.bidTeam]) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
         el("span", { class:"edit-hint" }, ["edit"])
       ]),
@@ -2809,7 +2809,7 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     kids.push(el("div", { class:"actions" }, [
-      el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.entryStep=1; render(); } }, ["\u2190 Back"]),
+      el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.entryStep=1; softRender(); } }, ["\u2190 Back"]),
       el("button", { class:"btn btn-record disp", onClick:recordDeal }, [isEditing ? "Save changes" : "Record deal"])
     ]));
 
@@ -2885,7 +2885,7 @@ window.SOMERSET_FB_CONFIG = {
     ui.showEntry = true;
     ui.entryStep = 1;
     ui.openDeal = null;
-    render();
+    softRender();
     scrollEntryIntoView();
   }
 
@@ -3099,9 +3099,9 @@ window.SOMERSET_FB_CONFIG = {
   function renderHistoryViewToggle(active) {
     return el("div", { class:"seg-toggle" }, [
       el("button", { class:"seg-btn" + (active === "log" ? " on" : ""),
-        onClick:function(){ ui.historySub = null; render(); } }, ["Log"]),
+        onClick:function(){ ui.historySub = null; softRender(); } }, ["Log"]),
       el("button", { class:"seg-btn" + (active === "stats" ? " on" : ""),
-        onClick:function(){ ui.historySub = "board"; render(); } }, ["Stats"])
+        onClick:function(){ ui.historySub = "board"; softRender(); } }, ["Stats"])
     ]);
   }
 
@@ -3373,7 +3373,7 @@ window.SOMERSET_FB_CONFIG = {
     var disp = statMetricDisplay(p, sortDef[0]);
     var champBadge = p.championships ? (" 🏆" + (p.championships > 1 ? ("×" + p.championships) : "")) : "";
     return el("div", { class:"rank-row", role:"button",
-      onClick:function(){ ui.statsPlayer = p.name; ui.historySub = "player"; render(); } }, [
+      onClick:function(){ ui.statsPlayer = p.name; ui.historySub = "player"; softRender(); } }, [
       el("div", { class:"rank-num" + (idx < 3 ? " top" : "") }, [String(idx + 1)]),
       el("div", { class:"rank-id" }, [
         el("div", { class:"rank-name" }, [p.name + champBadge]),
@@ -3479,10 +3479,10 @@ window.SOMERSET_FB_CONFIG = {
     var stats = computePlayerStats();
     var p = stats[statKey(ui.statsPlayer || "")];
 
-    var card = el("div", { class:"pad fade" }, [
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
       el("div", { class:"view-head disp" }, [p ? p.name : (ui.statsPlayer || "Player")]),
       el("div", { style:"padding:6px 6px 0;" }, [
-        el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; render(); } },
+        el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; softRender(); } },
           [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Stats" ])
       ])
     ]);
@@ -3490,6 +3490,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!p) {
       card.appendChild(el("p", { class:"empty disp" }, ["No games found for this player."]));
       viewRootEl.appendChild(card);
+      suppressFade = false;
       return;
     }
 
@@ -3637,6 +3638,7 @@ window.SOMERSET_FB_CONFIG = {
     ]));
 
     viewRootEl.appendChild(card);
+    suppressFade = false;
   }
 
   // Bucket history into top-level sections: standalone (non-tournament) games
@@ -3843,12 +3845,12 @@ window.SOMERSET_FB_CONFIG = {
     gameHistory = gameHistory.filter(function (g) { return g.id !== rec.id; });
     saveHistory();
     if (onDeleted) onDeleted(); else ui.historyOpen = null;
-    render();
+    softRender();
     showUndoToast("Game deleted", function () {
       gameHistory.unshift(rec);
       gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
       saveHistory();
-      render();
+      softRender();
     });
   }
 
@@ -4343,7 +4345,7 @@ window.SOMERSET_FB_CONFIG = {
   function manualWinAm(am, teamIdx) {
     // Always confirm — a manual result advances the bracket, and the buttons
     // sit one row under "Play in app" where a mis-tap is easy.
-    ui.matchMenu.confirm = teamIdx; render();
+    ui.matchMenu.confirm = teamIdx; softRender();
   }
 
   function leaveMatch() {
@@ -4891,7 +4893,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.syncError) {
       card.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
         el("span", { style:"font-size:13px; color:var(--red); flex:1;" }, [ui.syncError]),
-        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; render(); } }, ["✕"])
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; softRender(); } }, ["✕"])
       ]));
     }
 
@@ -4899,7 +4901,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.syncNotice) {
       card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
         el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
-        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; render(); } }, ["✕"])
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; softRender(); } }, ["✕"])
       ]));
     }
 
@@ -4922,7 +4924,7 @@ window.SOMERSET_FB_CONFIG = {
         class:"link-btn disp",
         "aria-expanded": ui.playingAsOpen ? "true" : "false",
         "aria-label": ui.playingAsOpen ? "Hide player info" : "Show player info",
-        onClick:function(){ ui.playingAsOpen = !ui.playingAsOpen; render(); }
+        onClick:function(){ ui.playingAsOpen = !ui.playingAsOpen; softRender(); }
       }, [ ui.playingAsOpen ? "▾" : "▸" ]);
       card.appendChild(el("div", { class:"sync-bar" }, [
         el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])]),
@@ -4988,13 +4990,13 @@ window.SOMERSET_FB_CONFIG = {
       card.appendChild(el("div", { class:"dealer-confirm fade" }, [
         el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" }, [endLabel]),
         el("div", { style:"display:flex; gap:8px;" }, [
-          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; render(); } }, ["Keep it"]),
-          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; render(); } }, [isHost ? "Yes, end it" : "Yes, leave"])
+          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; softRender(); } }, ["Keep it"]),
+          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; softRender(); } }, [isHost ? "Yes, end it" : "Yes, leave"])
         ])
       ]));
     } else {
       card.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; render(); } }, [isHost ? (isSeries ? "End Series" : "End Tournament") : "Leave Tournament"])
+        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; softRender(); } }, [isHost ? (isSeries ? "End Series" : "End Tournament") : "Leave Tournament"])
       ]));
     }
     viewRootEl.appendChild(card);
@@ -5076,8 +5078,8 @@ window.SOMERSET_FB_CONFIG = {
       navigator.serviceWorker.register("sw.js").catch(function () {});
     });
   }
-  window.addEventListener("online", function () { if (!sheetOpen()) render(); });
-  window.addEventListener("offline", function () { if (!sheetOpen()) render(); });
+  window.addEventListener("online", function () { if (!sheetOpen()) softRender(); });
+  window.addEventListener("offline", function () { if (!sheetOpen()) softRender(); });
 
   // ---- hardware/browser back closes the top UI layer instead of leaving ----
   // One sentinel history entry is kept while any layer is open; popstate
@@ -5088,30 +5090,30 @@ window.SOMERSET_FB_CONFIG = {
     try { history.pushState({ somerset: 1 }, "", ""); backArmed = true; } catch (e) {}
   }
   function closeTopLayer() {
-    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; render(); return true; }
-    if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); return true; }
+    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); return true; }
+    if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
     if (ui.mergeSheet) {
       ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
-      render();
+      softRender();
       return true;
     }
-    if (ui.info != null) { ui.info = null; render(); return true; }
-    if (ui.confirmReset) { ui.confirmReset = false; render(); return true; }
+    if (ui.info != null) { ui.info = null; softRender(); return true; }
+    if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
-    if (ui.whoSheet) { ui.whoSheet = false; render(); return true; }
-    if (ui.joinSheet) { ui.joinSheet = false; ui.joinError = null; render(); return true; }
-    if (ui.backConfirm) { ui.backConfirm = false; render(); return true; }
-    if (ui.matchMenu != null) { ui.matchMenu = null; render(); return true; }
+    if (ui.whoSheet) { ui.whoSheet = false; softRender(); return true; }
+    if (ui.joinSheet) { ui.joinSheet = false; ui.joinError = null; softRender(); return true; }
+    if (ui.backConfirm) { ui.backConfirm = false; softRender(); return true; }
+    if (ui.matchMenu != null) { ui.matchMenu = null; softRender(); return true; }
     if (ui.showEntry) {
       ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null;
-      if (game.pendingBid) { game.pendingBid = null; persist(); } else render();
+      if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
       return true;
     }
     if (ui.activeMatch) { leaveMatch(); return true; }
     if (ui.view === "history" && ui.historySub) {
       ui.historySub = (ui.historySub === "player") ? "board" : null;
       if (ui.historySub !== "player") ui.statsPlayer = null;
-      render();
+      softRender();
       return true;
     }
     if (ui.view !== "game") { ui.view = "game"; render(); return true; }
@@ -5125,13 +5127,13 @@ window.SOMERSET_FB_CONFIG = {
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; render(); }
-    else if (ui.showThemeSheet) { ui.showThemeSheet = false; render(); }
-    else if (ui.mergeSheet) { ui.mergeSheet = null; render(); }
-    else if (ui.info) { ui.info = null; render(); }
-    else if (ui.matchMenu) { ui.matchMenu = null; render(); }
-    else if (ui.seatMenu !== null) { ui.seatMenu = null; ui.seatMenuMode = "menu"; render(); }
-    else if (ui.pendingDealer !== null) { ui.pendingDealer = null; render(); }
+    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); }
+    else if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); }
+    else if (ui.mergeSheet) { ui.mergeSheet = null; softRender(); }
+    else if (ui.info) { ui.info = null; softRender(); }
+    else if (ui.matchMenu) { ui.matchMenu = null; softRender(); }
+    else if (ui.seatMenu !== null) { ui.seatMenu = null; ui.seatMenuMode = "menu"; softRender(); }
+    else if (ui.pendingDealer !== null) { ui.pendingDealer = null; softRender(); }
   });
 
   render();
