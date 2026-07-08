@@ -1955,8 +1955,8 @@ window.SOMERSET_FB_CONFIG = {
           // failed attempts keep set-flag's default red — mirrors success/failure so
           // the color alone tells the story.
           innerKids = isMoonMade(d)
-            ? [ bidderLabel + " shot the ", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
-            : [ bidderLabel + " shot the ", el("strong", { class:"set-flag disp" }, ["MOON"]) ];
+            ? [ bidderLabel + " shot the", el("strong", { class:"set-flag disp", style:"color:var(--brass-text);" }, ["MOON"]) ]
+            : [ bidderLabel + " shot the", el("strong", { class:"set-flag disp" }, ["MOON"]) ];
         } else {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
           innerKids = [ bidderLabel + " bid ", bidNumEl ];
@@ -4784,7 +4784,7 @@ window.SOMERSET_FB_CONFIG = {
         ? el("span", { class:"rr-result set" }, [t.teams[m.winner].name + " won"])
         : el("span", { class:"rr-result" }, ["–"]);
       var row = el("div", { class:"rr-row" }, [
-        el("span", { class:"rr-teams" }, [t.teams[m.a].name, el("span", { class:"rr-vs" }, [" vs "]), t.teams[m.b].name]),
+        el("span", { class:"rr-teams" }, [t.teams[m.a].name, el("span", { class:"rr-vs" }, ["vs"]), t.teams[m.b].name]),
         resultEl
       ]);
       if (ready || decided) {
