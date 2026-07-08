@@ -230,8 +230,18 @@
   .swipe-action-btn.delete { background:var(--red); }
   .swipe-action-btn:active { filter:brightness(.92); }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
-  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:8px 8px 8px 16px; display:flex; align-items:center; gap:8px; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.3); z-index:60; white-space:nowrap; }
-  .undo-toast button { background:none; border:none; color:var(--rule); font-size:15px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:8px 12px; }
+  .undo-toast { position:fixed; left:0; right:0; margin:0 auto; width:fit-content; bottom:20px; background:var(--ink); color:var(--cream); border-radius:var(--r-card); padding:10px 10px 10px 16px; display:flex; align-items:center; gap:10px; font-size:15px; box-shadow:0 2px 4px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.3); z-index:60; white-space:nowrap; overflow:hidden; }
+  .undo-toast.leaving { animation:undo-out .25s ease both; }
+  @keyframes undo-out { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(6px); } }
+  @media (prefers-reduced-motion: reduce) { .undo-toast.leaving { animation:none; } }
+  /* Thin depleting bar along the toast's bottom edge — a peripheral countdown for the
+     undo window. Clipped to the toast's rounded corners by the parent's overflow:hidden;
+     its animation-duration is set inline in JS from the same constant as the dismiss timer. */
+  .undo-toast-bar { position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--brass); transform-origin:left; animation:undo-deplete linear forwards; }
+  @keyframes undo-deplete { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .undo-toast-bar { animation:none; } }
+  .undo-toast button { background:var(--brass); color:var(--cream); border:none; border-radius:var(--r-pill); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-text); padding:7px 14px; flex:0 0 auto; }
+  .undo-toast button:active { opacity:.75; }
   .deal-detail b { font-weight:600; color:var(--brass-text); margin-left:4px; }
   .del { background:none; border:none; color:var(--ink-soft); font-size:17px; cursor:pointer; padding:12px; border-radius:var(--r-control); transition:color .08s, background .08s; line-height:1; }
   .del:active { color:var(--red); background:color-mix(in srgb, var(--red) 10%, transparent); }
@@ -425,27 +435,37 @@
   .seg-btn:active:not(.on) { opacity:.6; }
 
   /* ---- history ---- */
-  .hist-date-group { border-bottom:1px solid var(--rule); }
-  .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:12px; cursor:pointer; background:var(--cream); }
-  .hist-date-title { font-size:15px; font-weight:600; color:var(--brass-text); }
+  .hist-date-group { padding-bottom:6px; }
+  .hist-date-group + .hist-date-group { border-top:1px solid var(--rule); }
+  .hist-date-head { display:flex; flex-direction:column; gap:2px; padding:14px 12px 10px; cursor:pointer; }
+  .hist-date-title { font-family:var(--font-display); font-size:18px; font-weight:600; color:var(--brass-text); }
   .hist-head-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .hist-date-sum { font-size:13px; color:var(--ink-soft); margin-left:24px; }
-  .hist-t-group { border-top:1px solid var(--cream-shade); }
-  .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 8px 24px; cursor:pointer; }
-  .hist-t-title { font-size:13px; font-weight:600; color:var(--brass-text); }
+  .hist-date-sum { font-size:13px; color:var(--ink-soft); }
+  .hist-t-group { border-top:1px solid var(--cream-shade); padding-bottom:2px; }
+  .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 6px 24px; cursor:pointer; }
+  .hist-t-title { font-family:var(--font-display); font-size:14px; font-weight:600; color:var(--brass-text); }
   .hist-t-sum { font-size:13px; color:var(--ink-soft); margin-left:14px; }
-  .hist-entry { border-bottom:1px solid var(--rule); }
-  .hist-item { padding:12px; cursor:pointer; background:var(--cream-shade); }
+  /* Each game is its own elevated card (echoes .mbox) instead of a flat bordered row —
+     margin/radius/shadow live on the wrapper so overflow:hidden clips the item/detail
+     children's square corners without those children needing their own radius. */
+  .hist-entry { margin:6px 12px 10px; border:1px solid var(--rule); border-radius:var(--r-control);
+    overflow:hidden; background:var(--cream); box-shadow:0 1px 3px rgba(0,0,0,.14); }
+  .hist-item { padding:12px; cursor:pointer; }
+  .hist-item:active { background:var(--cream-shade); }
   .hist-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
-  .hist-line.stack { flex-direction:column; align-items:stretch; gap:2px; }
+  .hist-line.stack { flex-direction:column; align-items:stretch; gap:6px; }
   .hist-score { font-size:15px; font-weight:600; color:var(--ink); display:inline-grid; grid-template-columns:auto auto; column-gap:8px; row-gap:2px; min-width:0; max-width:100%; flex:0 1 auto; }
   .hs-row { display:contents; }
   .hs-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
   .hs-score { text-align:right; white-space:nowrap; }
   .hist-win { font-size:13px; color:var(--brass-text); font-weight:600; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
-  .hist-meta { font-size:13px; color:var(--ink-soft); margin-top:3px; }
-  .hist-detail { padding:8px 12px 16px; background:var(--cream-shade); }
+  /* Winner tag as a filled pill (echoes .chip.on) rather than plain colored text —
+     gives the row one clear focal point instead of two same-weight text blocks. */
+  .hist-win-badge { display:inline-block; padding:3px 10px; border-radius:var(--r-pill); background:var(--brass); color:var(--cream); }
+  .hist-win-badge.tie { background:var(--ink-soft); }
+  .hist-meta { font-size:13px; color:var(--ink-soft); margin-top:6px; }
+  .hist-detail { padding:8px 12px 16px; border-top:1px solid var(--cream-shade); }
   .hist-roster { font-size:13px; color:var(--ink); margin:0 0 6px; }
   .hist-hand { display:grid; grid-template-columns:26px 28px 8px 28px 1fr auto; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
@@ -2783,20 +2803,31 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // ---- deal removal with undo (no confirm dialogs in the core loop) ----
-  var undoToastEl = null, undoTimer = null;
-  function dismissUndoToast() {
+  var UNDO_TOAST_MS = 6000, UNDO_LEAVE_MS = 250;
+  var undoToastEl = null, undoTimer = null, undoLeaveTimer = null;
+  // instant=true skips the leaving animation — used when a new toast is about to
+  // replace this one immediately, so there's nothing gained by fading out first.
+  function dismissUndoToast(instant) {
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
-    if (undoToastEl && undoToastEl.parentNode) undoToastEl.parentNode.removeChild(undoToastEl);
+    if (undoLeaveTimer) { clearTimeout(undoLeaveTimer); undoLeaveTimer = null; }
+    if (!undoToastEl) return;
+    var toastEl = undoToastEl;
     undoToastEl = null;
+    if (instant) { if (toastEl.parentNode) toastEl.parentNode.removeChild(toastEl); return; }
+    toastEl.classList.add("leaving");
+    undoLeaveTimer = setTimeout(function () {
+      if (toastEl.parentNode) toastEl.parentNode.removeChild(toastEl);
+    }, UNDO_LEAVE_MS);
   }
   function showUndoToast(msg, onUndo) {
-    dismissUndoToast();
+    dismissUndoToast(true);
     undoToastEl = el("div", { class:"undo-toast fade disp", role:"status" }, [
+      el("div", { class:"undo-toast-bar", style:"animation-duration:" + UNDO_TOAST_MS + "ms;" }, []),
       el("span", {}, [msg]),
       el("button", { onClick:function(){ dismissUndoToast(); onUndo(); } }, ["Undo"])
     ]);
     document.body.appendChild(undoToastEl);
-    undoTimer = setTimeout(dismissUndoToast, 6000);
+    undoTimer = setTimeout(dismissUndoToast, UNDO_TOAST_MS);
   }
   function removeDealWithUndo(d, idx) {
     var snapGame = game, snapArchivedId = game.archivedId, snapRec = null;
@@ -3079,14 +3110,19 @@ window.SOMERSET_FB_CONFIG = {
         card.appendChild(el("p", { class:"empty disp" }, ["No games match this filter."]));
       } else {
         var groups = buildHistoryGroups(filtered);
-        // Expand all / Collapse all — hidden until the UI is polished; see setAllHistoryGroupsOpen.
-        // card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
-        //   el("div", {}, [
-        //     el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
-        //     el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
-        //   ])
-        // ]));
-        groups.forEach(function (g) { card.appendChild(renderHistoryGroup(g)); });
+        if (groups.length > 1) {
+          card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
+            el("div", {}, [
+              el("button", { class:"link-btn disp", onClick:function(){ setAllHistoryGroupsOpen(groups, true); } }, ["Expand all"]),
+              el("button", { class:"link-btn disp", style:"margin-left:14px;", onClick:function(){ setAllHistoryGroupsOpen(groups, false); } }, ["Collapse all"])
+            ])
+          ]));
+        }
+        // The most recent group (first in the list — gameHistory is maintained newest-first)
+        // opens by default so returning users land on their last game instead of a wall of
+        // collapsed headers; every other group still defaults closed. An explicit toggle
+        // (including via Expand/Collapse all) always wins over this default.
+        groups.forEach(function (g, i) { card.appendChild(renderHistoryGroup(g, i === 0)); });
       }
     }
     var footerLinks = [];
@@ -3614,9 +3650,9 @@ window.SOMERSET_FB_CONFIG = {
   function tournamentTitleLabel(t) {
     return t.format === "series" ? ("Best of " + t.bestOf) : formatName(t.format);
   }
-  function renderHistoryGroup(g) {
+  function renderHistoryGroup(g, defaultOpen) {
     var recs = g.records;
-    var open = ui.historyGroupOpen[g.key] === true;   // default collapsed
+    var open = ui.historyGroupOpen.hasOwnProperty(g.key) ? ui.historyGroupOpen[g.key] === true : !!defaultOpen;
     var chevron = open ? "▾ " : "▸ ";
     var titleLeft, titleRight = "", sumLeft;
     if (g.isTournament) {
@@ -3635,8 +3671,8 @@ window.SOMERSET_FB_CONFIG = {
     } }, [
       el("div", { class:"hist-head-row" }, [
         el("span", { class:"hist-date-title disp" }, [ titleLeft ]),
-        el("span", { class:"hist-win disp" }, [ titleRight ])
-      ]),
+        titleRight ? el("span", { class:"hist-win hist-win-badge disp" }, [ titleRight ]) : null
+      ].filter(function (x) { return x; })),
       el("span", { class:"hist-date-sum disp" }, [ sumLeft ])
     ]);
     var wrap = el("div", { class:"hist-date-group" }, [ head ]);
@@ -3703,7 +3739,7 @@ window.SOMERSET_FB_CONFIG = {
           hsRow(0),
           hsRow(1)
         ]),
-        el("span", { class:"hist-win disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
+        el("span", { class:"hist-win hist-win-badge" + (rec.winner === "tie" ? " tie" : "") + " disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ]),
       el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (rec.tournament ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
     ]);
@@ -3719,6 +3755,23 @@ window.SOMERSET_FB_CONFIG = {
     // Tournament teams are named after their players (e.g. "A & B"), so the roster
     // would just repeat the team name — only append it when it adds something.
     return rec.teams[teamIdx] + (roster && roster !== rec.teams[teamIdx] ? (": " + roster) : "");
+  }
+
+  // Deletes immediately and offers Undo via the same toast used for deal removal
+  // (see the "no confirm dialogs" note above removeDealWithUndo) rather than an
+  // extra confirm tap — restoring re-inserts and re-sorts newest-first, matching
+  // how gameHistory is otherwise maintained.
+  function deleteHistoryRecordWithUndo(rec, onDeleted) {
+    gameHistory = gameHistory.filter(function (g) { return g.id !== rec.id; });
+    saveHistory();
+    if (onDeleted) onDeleted(); else ui.historyOpen = null;
+    render();
+    showUndoToast("Game deleted", function () {
+      gameHistory.unshift(rec);
+      gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+      saveHistory();
+      render();
+    });
   }
 
   function renderHistoryDetail(rec, onDeleted) {
@@ -3754,10 +3807,7 @@ window.SOMERSET_FB_CONFIG = {
     });
     wrap.appendChild(el("div", { class:"hist-del" }, [
       el("button", { class:"link-btn danger disp", onClick:function(){
-        gameHistory = gameHistory.filter(function (g) { return g.id !== rec.id; });
-        saveHistory();
-        if (onDeleted) onDeleted(); else ui.historyOpen = null;
-        render();
+        deleteHistoryRecordWithUndo(rec, onDeleted);
       } }, ["Delete this game"])
     ]));
     return wrap;
