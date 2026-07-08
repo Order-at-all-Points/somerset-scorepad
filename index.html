@@ -47,6 +47,29 @@
     --font-display: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif;
     --font-text: -apple-system, system-ui, 'Helvetica Neue', sans-serif;
   }
+  /* Theme key naming convention (internal [data-theme] values, NOT the
+     user-facing Display-sheet chip labels, which churn freely and are just
+     documented inline where they're set):
+       <family>-<mode>[-<status>[-<descriptor>]]
+     - family: short palette codename, kebab-case (e.g. "aubergine").
+       Permanent once shipped in a live/pinnable theme — it's persisted in
+       localStorage (somerset:theme-pref), so renaming it orphans existing
+       users on their saved pref. Pick it once, live with it.
+     - mode: "light" or "dark". (The two original families predate this
+       convention and only suffix "-light", leaving dark bare — e.g. "dark"/
+       "light" and "aubergine"/"aubergine-light". Don't retrofit those keys;
+       just suffix both modes explicitly on new families going forward.)
+     - status: omit for a live, picker-visible theme. "-test" for an
+       unresolved experiment (not wired into the picker). "-archive" for a
+       retired variant kept only so it isn't lost.
+     - descriptor: short kebab-case phrase distinguishing this variant from
+       siblings sharing the same family/mode/status, e.g. "-purple-primary"
+       vs "-dark-copy" — lets you refer to "the purple-primary archive" in
+       conversation without opening the CSS. Omit if there's only one.
+     Test/archive blocks are real CSS you can preview by hand-setting
+     data-theme (devtools console or a throwaway script) — they're just
+     absent from the chip array in the Display-sheet render code, so normal
+     use never reaches them. */
   /* Dark default: Mahogany Parlor — wine baize, warm parchment, antique gold.
      --mast/--mast-soft are text/chrome sitting directly on --felt (masthead,
      New Game button, inactive nav tabs) rather than on the --cream paper —
@@ -124,6 +147,46 @@
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--brass);
+  }
+  /* ARCHIVE — not wired into the Display sheet picker, reachable only by
+     setting data-theme="aubergine-light-archive-purple-primary" manually
+     (devtools/script). A snapshot of the live aubergine-light block as it
+     stood right before the 2026-07-08 "copy Rocket Fuel dark" experiment
+     below, kept so the purple-primary/champagne-secondary look isn't lost
+     if that experiment is preferred over this one. To restore it as the
+     live theme, copy this block's values back into [data-theme="aubergine-
+     light"] above and delete this block. See the naming-convention note
+     above the dark/light default themes near the top of this <style> block
+     for how archive/test keys are named. */
+  [data-theme="aubergine-light-archive-purple-primary"] {
+    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
+    --rule:#C9A868; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#3D2B5C;
+    --brass-text:#251938;
+    --control:#FFFFFF;
+    --mast:var(--ink); --mast-soft:#675D4C;
+    --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
+    --seat-rule:var(--brass);
+  }
+  /* TEST THEME — not wired into the Display sheet picker, reachable only by
+     setting data-theme="aubergine-light-test" manually (devtools/script).
+     2026-07-08 exploration: identical to Rocket Fuel dark (aubergine) token
+     for token, except --felt/--felt-deep keep Rocket Fuel Light's current
+     background values. --mast/--mast-soft are the one other deliberate
+     deviation: dark's --mast:var(--cream)/--mast-soft:var(--rule) assume
+     felt is dark, so copied verbatim they went near-invisible on this
+     theme's light felt. Reused Classic Light's proven pairing instead
+     (--mast:var(--ink), --mast-soft:#675D4C — tuned to ~4.96:1 on this
+     exact felt tone, see the Classic Light comment above) since felt here
+     is identical to Classic Light's. Delete this block (or promote its
+     values into aubergine-light above) once the exploration is resolved. */
+  [data-theme="aubergine-light-test"] {
+    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#F6EEDC; --cream-shade:#ECE0C2;
+    --rule:#C9A868; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B39456;
+    --brass-text:#7A6234;
+    --control:#FCF6E6;
+    --mast:var(--ink); --mast-soft:#675D4C;
+    --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
+    --seat-rule:var(--rule);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
