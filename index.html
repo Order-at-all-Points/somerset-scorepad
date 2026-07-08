@@ -126,34 +126,39 @@
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
   }
-  /* Rocket Fuel Light: Linen Daylight's background/paper/ink untouched
-     (--felt, --cream*, --control, --ink*, --mast*, --felt-wash*). The two
-     accent tokens are both reused verbatim from Rocket Fuel dark, swapped
-     from the original light-variant pass so the eggplant reads as the
-     prominent color: --brass/--brass-text are that theme's --felt/--felt-deep
-     (buttons, banner, chip.on — the large surfaces), and --rule takes over
-     its gold (borders/dividers — the restrained accent). Internal key
-     "aubergine-light" mirrors "aubergine". User-facing chip label was
-     "Rocket Fuel Light", renamed to plain "Light" 2026-07-07 once Classic
-     Light was hidden and this became the only visible light option.
-     As of 2026-07-07, Auto's light resolution also points here instead of
-     Classic Light — this is now both the pinnable light option and the
-     Auto-light target. */
+  /* Rocket Fuel Light: promoted 2026-07-08 from the "aubergine-light-test"
+     exploration — identical to Rocket Fuel dark (aubergine) token for
+     token, except --felt/--felt-deep keep this theme's own light
+     background (unchanged since Linen Daylight). --mast/--mast-soft are
+     the one deliberate deviation from a verbatim dark copy: dark's
+     --mast:var(--cream)/--mast-soft:var(--rule) assume felt is dark, so
+     copied as-is the masthead title and inactive nav tabs (text sitting
+     directly on --felt) go near-invisible on light felt. Uses Classic
+     Light's proven pairing instead (--mast:var(--ink), --mast-soft:
+     #675D4C — tuned to ~4.96:1 on this exact felt tone, see the Classic
+     Light comment above) since felt here is identical to Classic Light's.
+     The prior live palette (purple --brass primary, champagne --rule
+     secondary) is preserved at [data-theme="aubergine-light-archive-
+     purple-primary"] below, per the naming convention above, in case we
+     want it back. Internal key "aubergine-light" mirrors "aubergine".
+     User-facing chip label is "Light". As of 2026-07-07, Auto's light
+     resolution also points here — this is both the pinnable light option
+     and the Auto-light target. */
   [data-theme="aubergine-light"] {
-    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
-    --rule:#C9A868; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#3D2B5C;
-    --brass-text:#251938;
-    --control:#FFFFFF;
+    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#F6EEDC; --cream-shade:#ECE0C2;
+    --rule:#C9A868; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B39456;
+    --brass-text:#7A6234;
+    --control:#FCF6E6;
     --mast:var(--ink); --mast-soft:#675D4C;
-    --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
-    --seat-rule:var(--brass);
+    --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
+    --seat-rule:var(--rule);
   }
   /* ARCHIVE — not wired into the Display sheet picker, reachable only by
      setting data-theme="aubergine-light-archive-purple-primary" manually
-     (devtools/script). A snapshot of the live aubergine-light block as it
-     stood right before the 2026-07-08 "copy Rocket Fuel dark" experiment
-     below, kept so the purple-primary/champagne-secondary look isn't lost
-     if that experiment is preferred over this one. To restore it as the
+     (devtools/script). This was the live Rocket Fuel Light palette from
+     2026-07-06 until 2026-07-08 (purple --brass primary, champagne --rule
+     secondary), superseded above by the "copy Rocket Fuel dark verbatim"
+     version. Kept in case we want to return to it. To restore it as the
      live theme, copy this block's values back into [data-theme="aubergine-
      light"] above and delete this block. See the naming-convention note
      above the dark/light default themes near the top of this <style> block
@@ -166,27 +171,6 @@
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--brass);
-  }
-  /* TEST THEME — not wired into the Display sheet picker, reachable only by
-     setting data-theme="aubergine-light-test" manually (devtools/script).
-     2026-07-08 exploration: identical to Rocket Fuel dark (aubergine) token
-     for token, except --felt/--felt-deep keep Rocket Fuel Light's current
-     background values. --mast/--mast-soft are the one other deliberate
-     deviation: dark's --mast:var(--cream)/--mast-soft:var(--rule) assume
-     felt is dark, so copied verbatim they went near-invisible on this
-     theme's light felt. Reused Classic Light's proven pairing instead
-     (--mast:var(--ink), --mast-soft:#675D4C — tuned to ~4.96:1 on this
-     exact felt tone, see the Classic Light comment above) since felt here
-     is identical to Classic Light's. Delete this block (or promote its
-     values into aubergine-light above) once the exploration is resolved. */
-  [data-theme="aubergine-light-test"] {
-    --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#F6EEDC; --cream-shade:#ECE0C2;
-    --rule:#C9A868; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B39456;
-    --brass-text:#7A6234;
-    --control:#FCF6E6;
-    --mast:var(--ink); --mast-soft:#675D4C;
-    --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
-    --seat-rule:var(--rule);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
