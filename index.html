@@ -471,13 +471,12 @@
      dims — so which team won (and the row's silhouette) is legible without reading. */
   .hs-row.win .hs-name, .hs-row.win .hs-score { color:var(--ink); font-weight:700; }
   .hs-row.lose .hs-name, .hs-row.lose .hs-score { color:var(--ink-soft); font-weight:500; }
-  /* Points-share bar: splits at the two teams' actual point share, so a rout and a
-     squeaker have different silhouettes. Colors echo the in-game score bar (.track
-     span, see the totals grid) — team 0 ("We") in eggplant, team 1 ("They") in gold. */
-  .hist-margin { height:5px; margin-top:9px; border-radius:3px; display:flex;
+  /* Points-share bar: fills to the winner's real share of the two totals, so a rout and
+     a squeaker have different silhouettes. Ties sit dead-even and neutral. */
+  .hist-margin { height:5px; margin-top:9px; border-radius:3px; background:var(--cream-shade);
     overflow:hidden; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 16%, transparent); }
-  .hist-margin > .hm-a { display:block; height:100%; background:#2E1B3A; }
-  .hist-margin > .hm-b { display:block; height:100%; background:var(--rule); }
+  .hist-margin > span { display:block; height:100%; background:var(--brass); border-radius:3px; }
+  .hist-margin.tie > span { background:var(--ink-soft); }
   .hist-win { font-size:13px; color:var(--brass-text); font-weight:600; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   /* Winner tag as a filled pill (echoes .chip.on) rather than plain colored text —
@@ -3832,15 +3831,21 @@ window.SOMERSET_FB_CONFIG = {
     }
   }
 
-  // Each team's real share of the two totals, as a two-color split bar, so a blowout
-  // and a squeaker read as different silhouettes. Manual (no-score) entries get no bar.
+  // Winner's real share of the two team totals, as a thin bar, so a blowout and a
+  // squeaker read as different silhouettes. Manual (no-score) entries get no bar; ties
+  // render a dead-even neutral bar.
   function histMarginBar(rec, manual) {
     if (manual || !rec.totals) return null;
-    var a = Math.max(0, rec.totals[0]), b = Math.max(0, rec.totals[1]), denom = a + b;
-    var shareA = denom > 0 ? a / denom : 0.5;
-    return el("div", { class:"hist-margin" }, [
-      el("span", { class:"hm-a", style:"width:" + (shareA * 100).toFixed(1) + "%" }, []),
-      el("span", { class:"hm-b", style:"width:" + ((1 - shareA) * 100).toFixed(1) + "%" }, [])
+    var tie = rec.winner === "tie";
+    var share;
+    if (tie) share = 0.5;
+    else {
+      if (rec.winner !== 0 && rec.winner !== 1) return null;
+      var w = rec.totals[rec.winner], l = rec.totals[1 - rec.winner], denom = w + l;
+      share = denom > 0 ? w / denom : 1;
+    }
+    return el("div", { class:"hist-margin" + (tie ? " tie" : "") }, [
+      el("span", { style:"width:" + (share * 100).toFixed(1) + "%" }, [])
     ]);
   }
 
