@@ -449,9 +449,17 @@
   /* Each game is its own elevated card (echoes .mbox) instead of a flat bordered row —
      margin/radius/shadow live on the wrapper so overflow:hidden clips the item/detail
      children's square corners without those children needing their own radius. */
-  .hist-entry { margin:6px 12px 10px; border:1px solid var(--rule); border-radius:var(--r-control);
+  .hist-entry { position:relative; margin:6px 12px 10px; border:1px solid var(--rule); border-radius:var(--r-control);
     overflow:hidden; background:var(--cream); box-shadow:0 1px 3px rgba(0,0,0,.14); }
-  .hist-item { padding:12px; cursor:pointer; }
+  /* Category spine — a 4px left rail keyed to game type gives the scan a repeating
+     anchor and encodes standard / tournament / championship by hue. Championship also
+     washes the card gold; its rail shares tournament's hue in dark themes (where
+     --brass and --rule both read gold), so there the wash is what sets it apart. */
+  .hist-entry::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+    background:var(--hist-spine, color-mix(in srgb, var(--ink-soft) 50%, transparent)); }
+  .hist-entry[data-cat="tourney"] { --hist-spine:var(--brass); }
+  .hist-entry[data-cat="champ"] { --hist-spine:var(--rule); background:color-mix(in srgb, var(--rule) 12%, var(--cream)); }
+  .hist-item { padding:12px 12px 12px 15px; cursor:pointer; }   /* extra left pad clears the spine */
   .hist-item:active { background:var(--cream-shade); }
   .hist-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
   .hist-line.stack { flex-direction:column; align-items:stretch; gap:6px; }
@@ -459,6 +467,16 @@
   .hs-row { display:contents; }
   .hs-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
   .hs-score { text-align:right; white-space:nowrap; }
+  /* Winner-forward hierarchy: the winning team reads bold and full-ink, the loser
+     dims — so which team won (and the row's silhouette) is legible without reading. */
+  .hs-row.win .hs-name, .hs-row.win .hs-score { color:var(--ink); font-weight:700; }
+  .hs-row.lose .hs-name, .hs-row.lose .hs-score { color:var(--ink-soft); font-weight:500; }
+  /* Points-share bar: fills to the winner's share of the two totals, so a rout and a
+     squeaker have different silhouettes. Ties sit dead-even and neutral. */
+  .hist-margin { height:5px; margin-top:9px; border-radius:3px; background:var(--cream-shade);
+    overflow:hidden; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 16%, transparent); }
+  .hist-margin > span { display:block; height:100%; background:var(--brass); border-radius:3px; }
+  .hist-margin.tie > span { background:var(--ink-soft); }
   .hist-win { font-size:13px; color:var(--brass-text); font-weight:600; white-space:nowrap; flex:0 0 auto; }
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   /* Winner tag as a filled pill (echoes .chip.on) rather than plain colored text —
@@ -3813,31 +3831,62 @@ window.SOMERSET_FB_CONFIG = {
     }
   }
 
+  // Winner's share of the two team totals, as a thin bar, so a blowout and a squeaker
+  // read as different silhouettes. Manual (no-score) entries get no bar; ties render a
+  // dead-even neutral bar. Clamped to [0.5, 0.97] so the winner always reads as ahead
+  // and a deeply-set (negative) loser can't push the fill past either end.
+  function histMarginBar(rec, manual) {
+    if (manual || !rec.totals) return null;
+    var tie = rec.winner === "tie";
+    if (!tie && rec.winner !== 0 && rec.winner !== 1) return null;
+    var share;
+    if (tie) share = 0.5;
+    else {
+      var w = rec.totals[rec.winner], l = rec.totals[1 - rec.winner], denom = w + l;
+      share = denom > 0 ? w / denom : 1;
+      share = Math.max(0.5, Math.min(0.97, share));
+    }
+    return el("div", { class:"hist-margin" + (tie ? " tie" : "") }, [
+      el("span", { style:"width:" + (share * 100).toFixed(1) + "%" }, [])
+    ]);
+  }
+
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
     var isChamp = !!(rec.tournament && rec.tournament.championship);
     var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
     var winTxt = rec.winner === "tie" ? "Tie" : (rec.teams[rec.winner] + " won");
+    // Category drives the left spine (see .hist-entry[data-cat]) — a championship is a
+    // kind of tournament match, distinguished from a plain match by its gold wash.
+    var cat = rec.tournament ? (isChamp ? "champ" : "tourney") : "standard";
+    // Winner-forward hierarchy: tag each score row so the winner reads bold and the
+    // loser dims (see .hs-row.win/.lose). Ties stay even-weight.
+    var rowClass = function (i) {
+      if (rec.winner === "tie") return "hs-row tie";
+      return "hs-row " + (rec.winner === i ? "win" : "lose");
+    };
     // Manual entries have no score. Otherwise each team gets its own row so the two
     // totals form a vertically-aligned column regardless of team-name length.
     var hsRow = function (i) {
-      return el("div", { class:"hs-row" }, [
+      return el("div", { class:rowClass(i) }, [
         el("span", { class:"hs-name" }, [ rec.teams[i] ]),
         manual ? null : el("span", { class:"hs-score mono" }, [ String(rec.totals[i]) ])
       ].filter(function (x) { return x; }));
     };
-    var summary = el("div", { class:"hist-item", role:"button",
-      onClick:function(){ ui.historyOpen = open ? null : rec.id; softRender(); } }, [
+    var summaryKids = [
       el("div", { class:"hist-line" }, [
-        el("div", { class:"hist-score" }, [
-          hsRow(0),
-          hsRow(1)
-        ]),
+        el("div", { class:"hist-score" }, [ hsRow(0), hsRow(1) ]),
         el("span", { class:"hist-win hist-win-badge" + (rec.winner === "tie" ? " tie" : "") + " disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
-      ]),
+      ])
+    ];
+    var marginBar = histMarginBar(rec, manual);
+    if (marginBar) summaryKids.push(marginBar);
+    summaryKids.push(
       el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (rec.tournament ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
-    ]);
-    var entry = el("div", { class:"hist-entry", "data-rec-id":rec.id }, [ summary ]);
+    );
+    var summary = el("div", { class:"hist-item", role:"button",
+      onClick:function(){ ui.historyOpen = open ? null : rec.id; softRender(); } }, summaryKids);
+    var entry = el("div", { class:"hist-entry", "data-rec-id":rec.id, "data-cat":cat }, [ summary ]);
     if (open) entry.appendChild(renderHistoryDetail(rec));
     return entry;
   }
