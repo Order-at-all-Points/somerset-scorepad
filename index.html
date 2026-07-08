@@ -3827,9 +3827,10 @@ window.SOMERSET_FB_CONFIG = {
     var a = rec.players[teamIdx], b = rec.players[teamIdx + 2];   // seats teamIdx & teamIdx+2 share a team
     var names = [a, b].filter(function (x) { return x && x.trim(); });
     var roster = names.join(" & ");
-    // Tournament teams are named after their players (e.g. "A & B"), so the roster
-    // would just repeat the team name — only append it when it adds something.
-    return rec.teams[teamIdx] + (roster && roster !== rec.teams[teamIdx] ? (": " + roster) : "");
+    // The team name is already shown (with its score) above this — only show a
+    // roster line when it adds something beyond that name (e.g. not a tournament
+    // team already named after its players).
+    return (roster && roster !== rec.teams[teamIdx]) ? roster : "";
   }
 
   // Deletes immediately and offers Undo via the same toast used for deal removal
@@ -3850,10 +3851,10 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function renderHistoryDetail(rec, onDeleted) {
-    var wrap = el("div", { class:"hist-detail" }, [
-      el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 0) ]),
-      el("p", { class:"hist-roster disp" }, [ rosterLine(rec, 1) ])
-    ]);
+    var wrap = el("div", { class:"hist-detail" }, [0, 1].map(function (i) {
+      var roster = rosterLine(rec, i);
+      return roster ? el("p", { class:"hist-roster disp" }, [ roster ]) : null;
+    }).filter(function (x) { return x; }));
     if (rec.tieBreak) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
         ["Both teams landed on the same score — " + rec.teams[rec.winner] + " took it as the high bidder."]));
