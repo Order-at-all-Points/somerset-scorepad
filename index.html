@@ -2033,7 +2033,10 @@ window.SOMERSET_FB_CONFIG = {
           bidNumEl = el("span", { class:"deal-desc-num" }, [String(d.bid)]);
           innerKids = [ bidderLabel + " bid ", bidNumEl ];
         }
-        var setMsg = isSet ? (bidderLabel + " went SET this hand: they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.") : null;
+        var setMsg = !isSet ? null
+          : (d.bid === POINTS_PER_DEAL)
+            ? (bidderLabel + " attempted to shoot the moon but only took " + d.pts[d.bidTeam] + " — " + d.bid + " subtracted from their score.")
+            : (bidderLabel + " went SET this hand: they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.");
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
         // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
         // the table's dealer arrow (renderTable) — rather than four distinct icons, which read as
@@ -2870,12 +2873,14 @@ window.SOMERSET_FB_CONFIG = {
 
     if (willBeSet) {
       kids.push(el("p", { class:"warn strong disp" }, [
-        game.teams[ui.bidTeam] + " went set: bid of " + ui.bid + " subtracted from " + (ui.bidTeam === 0 ? "our" : "their") + " score."
+        moonBid
+          ? (game.teams[ui.bidTeam] + " attempted to shoot the moon but fell short.")
+          : (game.teams[ui.bidTeam] + " went set: bid of " + ui.bid + " subtracted from " + (ui.bidTeam === 0 ? "our" : "their") + " score.")
       ]));
     } else if (moonBid && ui.bidderPts === POINTS_PER_DEAL) {
       kids.push(el("p", { class:"warn strong disp" }, [
         preTotal >= 0
-          ? (game.teams[ui.bidTeam] + " shot the MOON! " + game.teams[ui.bidTeam] + " win the game!")
+          ? (game.teams[ui.bidTeam] + " shot the MOON!")
           : (game.teams[ui.bidTeam] + " take all 14, but are below zero: no moon, no win.")
       ]));
     }
@@ -3588,7 +3593,7 @@ window.SOMERSET_FB_CONFIG = {
 
     card.appendChild(el("div", { class:"stats-tile-grid" }, [
       statTile(p.gamesPlayed, "Games played",
-        "Total games this player has finished, across standard games and tournaments."),
+        "Total number of games played."),
       statTile(p.championships, "Championships",
         "Number of tournaments this player has won."),
       statTile(p.longestStreak, ["Longest", "Winning Streak"],
@@ -3596,22 +3601,22 @@ window.SOMERSET_FB_CONFIG = {
       statTile(p.longestLossStreak, ["Longest", "Losing Streak"],
         "The longest run of consecutive losses this player has ever suffered."),
       statTile(currentStreakText(p.currentStreak), "Current streak",
-        "The player's active run of consecutive wins or losses, as of their most recent game.")
+        "The player's active run of consecutive wins or losses.")
     ]));
 
     card.appendChild(el("div", { class:"stats-tile-grid", style:"margin-top:1px; border-top:1px dashed var(--cream-shade);" }, [
       statTile(p.timesSet, "Times set",
-        "How many times this player personally bid and then fell short of it, losing the bid amount from their team's score."),
+        "Total number of times this player placed the highest bid and then fell short of it."),
       statTile(p.bestWin ? ("+" + p.bestWin.margin) : "—", "Biggest win margin",
-        "The largest point gap this player's team has ever finished a game with."),
+        "The largest point gap this player's team has ever won a game by."),
       statTile(p.moonsShot, "Moons shot",
-        "How many times this player personally bid to sweep every point in the hand, and made it."),
+        "Total number of times this player bid to take every point in the hand and successfully pulled it off."),
       statTile(p.moonConversionRate == null ? "—" : (p.moonConversionRate + "%"), "Moon shot success",
-        "The share of this player's moon bids (betting to sweep the hand) that actually came through."),
+        "The share of this player's shoot the moon attempts that were ultimately successful."),
       statTile(p.avgBidsPerGame == null ? "—" : p.avgBidsPerGame.toFixed(1), "Avg bids per game",
-        "How many hands this player personally bids on, on average, per game."),
+        "The average number of hands this player places the highest bid on per game."),
       statTile(p.avgPointsPerBid == null ? "—" : p.avgPointsPerBid.toFixed(1), "Avg points per bid",
-        "The average number of points this player has earned per hand they've personally bid on.")
+        "The average number of points this player bids across bids they have won.")
     ]));
 
     var recent = p.games.slice(-10);
@@ -3626,7 +3631,7 @@ window.SOMERSET_FB_CONFIG = {
       var trendWindow = Math.min(10, p.games.length);
       var trend = playerFormTrend(p, trendWindow);
       var trendExplain = "Each point is this player's win percentage over their trailing " + trendWindow +
-        " game" + (trendWindow === 1 ? "" : "s") + ", so the line shows momentum over time rather than just the last 10 results.";
+        " game" + (trendWindow === 1 ? "" : "s") + ", so the line shows momentum over time rather than just their most recent result.";
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp", role:"button", tabindex:"0", "aria-label":"Form trend: " + trendExplain,
           onClick:function(){ ui.info = trendExplain; render(); } }, ["Form trend"]),
@@ -3660,12 +3665,12 @@ window.SOMERSET_FB_CONFIG = {
       if (p.bestPartner) {
         pairRows.push(statsPairRow("Best partner", p.bestPartner.name,
           p.bestPartner.wins + "–" + p.bestPartner.losses + " together (" + p.bestPartner.winPct + "%)", null,
-          "The teammate this player has the best winning record with, among partners they've played at least 2 games alongside."));
+          "The teammate this player has the best winning record with."));
       }
       if (p.nemesis) {
         pairRows.push(statsPairRow("Nemesis", p.nemesis.name,
           p.nemesis.wins + "–" + p.nemesis.losses + " against (" + p.nemesis.winPct + "%)", "bad",
-          "The opponent this player has the worst losing record against, among opponents they've faced at least 2 games."));
+          "The opponent this player has the worst losing record against."));
       }
       card.appendChild(el("div", { class:"stats-section" }, [
         el("p", { class:"stats-section-title disp" }, ["Partners & rivals"]),
