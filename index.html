@@ -747,10 +747,12 @@
   .series-dash { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:20px; color:var(--ink-soft); flex:none; }
   .series-sub { text-align:center; font-size:13px; color:var(--ink-soft); margin:2px 0 12px; }
   .series-game-label { flex:1; color:var(--ink); font-size:13px; }
-  .series-tracker { display:flex; align-items:baseline; justify-content:center; gap:6px; flex-wrap:wrap;
-    padding:8px 12px 0; font-size:13px; color:var(--ink-soft); text-align:center; }
-  .series-tracker b { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:15px;
-    font-weight:600; color:var(--ink); }
+  /* Mid-game series pips — one dot per game in the series, filled as each team wins one,
+     sitting under that team's own progress bar. The dot count doubles as the "best of N"
+     label, so no separate text for it is needed. */
+  .series-pips-dots { display:flex; justify-content:center; gap:4px; margin-top:7px; }
+  .series-pip { width:9px; height:9px; border-radius:50%; border:1.5px solid var(--rule); background:transparent; flex:none; }
+  .series-pip.on { background:var(--brass); border-color:var(--brass); }
   .rr-row.series-next { background:color-mix(in srgb, var(--brass) 10%, transparent); }
   .rr-row.series-next .rr-result { color:var(--brass-text); }
   .rr-row.series-live { background:rgba(82,168,82,.12); }
@@ -2101,26 +2103,19 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     // Series win tracker \u2014 while a game is in progress, keep the running tally of
-    // games already won visible (e.g. "Us 1 \u2013 0 Them"), so it doesn't disappear the
-    // moment the next game starts. Once this game ends, the fuller series-score
-    // displays elsewhere (the "Play Game N" screen, or the bracket view) take over.
-    if (win === null) {
-      var seriesInfo = isMatch
-        ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
-        : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf }
-            : (gameHasTourneyLink() && tourney.bestOf > 1 ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null));
-      if (seriesInfo) {
-        var stOrder = teamViewOrder();
-        pad.appendChild(el("div", { class:"series-tracker disp" }, [
-          el("span", {}, [teamLabel(stOrder[0])]),
-          el("b", {}, [String(seriesInfo.wins[stOrder[0]])]),
-          el("span", {}, ["\u2013"]),
-          el("b", {}, [String(seriesInfo.wins[stOrder[1]])]),
-          el("span", {}, [teamLabel(stOrder[1])]),
-          el("span", {}, ["\u00b7 Best of " + seriesInfo.bestOf])
-        ]));
-      }
-    }
+    // games already won visible as a row of pips under each team's own progress bar
+    // (see the totals loop below), so it doesn't disappear the moment the next game
+    // starts. Once this game ends, the fuller series-score displays elsewhere (the
+    // "Play Game N" screen, or the bracket view) take over.
+    var seriesInfo = (win !== null) ? null : isMatch
+      ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
+      : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf }
+          : (gameHasTourneyLink() && tourney.bestOf > 1 ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null));
+    var seriesPips = function (n) {
+      var dots = [];
+      for (var i = 0; i < seriesInfo.bestOf; i++) dots.push(el("span", { class:"series-pip" + (i < n ? " on" : "") }));
+      return dots;
+    };
 
     // Totals — iterated in viewer-perspective order (teamViewOrder), so "my"
     // team always renders first/left regardless of its real underlying index.
@@ -2150,11 +2145,13 @@ window.SOMERSET_FB_CONFIG = {
         "aria-label":teamLabel(i)+": "+t[i]+" of "+game.target+" points" }, [
         el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(pos===0?"#2E1B3A":"var(--rule)")+";" })
       ]);
-      var team = el("div", { class:"team", style:"grid-column:"+(pos===0?1:3)+";" }, [
+      var teamKids = [
         nameInput,
         el("div", { class:"score mono", style:"color:"+scoreColor+";" }, [String(t[i])]),
         bar
-      ]);
+      ];
+      if (seriesInfo) teamKids.push(el("div", { class:"series-pips-dots" }, seriesPips(seriesInfo.wins[i])));
+      var team = el("div", { class:"team", style:"grid-column:"+(pos===0?1:3)+";" }, teamKids);
       totalsGrid.appendChild(team);
     });
     totalsGrid.appendChild(el("div", { class:"divider", style:"grid-column:2;" }));
