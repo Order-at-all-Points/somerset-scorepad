@@ -2330,7 +2330,16 @@ window.SOMERSET_FB_CONFIG = {
           champKids.push(el("button", { class:"btn btn-new disp", onClick:startNextSharedGame }, ["New Game"]));
           pad.appendChild(el("div", { class:"add-wrap" }, champKids));
         } else if (tourney.bestOf > 1) {
-          var gsw = seriesWins(tourney), gNextNum = gsw[0] + gsw[1] + 1;
+          // tourney.champion is deliberately still null here for the clinching game
+          // itself (see recordDeal's comment) so this "Play Game N" button stays the
+          // one wired to advanceSharedGame, which is what actually finalizes the
+          // champion and offers the next-length escalation. But the score may
+          // already have reached the series target on THIS game, so check for that
+          // and show a "won the series" message + "Continue" instead of offering
+          // a phantom next game that will never be played.
+          var gsw = seriesWins(tourney), gTgt = seriesTarget(tourney);
+          var gNextNum = gsw[0] + gsw[1] + 1;
+          var gDecidedIdx = gsw[0] >= gTgt ? 0 : (gsw[1] >= gTgt ? 1 : null);
           pad.appendChild(el("div", { class:"add-wrap" }, [
             el("div", { class:"series-score" }, [
               el("div", { class:"series-side" }, [
@@ -2343,8 +2352,10 @@ window.SOMERSET_FB_CONFIG = {
                 el("span", { class:"series-team-name" }, [game.teams[1]])
               ])
             ]),
-            el("p", { class:"series-sub disp" }, ["Best of " + tourney.bestOf]),
-            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, ["Play Game " + gNextNum])
+            gDecidedIdx != null
+              ? el("p", { class:"series-sub disp" }, [game.teams[gDecidedIdx] + " win the series " + gsw[gDecidedIdx] + "–" + gsw[1 - gDecidedIdx] + "!"])
+              : el("p", { class:"series-sub disp" }, ["Best of " + tourney.bestOf]),
+            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, [gDecidedIdx != null ? "Continue" : ("Play Game " + gNextNum)])
           ]));
         } else {
           pad.appendChild(el("div", { class:"add-wrap" }, [
