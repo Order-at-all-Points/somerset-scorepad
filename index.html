@@ -5036,14 +5036,16 @@ window.SOMERSET_FB_CONFIG = {
   function renderMatchPlay() {
     var am = ui.activeMatch, m = getActiveMatchObj(am);
     var isCompleted = !m.game && m.winner !== null;
-    var bracketLabel = !am.bracket ? ("Round " + (am.ri + 1))
-      : am.bracket === "wb" ? ("Winners · Round " + (am.ri + 1))
-      : am.bracket === "lb" ? ("Losers · Round " + (am.ri + 1))
-      : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " (Reset)" : ""))
-      : am.bracket === "series" ? ("Game " + (am.gi + 1) + " of up to " + tourney.bestOf)
-      : (am.bracket === "rr" && am.isFinal) ? "Championship Final"
-      : "Round Robin";
-    var headLabel = isCompleted ? bracketLabel + " complete" : bracketLabel + " match";
+    // Each branch spells out its own "match"/"complete" suffix rather than a shared
+    // "+ ' match'" tacked on afterward — "Grand Final match" and "Round Robin · Match 4
+    // match" read as redundant once the label itself already says Final/Match.
+    var headLabel = !am.bracket ? ("Round " + (am.ri + 1) + (isCompleted ? " complete" : " Match"))
+      : am.bracket === "wb" ? ("Winners · Round " + (am.ri + 1) + (isCompleted ? " complete" : " Match"))
+      : am.bracket === "lb" ? ("Losers · Round " + (am.ri + 1) + (isCompleted ? " complete" : " Match"))
+      : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " Reset" : "") + (isCompleted ? " complete" : ""))
+      : am.bracket === "series" ? ("Game " + (am.gi + 1) + " - Best of " + tourney.bestOf + (isCompleted ? " complete" : " Match"))
+      : (am.bracket === "rr" && am.isFinal) ? ("Championship Final" + (isCompleted ? " complete" : ""))
+      : ("Round Robin · Match " + (am.idx + 1) + (isCompleted ? " complete" : ""));
     var card = el("div", { class:"pad" }, [
       el("div", { class:"view-head disp" }, [headLabel]),
       el("div", { class:"match-bar" }, [
