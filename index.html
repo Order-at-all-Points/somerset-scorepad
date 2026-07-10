@@ -1288,7 +1288,14 @@ window.SOMERSET_FB_CONFIG = {
   function releaseLock(key) {
     if (!tourney || !tourney.locks) return;
     var lk = tourney.locks[key];
-    if (lk && lk.deviceId === deviceId) delete tourney.locks[key];
+    if (lk && lk.deviceId === deviceId) {
+      delete tourney.locks[key];
+      // Mirror claimLock: without this, the release only ever happens in
+      // this device's in-memory `tourney` -- other devices (and this one,
+      // after a reload) keep seeing the stale lock in localStorage/Firebase
+      // until it expires on its own after LOCK_TIMEOUT_MS.
+      saveTourney();
+    }
   }
   function isMineOrUnlocked(key) {
     if (!syncCode) return true;
@@ -1696,10 +1703,31 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
 
+  var JOIN_TIMEOUT_MS = 10000;
   function joinTournament(code, onError) {
     if (!initFb()) { onError("Firebase is not configured on this device."); return; }
+    // navigator.onLine only reflects the network *interface* (a device on
+    // wifi with no real internet still reports true), so this catches the
+    // common "airplane mode" case fast, but isn't sufficient on its own —
+    // the timeout below is the real backstop. Without either, a genuinely
+    // unreachable Firebase never rejects .once("value") at all (it just
+    // keeps retrying the connection internally), leaving the Join sheet
+    // showing no error and looking like the tap did nothing.
+    if (typeof navigator.onLine === "boolean" && !navigator.onLine) {
+      onError("Couldn't connect. Check your internet connection.");
+      return;
+    }
     syncStatus = "connecting"; render();
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      syncStatus = "offline";
+      onError("Couldn't connect. Check your internet connection.");
+    }, JOIN_TIMEOUT_MS);
     fb.ref("tournaments/" + code).once("value").then(function(snap) {
+      if (settled) return;
+      settled = true; clearTimeout(timeoutId);
       var data = snap.val();
       if (!data) { syncStatus = "offline"; onError("No tournament found with that code."); return; }
       syncCode = code; syncRole = "guest";
@@ -1716,8 +1744,19 @@ window.SOMERSET_FB_CONFIG = {
       ui.tSetup = null; ui.joinSheet = false; ui.joinError = null;
       if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt new joiners to tag themselves
       render();
-    }).catch(function() {
-      syncStatus = "offline"; onError("Couldn't connect. Check your internet connection.");
+    }).catch(function(err) {
+      if (settled) return;
+      settled = true; clearTimeout(timeoutId);
+      syncStatus = "offline";
+      // The security rules' .read condition requires data.exists(), so a
+      // code that never existed (or one that's expired -- same rule) denies
+      // the read outright rather than resolving with null; the friendlier
+      // "No tournament found" branch above is therefore unreachable for the
+      // most common failure. PERMISSION_DENIED is the real signal for "bad
+      // code," not a network problem -- only fall back to the connectivity
+      // message for genuine failures (offline, DNS, etc).
+      if (err && err.code === "PERMISSION_DENIED") onError("No tournament found with that code.");
+      else onError("Couldn't connect. Check your internet connection.");
     });
   }
 
@@ -3323,18 +3362,33 @@ window.SOMERSET_FB_CONFIG = {
   // ---- deal removal with undo (no confirm dialogs in the core loop) ----
   var UNDO_TOAST_MS = 5000, UNDO_LEAVE_MS = 250;
   var undoToastEl = null, undoTimer = null, undoLeaveTimer = null;
+  // The toast currently mid-fade-out (between a non-instant dismiss and its
+  // UNDO_LEAVE_MS removal), if any — tracked separately from undoToastEl
+  // (which is nulled out the moment the fade-out *starts*, not when it
+  // finishes) so a second dismiss/show landing inside that window can still
+  // find and remove it. Without this, an instant dismiss arriving in that
+  // window only checks undoToastEl (already null), cancels the pending
+  // removal timer, and bails — orphaning the fading-out node in the DOM
+  // permanently, since nothing else ever points at it again.
+  var undoLeavingEl = null;
   // instant=true skips the leaving animation — used when a new toast is about to
   // replace this one immediately, so there's nothing gained by fading out first.
   function dismissUndoToast(instant) {
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
     if (undoLeaveTimer) { clearTimeout(undoLeaveTimer); undoLeaveTimer = null; }
+    if (undoLeavingEl) {
+      if (undoLeavingEl.parentNode) undoLeavingEl.parentNode.removeChild(undoLeavingEl);
+      undoLeavingEl = null;
+    }
     if (!undoToastEl) return;
     var toastEl = undoToastEl;
     undoToastEl = null;
     if (instant) { if (toastEl.parentNode) toastEl.parentNode.removeChild(toastEl); return; }
     toastEl.classList.add("leaving");
+    undoLeavingEl = toastEl;
     undoLeaveTimer = setTimeout(function () {
       if (toastEl.parentNode) toastEl.parentNode.removeChild(toastEl);
+      if (undoLeavingEl === toastEl) undoLeavingEl = null;
     }, UNDO_LEAVE_MS);
   }
   function showUndoToast(msg, onUndo) {
@@ -3526,6 +3580,7 @@ window.SOMERSET_FB_CONFIG = {
     var gi = tourney.games.length - 1;
     var slot = tourney.games[gi];
     var win = winner();
+    var archivedId = slot.game.archivedId;   // set the instant this game was won, see recordDeal
     slot.completedGame = JSON.parse(JSON.stringify(slot.game));
     slot.game = null;
     // Keep soloGame pointed at the clone too — gameHasTourneyLink()'s disconnected-
@@ -3534,8 +3589,30 @@ window.SOMERSET_FB_CONFIG = {
     // setLiveSeriesGame call would otherwise cover it.
     soloGame = slot.completedGame;
     var priorBestOf = tourney.bestOf;
+    var champBefore = tourney.champion;
     setSeriesWinner(tourney, gi, win);   // also attaches the next game now, if the series isn't over
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+    // This device already has its own History record for the game just
+    // finished — recordDeal's gameHasTourneyLink branch auto-archives the
+    // instant a game is won, well before this Continue tap. Mark it
+    // archived now that .game is null, so THIS device's own Firebase
+    // subscription re-delivering this snapshot doesn't have
+    // syncMyHistoryFromTourney (which defers exactly until .game is null,
+    // see its comment) push a second, duplicate record for a match this
+    // device already logged itself. Covers every game in the series, not
+    // just a clinching one, since a multi-game series calls this once per
+    // game.
+    markMatchArchived({ bracket: "series", gi: gi });
+    // If this game just crowned the champion, the record archived above
+    // predates that (recordDeal archives before champion is known), so
+    // badge it now — same as returnToBracket does for the bracket flow.
+    if (tourney.champion != null && tourney.champion !== champBefore && archivedId) {
+      var justArchived = gameHistory.filter(function (h) { return h.id === archivedId; })[0];
+      if (justArchived && justArchived.tournament) {
+        justArchived.tournament.championship = true;
+        saveHistory();
+      }
+    }
     if (tourney.champion == null) {
       // Nothing left to do — setSeriesWinner already queued and attached it.
     } else if (priorBestOf === 1) {
