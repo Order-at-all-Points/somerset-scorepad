@@ -2107,7 +2107,8 @@ window.SOMERSET_FB_CONFIG = {
     if (win === null) {
       var seriesInfo = isMatch
         ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
-        : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf } : null);
+        : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf }
+            : (gameHasTourneyLink() && tourney.bestOf > 1 ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null));
       if (seriesInfo) {
         var stOrder = teamViewOrder();
         pad.appendChild(el("div", { class:"series-tracker disp" }, [
@@ -2319,7 +2320,7 @@ window.SOMERSET_FB_CONFIG = {
           champKids.push(el("button", { class:"btn btn-new disp", onClick:startNextSharedGame }, ["New Game"]));
           pad.appendChild(el("div", { class:"add-wrap" }, champKids));
         } else if (tourney.bestOf > 1) {
-          var gsw = seriesWins(tourney), gNextNum = gsw[0] + gsw[1] + 2;
+          var gsw = seriesWins(tourney), gNextNum = gsw[0] + gsw[1] + 1;
           pad.appendChild(el("div", { class:"add-wrap" }, [
             el("div", { class:"series-score" }, [
               el("div", { class:"series-side" }, [
@@ -3382,6 +3383,13 @@ window.SOMERSET_FB_CONFIG = {
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
         } else if (gameHasTourneyLink()) {
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
+          // Record the result on the tourney's live slot right away so the series
+          // tally/champion are correct for the between-games screen the very next
+          // render — advanceSharedGame still owns queuing the actual next game.
+          // Scoped to an actual multi-game series: a plain best-of-1 shared game
+          // defers everything, including which rematch prompt to offer, to the
+          // explicit Continue tap (see advanceSharedGame's priorBestOf===1 branch).
+          if (tourney.format === "series" && tourney.bestOf > 1) recordSeriesResult(tourney, tourney.games.length - 1, win);
         } else {
           var seriesMeta = ui.series ? { format:"series", teams: game.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null;
           game.archivedId = archiveCurrentGame(seriesMeta) || null;
@@ -4812,15 +4820,23 @@ window.SOMERSET_FB_CONFIG = {
     t.games.forEach(function(g) { if (g.winner != null) w[g.winner]++; });
     return w;
   }
-  function setSeriesWinner(t, gi, winnerTeamIdx) {
+  // Records a decided game's winner (and re-checks the champion) without queuing
+  // the next slot — safe to call the moment a game is won, ahead of the explicit
+  // continue tap, so the series tally/champion are never stale for a render that
+  // happens in between (see recordDeal's gameHasTourneyLink branch). Idempotent:
+  // setSeriesWinner below re-runs it at the same gi once the tap actually arrives.
+  function recordSeriesResult(t, gi, winnerTeamIdx) {
     t.games[gi].winner = winnerTeamIdx;
     var w = seriesWins(t), tgt = seriesTarget(t);
     if (w[0] >= tgt)      t.champion = 0;
     else if (w[1] >= tgt) t.champion = 1;
-    else {
-      t.champion = null;
-      // No clinch yet — queue the next game if this was the last slot.
-      if (gi === t.games.length - 1) t.games.push({ a: 0, b: 1, winner: null, game: null, completedGame: null });
+    else                  t.champion = null;
+  }
+  function setSeriesWinner(t, gi, winnerTeamIdx) {
+    recordSeriesResult(t, gi, winnerTeamIdx);
+    // No clinch yet — queue the next game if this was the last slot.
+    if (t.champion == null && gi === t.games.length - 1) {
+      t.games.push({ a: 0, b: 1, winner: null, game: null, completedGame: null });
     }
   }
   function lastDecidedSeriesGame(t) {
