@@ -3499,12 +3499,12 @@ window.SOMERSET_FB_CONFIG = {
     if (tourney.champion == null) {
       // Nothing left to do — setSeriesWinner already queued and attached it.
     } else if (priorBestOf === 1) {
-      ui.offerSeries = { bestOf:3, seedWinner:win };
+      ui.offerSeries = { bestOf:3, seedWinner:win, linked:true };
     } else {
       var w = seriesWins(tourney);
       ui.seriesResult = { bestOf:priorBestOf, winnerIdx:win, wins:w.slice() };
       var nextBO = nextSeriesEscalation(priorBestOf);
-      ui.offerSeries = nextBO ? { bestOf:nextBO, wins:w.slice() } : null;
+      ui.offerSeries = nextBO ? { bestOf:nextBO, wins:w.slice(), linked:true } : null;
     }
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
@@ -3552,9 +3552,14 @@ window.SOMERSET_FB_CONFIG = {
 
   function acceptSeriesOffer() {
     var o = ui.offerSeries;
-    if (gameHasTourneyLink()) {
-      // "Rematch best of X" for a shared game/series — bump the target and queue
-      // the next game under the *same* join code, no re-join needed for guests.
+    if (o.linked) {
+      // A real tourney-object offer (see offerSeriesEscalationOnBracketClinch /
+      // advanceSharedGame) — act on `tourney` directly rather than gating on
+      // gameHasTourneyLink(), which also requires ui.view === "game" and would
+      // otherwise misroute this into the local-casual-game branch below when the
+      // offer is answered from the Tournament tab (e.g. right after a bracket
+      // clinch). Bump the target and queue the next game under the *same* join
+      // code, no re-join needed for guests.
       tourney.bestOf = o.bestOf;
       tourney.champion = null;
       if (liveSeriesSlot(tourney).winner != null) {
@@ -3593,9 +3598,18 @@ window.SOMERSET_FB_CONFIG = {
   // that's really "you" holding the device, so its name carries over; every
   // other seat clears since those were this session's guests/opponents.
   function declineSeriesOffer() {
+    var o = ui.offerSeries;
+    if (o && o.linked && tourney) {
+      // Answered from the Tournament tab, where the global `game` pointer isn't
+      // kept in sync with the tourney's live slot (see render()'s view-gated
+      // game-pointer logic) — resolve the real match game directly so the
+      // carried-over player name below isn't read from a stale soloGame.
+      var lss = liveSeriesSlot(tourney);
+      game = lss.completedGame || lss.game || game;
+    }
     var mySeat = mySeatIndex();
     var keepName = (mySeat != null ? game.players[mySeat] : game.players[0]) || "";
-    if (gameHasTourneyLink()) {
+    if (o && o.linked) {
       tourney = null;
       saveTourney();
     }
@@ -4991,6 +5005,24 @@ window.SOMERSET_FB_CONFIG = {
     return s[0] + "–" + s[1];
   }
 
+  // After a bracket-driven action (recordManualMatchWin/returnToBracket) may have
+  // just crowned a series champion, offer the same best-of-N escalation the Game
+  // tab offers (see advanceSharedGame) — otherwise clinching a series purely
+  // through the bracket (Play in app / manual win) was a dead end: only "Rematch
+  // same teams" or "Redraw teams", both stuck at the same bestOf, ever appeared.
+  // linked:true marks this as a real tourney-object offer (as opposed to the
+  // local, untracked casual-game offer from handleGameCompleteForSeries) so
+  // acceptSeriesOffer/declineSeriesOffer know to act on `tourney` regardless of
+  // which tab is active when the user answers — see those functions' comments.
+  function offerSeriesEscalationOnBracketClinch(champBefore) {
+    if (tourney.format !== "series" || tourney.bestOf <= 1) return;
+    if (tourney.champion == null || tourney.champion === champBefore) return;
+    var w = seriesWins(tourney);
+    ui.seriesResult = { bestOf: tourney.bestOf, winnerIdx: tourney.champion, wins: w.slice() };
+    var nextBO = nextSeriesEscalation(tourney.bestOf);
+    ui.offerSeries = nextBO ? { bestOf: nextBO, wins: w.slice(), linked: true } : null;
+  }
+
   // Record the winner into whichever bracket/series this match belongs to.
   function routeMatchWinner(am, teamIdx) {
     if (!am.bracket) setMatchWinner(tourney, am.ri, am.mi, teamIdx);
@@ -5047,6 +5079,7 @@ window.SOMERSET_FB_CONFIG = {
       archived.tournament.championship = true;
       saveHistory();
     }
+    offerSeriesEscalationOnBracketClinch(champBefore);
     markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
   }
 
@@ -5070,6 +5103,7 @@ window.SOMERSET_FB_CONFIG = {
       justArchived.tournament.championship = true;
       saveHistory();
     }
+    offerSeriesEscalationOnBracketClinch(champBefore);
     markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
     ui.activeMatch = null; ui.showEntry = false;
     saveTourney(); render();
@@ -5546,20 +5580,26 @@ window.SOMERSET_FB_CONFIG = {
     var t = tourney, sections = [];
     var wins = seriesWins(t), tgt = seriesTarget(t);
     var decided = lastDecidedSeriesGame(t) + 1;
+    // The clinching game intentionally leaves t.champion null until the Game
+    // tab's explicit Continue tap (see recordDeal/advanceSharedGame's comments),
+    // so derive "is this series actually over" from the score itself too — else
+    // this view shows a stale "Best of N · first to X game wins" (and highlights
+    // neither team) during that brief window.
+    var decidedWinnerIdx = t.champion != null ? t.champion : (wins[0] >= tgt ? 0 : (wins[1] >= tgt ? 1 : null));
 
     // Scoreboard
     var scoreWrap = el("div", { class:"series-score" }, [
       el("div", { class:"series-side" }, [
-        el("span", { class:"series-team-name" + (t.champion === 0 ? " champ" : "") }, [t.teams[0].name]),
-        el("span", { class:"series-wins" + (t.champion === 0 ? " champ" : "") }, [String(wins[0])])
+        el("span", { class:"series-team-name" + (decidedWinnerIdx === 0 ? " champ" : "") }, [t.teams[0].name]),
+        el("span", { class:"series-wins" + (decidedWinnerIdx === 0 ? " champ" : "") }, [String(wins[0])])
       ]),
       el("div", { class:"series-dash" }, ["–"]),
       el("div", { class:"series-side" }, [
-        el("span", { class:"series-wins" + (t.champion === 1 ? " champ" : "") }, [String(wins[1])]),
-        el("span", { class:"series-team-name" + (t.champion === 1 ? " champ" : "") }, [t.teams[1].name])
+        el("span", { class:"series-wins" + (decidedWinnerIdx === 1 ? " champ" : "") }, [String(wins[1])]),
+        el("span", { class:"series-team-name" + (decidedWinnerIdx === 1 ? " champ" : "") }, [t.teams[1].name])
       ])
     ]);
-    var sub = t.champion != null
+    var sub = decidedWinnerIdx != null
       ? ("Series over · " + decided + " game" + (decided === 1 ? "" : "s") + " played")
       : ("Best of " + t.bestOf + " · first to " + tgt + " game wins");
     var scoreSection = el("div", { class:"bracket-section" }, [
@@ -5570,7 +5610,7 @@ window.SOMERSET_FB_CONFIG = {
     // helper: does a game have a live, in-progress scorepad?
     function gameInProgress(g) { return g.winner == null && g.game && g.game.deals && g.game.deals.length > 0; }
     // Tappable hint so everyone (host and guests) can jump straight to the live/next game.
-    if (t.champion == null) {
+    if (decidedWinnerIdx == null) {
       var ipIdx = -1, nextIdx = -1;
       for (var hi = 0; hi < t.games.length; hi++) {
         if (t.games[hi].winner != null) continue;
@@ -5593,7 +5633,7 @@ window.SOMERSET_FB_CONFIG = {
     t.games.forEach(function(g, gi) {
       var gdecided = g.winner != null;
       var inProg = gameInProgress(g);
-      var isNext = !gdecided && !inProg && t.champion == null;
+      var isNext = !gdecided && !inProg && decidedWinnerIdx == null;
       var scoreGame = (g.game && g.game.deals && g.game.deals.length) ? g.game
                     : (g.completedGame && g.completedGame.deals && g.completedGame.deals.length) ? g.completedGame : null;
       var scores = scoreGame ? gameTotals(scoreGame) : null;
