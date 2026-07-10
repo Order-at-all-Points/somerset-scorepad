@@ -2569,8 +2569,6 @@ window.SOMERSET_FB_CONFIG = {
         var offerSheet3 = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
           onClick:function(e){ e.stopPropagation(); } }, [
           el("h3", { class:"disp" }, ["Play again?"]),
-          el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
-            [game.teams[os.seedWinner] + " Won!"]),
           el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Rematch? Best of 3?"]),
           el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
           el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
