@@ -778,8 +778,8 @@
   <div class="storage-warn disp" id="storageWarn">Heads up: scores can't be saved on this device (storage is full or blocked), so they'll be lost when you close the app.</div>
   <div id="gameView">
     <div class="pad fade" id="pad"></div>
-    <div style="text-align:center; margin-top:14px;">
-      <button class="settings-toggle" id="settingsToggle">New Game</button>
+    <div style="text-align:center; margin-top:14px; display:flex; justify-content:center; gap:10px;">
+      <button class="settings-toggle" id="gameOptionsToggle">Options</button>
     </div>
     <div id="settingsPanel"></div>
   </div>
@@ -852,6 +852,72 @@ window.SOMERSET_FB_CONFIG = {
   // bidTeam, matching the pre-bidder-tracking deal shape the stats/history code
   // already falls back to below (see creditSeats, bidderLabel, seatName(ui.bidderSeat)).
   function allPlayersNamed() { return game.players.every(function (p) { return p && p.trim(); }); }
+
+  // ---- Viewer perspective (Game tab only) ----
+  // Purely a rendering-layer transform: which seat/team the CURRENT DEVICE sees
+  // as "mine", so the table and totals can be drawn from that player's point of
+  // view. Never touches game.teams/players/deals, bidTeam, bidderSeat, dealer
+  // rotation, or anything persisted/synced — every write still targets the real
+  // underlying index; this only decides what's shown where and what to call it.
+  // Scoped to the Game tab (ui.view==="game") so tournament match play, which
+  // has its own seat-derived "A & B" naming, is completely unaffected.
+  function mySeatIndex() {
+    if (ui.view !== "game") return null;
+    var me = myNameForCurrentTourney();
+    if (!me) return null;
+    var meLc = me.trim().toLowerCase();
+    for (var i = 0; i < 4; i++) {
+      if (game.players[i] && game.players[i].trim().toLowerCase() === meLc) return i;
+    }
+    return null;
+  }
+  function myTeamIndex() {
+    var s = mySeatIndex();
+    return s == null ? null : (s % 2);
+  }
+  // Real seat index shown at each visual table position — 0 is always "me" at
+  // the bottom, 2 is always my partner at the top — falling back to the
+  // unrotated identity order when nobody's identified.
+  function seatViewOrder() {
+    var s = mySeatIndex();
+    if (s == null) return [0, 1, 2, 3];
+    return [0, 1, 2, 3].map(function (v) { return (s + v) % 4; });
+  }
+  // Real team index shown first (displayed as "we") vs second ("they").
+  function teamViewOrder() {
+    var mt = myTeamIndex();
+    return mt == null ? [0, 1] : [mt, 1 - mt];
+  }
+  // "PlayerA & PlayerB" for a team whose two seats are both named, else null.
+  // Seats 0/2 = team 0, seats 1/3 = team 1 (see dealerSeat comment above).
+  function teamPlayerNames(teamIdx) {
+    var p0 = game.players[teamIdx], p1 = game.players[teamIdx + 2];
+    if (p0 && p0.trim() && p1 && p1.trim()) return p0.trim() + " & " + p1.trim();
+    return null;
+  }
+  // "We"/"They" for whichever team I'm on; the real stored name otherwise (not
+  // identified, in tournament match play where teams aren't "We"/"They", or
+  // once this team specifically has a customized name — a custom name like
+  // "Smith Family" stays visible rather than being overwritten by the generic
+  // label; the perspective still comes through via teamViewOrder() reordering
+  // position). Checked per team, not jointly, so customizing one team's name
+  // doesn't disable derived-name/pronoun treatment for the other, untouched team.
+  // Whenever a team's two seats are both named and its name is still the
+  // untouched default, prefer its actual player names ("Alice & Carol") over
+  // the "We"/"They" pronoun — that pronoun is especially confusing in a
+  // join-by-code share, where each guest's device disagrees on who's "We", but
+  // real names read better everywhere once they're available.
+  function teamLabel(teamIdx) {
+    var isDefault = game.teams[teamIdx] === (teamIdx === 0 ? "We" : "They");
+    if (isDefault) {
+      var derived = teamPlayerNames(teamIdx);
+      if (derived) return derived;
+    }
+    var mt = myTeamIndex();
+    if (mt == null) return game.teams[teamIdx];
+    if (!isDefault) return game.teams[teamIdx];
+    return teamIdx === mt ? "We" : "They";
+  }
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
@@ -864,7 +930,7 @@ window.SOMERSET_FB_CONFIG = {
     openDeal:null, whoSheet:false, editingDeal:null, playingAsOpen:false,
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
-    gameDetailRecId:null
+    gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null
   };
 
   // ---- Display theme (light/dark/auto) ----
@@ -1157,24 +1223,45 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "series") return tourney.games && tourney.games[am.gi];
     return null;
   }
-  function claimLock(am) {
+  // Locks are scoped per-hand, not per-match/game (see handLockKey) — claimed the
+  // moment a hand-entry sheet opens (new deal or edit), released on submit or an
+  // explicit close-without-submitting. No device can take over a hand another
+  // device holds except via the stale timeout below.
+  function claimLock(key) {
     if (!syncCode || !tourney) return;
     if (!tourney.locks) tourney.locks = {};
-    tourney.locks[amKey(am)] = { deviceId: deviceId, claimedAt: Date.now() };
+    tourney.locks[key] = { deviceId: deviceId, claimedAt: Date.now() };
     saveTourney();
   }
-  function releaseLock(am) {
+  function releaseLock(key) {
     if (!tourney || !tourney.locks) return;
-    var k = amKey(am);
-    var lk = tourney.locks[k];
-    if (lk && lk.deviceId === deviceId) delete tourney.locks[k];
+    var lk = tourney.locks[key];
+    if (lk && lk.deviceId === deviceId) delete tourney.locks[key];
   }
-  function isMineOrUnlocked(am) {
+  function isMineOrUnlocked(key) {
     if (!syncCode) return true;
-    var lk = tourney && tourney.locks && tourney.locks[amKey(am)];
+    var lk = tourney && tourney.locks && tourney.locks[key];
     if (!lk) return true;
     if (lk.deviceId === deviceId) return true;
     return (Date.now() - lk.claimedAt) > LOCK_TIMEOUT_MS;
+  }
+  // Releases whatever hand lock this device currently holds (see ui.myLockKey),
+  // if any — the "explicit user relinquish" half of the per-hand lock lifecycle.
+  function releaseMyHandLock() {
+    if (ui.myLockKey) { releaseLock(ui.myLockKey); ui.myLockKey = null; }
+  }
+  // The match/game slot a hand-entry lock is scoped within: the tournament match
+  // currently being played, or — on the Game tab — the shared series' live slot.
+  function currentGameAm() {
+    if (ui.activeMatch) return ui.activeMatch;
+    if (gameHasTourneyLink()) return { bracket:"series", gi: tourney.games.length - 1 };
+    return null;
+  }
+  // A specific hand within that slot: an existing deal being edited, or the next
+  // new one by number. Two devices can freely work different hands of the same
+  // shared game at once — only the same hand collides.
+  function handLockKey(am, editingDealId, dealNo) {
+    return amKey(am) + ":" + (editingDealId != null ? ("edit:" + editingDealId) : ("new:" + dealNo));
   }
 
   function initFb() {
@@ -1467,33 +1554,71 @@ window.SOMERSET_FB_CONFIG = {
     }, function() { syncStatus = "error"; syncRender(); });
   }
 
-  function startSharedTournament(t) {
+  // Local-only creation — the default for every "Start Tournament/Series" button.
+  // Sharing is a separate, explicit opt-in (see shareSession below).
+  function startLocalTourney(t) {
+    tourney = t; saveTourney(); ui.tSetup = null; render();
+  }
+
+  // Turns the current local tourney/series into a live shared session, minting a
+  // join code. Explicit opt-in from either tab (Tournament tab's Share button, or
+  // the Game tab's Share button — the latter first wraps the solo game in a
+  // series-shaped tourney via startGameShare, then calls this same function).
+  function shareSession() {
+    if (!tourney || syncStatus === "connecting") return;
     if (!initFb()) {
-      // Firebase not configured — fall back to local-only
-      tourney = t; saveTourney(); ui.tSetup = null; render(); return;
+      ui.syncError = "Couldn't share: Firebase is not configured on this device.";
+      render();
+      return;
     }
     var code = genCode();
-    var payload = JSON.parse(JSON.stringify(t));
+    var payload = JSON.parse(JSON.stringify(tourney));
     payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
     payload._code = code;
-    syncStatus = "connecting";
+    syncStatus = "connecting"; render();
     fb.ref("tournaments/" + code).set(payload).then(function() {
       syncCode = code; syncRole = "host";
       localStorage.setItem(SYNC_CODE_KEY, code);
       localStorage.setItem(SYNC_ROLE_KEY, "host");
-      tourney = t; tourney._code = code;
+      tourney._code = code;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(code);
-      ui.tSetup = null;
+      ui.shareSheetOpen = true;
       if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt the host to tag themselves too
       render();
     }).catch(function(err) {
       // Write failed — fall back to local-only (no join code)
       syncStatus = "offline";
-      tourney = t; saveTourney(); ui.tSetup = null;
-      ui.syncError = "Couldn't start shared tournament: Firebase write failed. The tournament is saved locally only.";
+      ui.syncError = "Couldn't share: Firebase write failed. Staying local-only.";
       render();
     });
+  }
+
+  function mkGameShareTeam(name, p0, p1) {
+    return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: [p0, p1] };
+  }
+
+  // Wraps the current solo game (in progress or empty) into a series-shaped tourney,
+  // reusing the exact sync/lock/rematch machinery a tournament series already has
+  // (see makeSeries). If a local best-of-N series was already under way (ui.series),
+  // its target and running win tally carry over as synthetic decided game slots
+  // ahead of the live one, so the shared scoreboard isn't misleading about what's
+  // actually happened so far.
+  function startGameShare() {
+    var teamA = mkGameShareTeam(soloGame.teams[0], soloGame.players[0], soloGame.players[2]);
+    var teamB = mkGameShareTeam(soloGame.teams[1], soloGame.players[1], soloGame.players[3]);
+    var bestOf = ui.series ? ui.series.bestOf : 1;
+    var t = makeSeries([teamA, teamB], bestOf);
+    t.games = [];
+    if (ui.series) {
+      var i;
+      for (i = 0; i < ui.series.wins[0]; i++) t.games.push({ a:0, b:1, winner:0, game:null, completedGame:null });
+      for (i = 0; i < ui.series.wins[1]; i++) t.games.push({ a:0, b:1, winner:1, game:null, completedGame:null });
+    }
+    t.games.push({ a:0, b:1, winner:null, game:soloGame, completedGame:null });
+    ui.series = null; ui.offerSeries = null; ui.seriesResult = null;   // superseded by the shared tourney now
+    startLocalTourney(t);
+    shareSession();
   }
 
   // Host-only: start a fresh bracket (rematch/redraw). For a synced tournament this
@@ -1524,7 +1649,12 @@ window.SOMERSET_FB_CONFIG = {
       tourney = normalizeFirebaseTourney(data);
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(syncCode);
-      ui.view = "tournament"; ui.tSetup = null; ui.joinSheet = false; ui.joinError = null;
+      // A shared standard game (format:"series") plays out on the Game tab, not
+      // the bracket — land joiners straight on the in-progress game instead of
+      // detouring through Tournament. A real bracket tournament still needs the
+      // Tournament tab, since there's no single game to jump into.
+      ui.view = (tourney.format === "series") ? "game" : "tournament";
+      ui.tSetup = null; ui.joinSheet = false; ui.joinError = null;
       if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt new joiners to tag themselves
       render();
     }).catch(function() {
@@ -1554,6 +1684,7 @@ window.SOMERSET_FB_CONFIG = {
   function persist() {
     try {
       if (ui.activeMatch) saveTourney();   // match game lives inside the tournament
+      else if (gameHasTourneyLink()) { syncSharedGameRoster(); saveTourney(); }   // shared/linked game lives inside the tourney too
       else localStorage.setItem(STORAGE_KEY, JSON.stringify(soloGame));
     }
     catch (e) { ui.storageOk = false; }
@@ -1847,7 +1978,6 @@ window.SOMERSET_FB_CONFIG = {
   var padEl = document.getElementById("pad");
   var subtitleEl = document.getElementById("subtitle");
   var settingsPanelEl = document.getElementById("settingsPanel");
-  var settingsToggleEl = document.getElementById("settingsToggle");
   var modalRoot = document.getElementById("modalRoot");
   var navEl = document.getElementById("nav");
   var gameViewEl = document.getElementById("gameView");
@@ -1862,7 +1992,8 @@ window.SOMERSET_FB_CONFIG = {
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
-           ui.mergeSheet != null || ui.gameDetailRecId != null;
+           ui.mergeSheet != null || ui.gameDetailRecId != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
+           ui.confirmEndT || ui.shareNamesSetup != null;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -1883,13 +2014,21 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.view === "tournament" && ui.activeMatch && tourney) {
       var am_m = getActiveMatchObj(ui.activeMatch);
       game = (am_m && (am_m.game || am_m.completedGame)) || soloGame;
+    } else if (gameHasTourneyLink()) {
+      var lss = liveSeriesSlot(tourney);
+      game = lss.game || lss.completedGame || soloGame;
     } else {
       game = soloGame;
     }
     var inGame = ui.view === "game";
     gameViewEl.style.display = inGame ? "" : "none";
     viewRootEl.style.display = inGame ? "none" : "";
-    if (inGame) { viewRootEl.innerHTML = ""; padEl.innerHTML = ""; renderScorePad(padEl, "solo"); renderSettings(); }
+    if (inGame) {
+      viewRootEl.innerHTML = ""; padEl.innerHTML = "";
+      renderSyncBar(padEl);
+      renderScorePad(padEl, "solo");
+      renderSettings();
+    }
     else if (ui.view === "history") {
       if (ui.historySub === "board") renderStatsBoard();
       else if (ui.historySub === "player") renderStatsPlayer();
@@ -1903,7 +2042,7 @@ window.SOMERSET_FB_CONFIG = {
     navEl.innerHTML = "";
     [["game","Game"],["history","History"],["tournament","Tournament"]].forEach(function (v) {
       navEl.appendChild(el("button", { class:"nav-btn disp" + (ui.view === v[0] ? " on" : ""),
-        onClick:function(){ ui.view = v[0]; if (v[0] === "history") { ui.historySub = null; ui.statsPlayer = null; } ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null; ui.showEntry = false; ui.editNames = false; render(); } }, [v[1]]));
+        onClick:function(){ releaseMyHandLock(); ui.view = v[0]; if (v[0] === "history") { ui.historySub = null; ui.statsPlayer = null; } ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null; ui.showEntry = false; ui.editNames = false; render(); } }, [v[1]]));
     });
   }
 
@@ -1923,7 +2062,10 @@ window.SOMERSET_FB_CONFIG = {
     var isMatch = mode === "match";
     var _am = isMatch && ui.activeMatch;
     var _m = _am && getActiveMatchObj(ui.activeMatch);
-    var isReadOnly = _am && (!isMineOrUnlocked(ui.activeMatch) || (_m && !_m.game && _m.winner !== null));
+    // Locking is per-hand now (see claimLock/isMineOrUnlocked call sites below),
+    // not whole-match — this only covers genuinely-finished matches with no live
+    // game to show.
+    var isReadOnly = _am && (_m && !_m.game && _m.winner !== null);
     subtitleEl.textContent = "";
     var t = totals(), winDetail = winnerDetail(), win = winDetail.winner, dealNo = game.deals.length + 1;
 
@@ -1931,10 +2073,10 @@ window.SOMERSET_FB_CONFIG = {
 
     // Winner banner
     if (win !== null) {
-      var bannerKids = [game.teams[win] + " win the game!"];
+      var bannerKids = [teamLabel(win) + " win the game!"];
       if (winDetail.tieBreak) {
         bannerKids.push(el("span", { class:"banner-note disp" },
-          ["Both teams landed on the same score, so " + game.teams[win] + " take it as the high bidder."]));
+          ["Both teams landed on the same score, so " + teamLabel(win) + " take it as the high bidder."]));
       }
       pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
     }
@@ -1948,21 +2090,23 @@ window.SOMERSET_FB_CONFIG = {
         ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
         : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf } : null);
       if (seriesInfo) {
+        var stOrder = teamViewOrder();
         pad.appendChild(el("div", { class:"series-tracker disp" }, [
-          el("span", {}, [game.teams[0]]),
-          el("b", {}, [String(seriesInfo.wins[0])]),
+          el("span", {}, [teamLabel(stOrder[0])]),
+          el("b", {}, [String(seriesInfo.wins[stOrder[0]])]),
           el("span", {}, ["\u2013"]),
-          el("b", {}, [String(seriesInfo.wins[1])]),
-          el("span", {}, [game.teams[1]]),
+          el("b", {}, [String(seriesInfo.wins[stOrder[1]])]),
+          el("span", {}, [teamLabel(stOrder[1])]),
           el("span", {}, ["\u00b7 Best of " + seriesInfo.bestOf])
         ]));
       }
     }
 
-    // Totals
+    // Totals — iterated in viewer-perspective order (teamViewOrder), so "my"
+    // team always renders first/left regardless of its real underlying index.
     var totalsGrid = el("div", { class:"totals" });
     var teamNameEls = [];   // read-only match names — heights equalized below so scores stay aligned
-    [0,1].forEach(function (i) {
+    teamViewOrder().forEach(function (i, pos) {
       var nameInput;
       if (isMatch) {
         // Combined "A & B" names can be long; an <input> can't wrap so it clips.
@@ -1978,15 +2122,15 @@ window.SOMERSET_FB_CONFIG = {
         nameInput = el("div", { class:"team-name team-name-ro disp", "aria-label":"Team "+(i+1)+" name" }, kids);
         teamNameEls.push(nameInput);
       } else {
-        nameInput = el("input", { class:"team-name disp", value:game.teams[i], "aria-label":"Team "+(i+1)+" name",
+        nameInput = el("input", { class:"team-name disp", value:teamLabel(i), "aria-label":"Team "+(i+1)+" name",
           onChange:function(e){ game.teams[i] = e.target.value; persist(); } });
       }
       var scoreColor = "var(--ink)";
       var bar = el("div", { class:"track", role:"img",
-        "aria-label":game.teams[i]+": "+t[i]+" of "+game.target+" points" }, [
-        el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(i===0?"#2E1B3A":"var(--rule)")+";" })
+        "aria-label":teamLabel(i)+": "+t[i]+" of "+game.target+" points" }, [
+        el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(pos===0?"#2E1B3A":"var(--rule)")+";" })
       ]);
-      var team = el("div", { class:"team", style:"grid-column:"+(i===0?1:3)+";" }, [
+      var team = el("div", { class:"team", style:"grid-column:"+(pos===0?1:3)+";" }, [
         nameInput,
         el("div", { class:"score mono", style:"color:"+scoreColor+";" }, [String(t[i])]),
         bar
@@ -2019,7 +2163,7 @@ window.SOMERSET_FB_CONFIG = {
         runningScore[0] += delta[0]; runningScore[1] += delta[1];
         // Older deals recorded before bidder tracking existed have no bidderSeat,
         // so they fall back to naming the team instead of a specific player.
-        var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : game.teams[d.bidTeam];
+        var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : teamLabel(d.bidTeam);
         // bidNumEl is null for a moon bid ("shot the moon" has no digit to show).
         var bidNumEl = null, innerKids;
         if (d.bid === POINTS_PER_DEAL) {
@@ -2075,7 +2219,7 @@ window.SOMERSET_FB_CONFIG = {
           var takenPts = d.pts[d.bidTeam];
           // The collapsed row above already says "<team> bid <bid>" — don't repeat it here.
           var takenNumEl = el("span", { class:"deal-desc-num" }, [String(takenPts)]);
-          var bidLineKids = [ game.teams[d.bidTeam] + " took ", takenNumEl ];
+          var bidLineKids = [ teamLabel(d.bidTeam) + " took ", takenNumEl ];
           if (isSet) bidLineKids.push(" (set)");
           // var trumpEl = el("span", { class:"deal-detail-trump" }, ["Trump:", el("b", {}, [trumpVal])]);
           // Kept as an empty spacer: alignDealDetail() sizes this to match .deal-score-block's
@@ -2100,9 +2244,6 @@ window.SOMERSET_FB_CONFIG = {
 
     // Entry or Add button
     var gameOver = (win === 0 || win === 1);
-    // Hide the bottom "New Game" text link once the main button becomes "New Game",
-    // and hide it before the first deal too — there's nothing yet for it to reset.
-    if (!isMatch) settingsToggleEl.style.display = (gameOver || !game.deals.length) ? "none" : "";
     if (isReadOnly) {
       var viewBarText = gameOver
         ? ("Match complete: " + game.teams[win] + " Won")
@@ -2117,6 +2258,39 @@ window.SOMERSET_FB_CONFIG = {
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
         ]));
+      } else if (gameHasTourneyLink()) {
+        if (tourney.champion != null) {
+          var champKids = [];
+          if (tourney.bestOf > 1) {
+            var cw = seriesWins(tourney);
+            champKids.push(el("p", { class:"series-sub disp" }, [
+              tourney.teams[tourney.champion].name + " win the series " + cw[tourney.champion] + "–" + cw[1 - tourney.champion] + "!"
+            ]));
+          }
+          champKids.push(el("button", { class:"btn btn-new disp", onClick:startNextSharedGame }, ["New Game"]));
+          pad.appendChild(el("div", { class:"add-wrap" }, champKids));
+        } else if (tourney.bestOf > 1) {
+          var gsw = seriesWins(tourney), gNextNum = gsw[0] + gsw[1] + 2;
+          pad.appendChild(el("div", { class:"add-wrap" }, [
+            el("div", { class:"series-score" }, [
+              el("div", { class:"series-side" }, [
+                el("span", { class:"series-team-name" }, [game.teams[0]]),
+                el("span", { class:"series-wins" }, [String(gsw[0])])
+              ]),
+              el("div", { class:"series-dash" }, ["–"]),
+              el("div", { class:"series-side" }, [
+                el("span", { class:"series-wins" }, [String(gsw[1])]),
+                el("span", { class:"series-team-name" }, [game.teams[1]])
+              ])
+            ]),
+            el("p", { class:"series-sub disp" }, ["Best of " + tourney.bestOf]),
+            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, ["Play Game " + gNextNum])
+          ]));
+        } else {
+          pad.appendChild(el("div", { class:"add-wrap" }, [
+            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, ["Continue"])
+          ]));
+        }
       } else if (ui.series) {
         var sw = ui.series.wins, nextNum = sw[0] + sw[1] + 1;
         pad.appendChild(el("div", { class:"add-wrap" }, [
@@ -2146,10 +2320,18 @@ window.SOMERSET_FB_CONFIG = {
         pad.appendChild(el("div", { class:"add-wrap" }, kids));
       }
     } else {
-      pad.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-new disp", onClick:function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); } },
-          ["Record Deal " + dealNo])
-      ]));
+      var addAm = currentGameAm();
+      var addKey = addAm ? handLockKey(addAm, null, dealNo) : null;
+      if (addKey && !isMineOrUnlocked(addKey)) {
+        pad.appendChild(el("div", { class:"view-only-bar disp" }, ["Being entered on another device"]));
+      } else {
+        pad.appendChild(el("div", { class:"add-wrap" }, [
+          el("button", { class:"btn btn-new disp", onClick:function(){
+            if (addKey) { claimLock(addKey); ui.myLockKey = addKey; }
+            ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView();
+          } }, ["Record Deal " + dealNo])
+        ]));
+      }
     }
 
     target.appendChild(pad);
@@ -2307,6 +2489,16 @@ window.SOMERSET_FB_CONFIG = {
     if (B) { B.name = nameB; B.players = [game.players[1], game.players[3]]; }
   }
 
+  // Shared-game counterpart to syncMatchTeamNames: the Game tab's names stay
+  // freely editable (unlike a match's seat-derived ones), so just mirror whatever
+  // the live game currently shows into the tourney's roster, for the next game
+  // slot and everyone else's bracket/series view to pick up.
+  function syncSharedGameRoster() {
+    var A = tourney.teams[0], B = tourney.teams[1];
+    if (A) { A.name = game.teams[0]; A.players = [game.players[0], game.players[2]]; }
+    if (B) { B.name = game.teams[1]; B.players = [game.players[1], game.players[3]]; }
+  }
+
   function swapSeats(i, j) {
     var tmp = game.players[i]; game.players[i] = game.players[j]; game.players[j] = tmp;
     syncMatchTeamNames();
@@ -2359,7 +2551,7 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Start a new game?"]),
         el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
           [ resetDone ? "This game is finished and saved in History." : "The current score will be discarded." ]),
-        el("button", { class:"sheet-btn primary disp", onClick:newGame }, ["Yes, start fresh"]),
+        el("button", { class:"sheet-btn primary disp", onClick:function(){ if (gameHasTourneyLink()) resetSharedGame(); else newGame(); } }, ["Yes, start fresh"]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; softRender(); } }, ["Keep playing"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
@@ -2491,58 +2683,34 @@ window.SOMERSET_FB_CONFIG = {
             } }, [ !cHasGame ? "Set winner" : cComplete ? "Save & set winner" : "Discard & set winner" ]),
           el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu.confirm = null; softRender(); } }, ["Cancel"])
         ];
-      } else if (mm.watchPick) {
-        var wpNames = dedupeNames((TA.players || []).concat(TB.players || []).filter(Boolean));
-        mkids = [
-          el("h3", { class:"disp" }, ["Watching as…"]),
-          el("p", { class:"sub disp" }, ["Pick your name to save this game to your History, or just watch."])
-        ];
-        wpNames.forEach(function (nm) {
-          mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ identifyAs(nm); watchMatchAm(mm); } }, [nm]));
-        });
-        mkids.push(el("button", { class:"sheet-btn disp", onClick:function(){ watchMatchAm(mm); } }, ["Just observing"]));
-        mkids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ mm.watchPick = false; softRender(); } }, ["Back"]));
       } else {
-        // Ready match — play or pick winner; respect lock
-        var locked = !isMineOrUnlocked(mm);
-        if (locked) {
-          mkids = [
-            el("h3", { class:"disp" }, [TA.name + "  vs  " + TB.name]),
-            el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink-soft);" },
-              ["This game is being edited on another device."]),
-            mt.game ? el("button", { class:"sheet-btn primary disp", onClick:function(){
-              if (myNameForCurrentTourney()) watchMatchAm(mm);
-              else { mm.watchPick = true; softRender(); }
-            } }, ["Watch game"]) : null,
-            el("button", { class:"sheet-btn disp", onClick:function(){ startMatchAm(mm); } }, ["Take over editing"]),
-            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
-          ];
-        } else {
-          var demoted = "font-size:15px; min-height:40px; padding:8px 0; color:var(--ink-soft);";
-          mkids = [
-            el("h3", { class:"disp" }, [TA.name + "  vs  " + TB.name]),
-            el("button", { class:"sheet-btn primary disp", onClick:function(){ startMatchAm(mm); } },
-              [ hasGame ? ("Resume game (" + matchScoreStr(mt) + ")") : "Play in app" ]),
-            el("p", { class:"sub disp", style:"margin:10px 0 6px;" }, ["Or record the result without playing:"]),
-            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.a); } }, [ TA.name + " Won" ]),
-            el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.b); } }, [ TB.name + " Won" ]),
-            el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
-          ];
-        }
+        // Ready match — play or pick winner. Locking is per-hand now (see
+        // claimLock/isMineOrUnlocked call sites), not whole-match, so there's no
+        // "someone else has this match" gate here anymore — everyone can always
+        // open it; only the specific hand someone's actively entering is gated.
+        var demoted = "font-size:15px; min-height:40px; padding:8px 0; color:var(--ink-soft);";
+        mkids = [
+          el("h3", { class:"disp" }, [TA.name + "  vs  " + TB.name]),
+          el("button", { class:"sheet-btn primary disp", onClick:function(){ startMatchAm(mm); } },
+            [ hasGame ? ("Resume game (" + matchScoreStr(mt) + ")") : "Play in app" ]),
+          el("p", { class:"sub disp", style:"margin:10px 0 6px;" }, ["Or record the result without playing:"]),
+          el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.a); } }, [ TA.name + " Won" ]),
+          el("button", { class:"sheet-btn disp", style:demoted, onClick:function(){ manualWinAm(mm, mt.b); } }, [ TB.name + " Won" ]),
+          el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Cancel"])
+        ];
       }
       var msheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Match options", onClick:function(e){ e.stopPropagation(); } }, mkids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.matchMenu = null; softRender(); } }, [msheet]));
       return;
     }
     if (ui.backConfirm && ui.activeMatch) {
-      var bcAm = ui.activeMatch, bcM = getActiveMatchObj(bcAm);
       var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Bracket not updated", onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Update the bracket?"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
           ["This match has a winner. The game is already saved to History, so return to the bracket to advance it, or leave the match marked in-progress."]),
         el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; returnToBracket(); } }, ["Return to Bracket"]),
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
-          ui.backConfirm = false; releaseLock(bcAm);
+          ui.backConfirm = false; releaseMyHandLock();
           ui.activeMatch = null; ui.showEntry = false;
           saveTourney(); softRender();
         } }, ["Leave without updating bracket"]),
@@ -2551,18 +2719,131 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.backConfirm = false; softRender(); } }, [bcSheet]));
       return;
     }
+    if (ui.shareNamesSetup) {
+      var sns = ui.shareNamesSetup;
+      var snsAllNamed = function () { return sns.players.every(function (p) { return p && p.trim(); }); };
+      var snsInputs = [], snsBtn;
+      var snsKids = [
+        el("h3", { class:"disp" }, ["Who's playing?"]),
+        el("p", { class:"sub disp" }, ["Enter everyone's name before sharing — it's how each device knows which seat is you, so the table can show your view."])
+      ];
+      var snsWrap = el("div", { class:"tplayers" });
+      sns.players.forEach(function (nm, i) {
+        var input = el("input", {
+          class:"tinput disp", value:nm, placeholder:"Player " + (i + 1), "aria-label":"Player " + (i + 1) + " name",
+          autocomplete:"off", autocapitalize:"words", enterkeyhint:(i < 3 ? "next" : "done"),
+          onInput:function (e) { sns.players[i] = e.target.value; snsBtn.disabled = !snsAllNamed(); },
+          onKeydown:function (e) { if (e.key === "Enter") { e.preventDefault(); if (snsInputs[i + 1]) snsInputs[i + 1].focus(); else input.blur(); } }
+        });
+        snsInputs.push(input);
+        snsWrap.appendChild(el("div", { class:"trow" }, [ el("span", { class:"tnum mono" }, [String(i + 1)]), input ]));
+      });
+      snsKids.push(snsWrap);
+      if (nameBook.length) {
+        var snsEntered = sns.players.map(function (p) { return (p || "").trim().toLowerCase(); });
+        var snsAvail = nameBook.filter(function (nm) { return snsEntered.indexOf(nm.toLowerCase()) === -1; });
+        if (snsAvail.length) {
+          var snsQa = el("div", { class:"quick-add" }, [
+            el("div", { style:"margin:2px 0 6px;" }, [ el("span", { class:"label disp" }, ["Quick add"]) ])
+          ]);
+          snsQa.appendChild(el("div", { class:"chips" }, snsAvail.slice(0, 40).map(function (nm) {
+            return el("button", { class:"chip disp", onClick:function () {
+              for (var i = 0; i < 4; i++) { if (!sns.players[i] || !sns.players[i].trim()) { sns.players[i] = nm; break; } }
+              softRender();
+            } }, [nm]);
+          })));
+          snsKids.push(snsQa);
+        }
+      }
+      snsBtn = el("button", { class:"sheet-btn primary disp", onClick:function () {
+        if (!snsAllNamed()) return;
+        soloGame.players = sns.players.map(function (p) { return p.trim(); });
+        rememberNames(soloGame.players);
+        ui.shareNamesSetup = null;
+        startGameShare();
+      } }, ["Share →"]);
+      snsBtn.disabled = !snsAllNamed();
+      snsKids.push(snsBtn);
+      snsKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function () { ui.shareNamesSetup = null; softRender(); } }, ["Cancel"]));
+      var snsSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Who's playing",
+        onClick:function (e) { e.stopPropagation(); } }, snsKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function () { ui.shareNamesSetup = null; softRender(); } }, [snsSheet]));
+      return;
+    }
+    if (ui.gameOptionsOpen) {
+      // Reachable from both tabs (Game tab's Options pill, Tournament tab's
+      // Options link once shared) — the set of actions offered adapts to which
+      // one triggered it, since "New Game" / "Share this game" / "Join with
+      // code" are Game-tab concepts, while the Tournament tab is always already
+      // looking at a specific tourney (no "linked vs. unrelated" ambiguity there).
+      var onGameTab = ui.view === "game";
+      var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
+      var connected = onGameTab ? isGameShared() : !!syncCode;
+      var blocked = onGameTab && !linked && !!tourney;   // an unrelated tourney/tournament is already active
+      var ogKids = [ el("h3", { class:"disp" }, ["Options"]) ];
+      if (onGameTab) {
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+          ui.gameOptionsOpen = false;
+          if (!game.deals.length) { if (linked) resetSharedGame(); else newGame(); }
+          else { ui.confirmReset = true; softRender(); }
+        } }, ["New Game"]));
+      }
+      if (blocked) {
+        ogKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink-soft); margin:2px 0 4px;" },
+          [ "You're already in a shared " + (tourney.format === "series" ? "game" : "tournament") + ". Leave it from the Tournament tab to share or join a different one." ]));
+      } else if (onGameTab && !linked) {
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+          ui.gameOptionsOpen = false;
+          ui.shareNamesSetup = { players: soloGame.players.slice() };
+          softRender();
+        } }, ["Share this game"]));
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
+      } else if (linked) {
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+          ui.gameOptionsOpen = false;
+          if (connected) ui.shareSheetOpen = true; else shareSession();
+          render();
+        } }, [ connected ? "Share code" : "Retry sharing" ]));
+        if (connected) {
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.whoSheet = true; render(); } }, ["Playing as…"]));
+        }
+        ogKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ ui.gameOptionsOpen = false; ui.confirmEndT = true; softRender(); } },
+          [ endOrLeaveLabel(tourney) ]));
+      }
+      ogKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); } }, ["Cancel"]));
+      var ogSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Options",
+        onClick:function(e){ e.stopPropagation(); } }, ogKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.gameOptionsOpen = false; softRender(); } }, [ogSheet]));
+      return;
+    }
+    if (ui.confirmEndT && tourney) {
+      var isSeries = tourney.format === "series";
+      var isHost = !syncCode || syncRole === "host";
+      var endLabel = isHost ? ("End this " + (isSeries ? "game" : "tournament") + " and clear it?")
+                             : ("Leave this " + (isSeries ? "game" : "tournament") + "? It'll keep going for everyone else. You can rejoin with the code or start your own.");
+      var ceSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"End or leave",
+        onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, [ isHost ? "End it?" : "Leave it?" ]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" }, [endLabel]),
+        el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; softRender(); } },
+          [ isHost ? "Yes, end it" : "Yes, leave" ]),
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmEndT = false; softRender(); } }, ["Keep it"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmEndT = false; softRender(); } }, [ceSheet]));
+      return;
+    }
     if (ui.joinSheet) {
       var joinInput = el("input", {
         class:"join-input", type:"text", maxlength:6, placeholder:"ABC123",
         autocomplete:"off", autocorrect:"off", autocapitalize:"characters", spellcheck:false,
-        "aria-label":"Tournament join code",
+        "aria-label":"Join code",
         onInput:function(e){
           joinInput.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6);
           ui.joinError = null;
         }
       });
       var jKids = [
-        el("h3", { class:"disp" }, ["Join a Tournament"]),
+        el("h3", { class:"disp" }, ["Join with Code"]),
         el("p", { class:"sub disp" }, ["Enter the 6-character code from the host device"]),
         joinInput
       ];
@@ -2573,7 +2854,7 @@ window.SOMERSET_FB_CONFIG = {
         joinTournament(code, function(msg){ ui.joinError = msg; softRender(); });
       } }, ["Join →"]));
       jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, ["Cancel"]));
-      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join tournament",
+      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join with code",
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
@@ -2596,6 +2877,35 @@ window.SOMERSET_FB_CONFIG = {
       var wSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Identify yourself",
         onClick:function(e){ e.stopPropagation(); } }, wKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; softRender(); } }, [wSheet]));
+      return;
+    }
+    if (ui.shareSheetOpen && syncCode) {
+      var shCodeStr = syncCode;
+      var shCodeEl = el("button", { class:"join-code", style:"display:block; margin:4px auto 14px; font-size:26px;", title:"Tap to copy", onClick:function(){
+        try {
+          navigator.clipboard.writeText(shCodeStr).then(function(){
+            shCodeEl.textContent = "Copied!";
+            setTimeout(function(){ shCodeEl.textContent = shCodeStr; }, 1500);
+          });
+        } catch(e) {}
+      } }, [shCodeStr]);
+      var shKids = [
+        el("h3", { class:"disp" }, ["Share"]),
+        el("p", { class:"sub disp" }, ["Anyone with this code can join and score live from their own device. Tap the code to copy it."]),
+        shCodeEl
+      ];
+      if (navigator.share) {
+        shKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
+          navigator.share({ title:"Some-R-Set", text:"Join my Some-R-Set game — code " + shCodeStr }).catch(function(){});
+        } }, ["Share via…"]));
+      }
+      var shMeNow = myNameForCurrentTourney();
+      shKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.shareSheetOpen = false; ui.whoSheet = true; render(); } },
+        [ shMeNow ? ("Playing as: " + shMeNow + " · Change") : "Who am I playing as?" ]));
+      shKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.shareSheetOpen = false; softRender(); } }, ["Done"]));
+      var shSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Share",
+        onClick:function(e){ e.stopPropagation(); } }, shKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.shareSheetOpen = false; softRender(); } }, [shSheet]));
       return;
     }
     if (ui.mergeSheet) {
@@ -2708,7 +3018,7 @@ window.SOMERSET_FB_CONFIG = {
     } else {
       sheetKids = [
         el("h3", { class:"disp" }, [seatName(i)]),
-        el("p", { class:"sub disp" }, [game.teams[i % 2] + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
+        el("p", { class:"sub disp" }, [teamLabel(i % 2) + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; softRender(); } }, ["Edit name"]),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "swap"; softRender(); } }, ["Swap seats"]),
         el("button", { class:"sheet-btn primary disp", disabled:isDealer, onClick:function(){ chooseDealerFromMenu(i); } },
@@ -2734,20 +3044,27 @@ window.SOMERSET_FB_CONFIG = {
     ];
     var rot = [180, 270, 0, 90];
     var started = game.deals.length > 0;
-    var seats = [0,1,2,3].map(function (i) {
+    // Real seat index shown at each visual position — seatViewOrder() rotates
+    // this to put "me" at the bottom (and my partner across the top) when
+    // identified; every onClick below still captures the real seat index i, so
+    // taps, the dealer, and the underlying data are all unaffected.
+    var order = seatViewOrder();
+    var myTeam = myTeamIndex();
+    var seats = order.map(function (i, viewPos) {
       var team = i % 2;
+      var isMyTeam = myTeam == null ? (team === 0) : (team === myTeam);
       return el("div", {
-        class:"seat" + (i === cur ? " dealer" : ""), style:pos[i], role:"button",
+        class:"seat" + (i === cur ? " dealer" : ""), style:pos[viewPos], role:"button",
         "aria-label":"Options for " + seatName(i),
         onClick:function(){ ui.seatMenu = i; ui.seatMenuMode = "menu"; render(); }
       }, [
         el("div", { class:"pname disp" }, [seatName(i)]),
-        el("div", { class:"pteam disp", style:"color:" + (team === 0 ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(game.teams[team].length, 1)))) + "px;" }, [game.teams[team]])
+        el("div", { class:"pteam disp", style:"color:" + (isMyTeam ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(teamLabel(team).length, 1)))) + "px;" }, [teamLabel(team)])
       ]);
     });
     var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
       html:'<span class="deal-arrow-shadow">' + DEALER_ARROW_SVG + '</span><span class="deal-arrow-face">' + DEALER_ARROW_SVG + '</span>',
-      style:"transform:translate(-50%,-50%) rotate(" + rot[cur] + "deg);" });
+      style:"transform:translate(-50%,-50%) rotate(" + rot[order.indexOf(cur)] + "deg);" });
 
     var children = [el("div", { class:"table" }, seats.concat([arrow]))];
     if (!started && !game.players.some(function (p) { return p && p.trim(); })) {
@@ -2808,9 +3125,9 @@ window.SOMERSET_FB_CONFIG = {
             ui.bidderWarn ? el("p", { class:"warn disp", role:"alert" }, ["Select who bid before continuing."]) : null
           ]
         : [
-            el("div", { class:"who" }, [0,1].map(function (i) {
+            el("div", { class:"who" }, teamViewOrder().map(function (i) {
               return el("button", { class:"disp"+(ui.bidTeam===i?" on":""), onClick:function(){ ui.bidTeam=i; ui.bidderSeat=null; softRender(); } },
-                [ game.teams[i] + " bid" ]);
+                [ teamLabel(i) + " bid" ]);
             }))
           ];
       var kids1 = header.concat([
@@ -2828,6 +3145,7 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"actions" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){
             ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
+            releaseMyHandLock();
             if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
           } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
@@ -2857,16 +3175,17 @@ window.SOMERSET_FB_CONFIG = {
       el("p", { class:"phase-label disp" }, ["Step 2 \u00b7 after the hand"]),
       el("button", { class:"bid-summary disp", "aria-label":"Edit the bid",
         onClick:function(){ ui.entryStep = 1; softRender(); } }, [
-        (ui.bidderSeat != null ? seatName(ui.bidderSeat) : game.teams[ui.bidTeam]) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
+        (ui.bidderSeat != null ? seatName(ui.bidderSeat) : teamLabel(ui.bidTeam)) + (moonBid ? " bid 14 (moon)" : (" bid " + ui.bid)) + trumpTxt,
         el("span", { class:"edit-hint" }, ["edit"])
       ]),
     ]);
-    kids.push(el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, [game.teams[ui.bidTeam]+" took"]), stepper(ui.bidderPts, function(v){ ui.bidderPts = clamp(v, 0, POINTS_PER_DEAL); softRender(); }, 0, POINTS_PER_DEAL, "points taken") ]));
+    var bidTeamIsMine = myTeamIndex() == null ? (ui.bidTeam === 0) : (ui.bidTeam === myTeamIndex());
+    kids.push(el("div", { class:"row", style:"margin-bottom:4px;" }, [ el("span", { class:"label disp" }, [teamLabel(ui.bidTeam)+" took"]), stepper(ui.bidderPts, function(v){ ui.bidderPts = clamp(v, 0, POINTS_PER_DEAL); softRender(); }, 0, POINTS_PER_DEAL, "points taken") ]));
     if (!moonBid) {
-      kids.push(el("div", { class:"row", style:"margin-bottom:8px;" }, [ el("span", { class:"label disp" }, [game.teams[1-ui.bidTeam]+" took"]),
+      kids.push(el("div", { class:"row", style:"margin-bottom:8px;" }, [ el("span", { class:"label disp" }, [teamLabel(1-ui.bidTeam)+" took"]),
         el("div", { class:"stepper" }, [
           el("span", { class:"step", style:"visibility:hidden;", "aria-hidden":"true" }, []),
-          el("span", { class:"step-val mono", "aria-label":game.teams[1-ui.bidTeam]+" took "+otherPts }, [String(otherPts)]),
+          el("span", { class:"step-val mono", "aria-label":teamLabel(1-ui.bidTeam)+" took "+otherPts }, [String(otherPts)]),
           el("span", { class:"step", style:"visibility:hidden;", "aria-hidden":"true" }, [])
         ]) ]));
     }
@@ -2874,14 +3193,14 @@ window.SOMERSET_FB_CONFIG = {
     if (willBeSet) {
       kids.push(el("p", { class:"warn strong disp" }, [
         moonBid
-          ? (game.teams[ui.bidTeam] + " attempted to shoot the moon but fell short.")
-          : (game.teams[ui.bidTeam] + " went set: bid of " + ui.bid + " subtracted from " + (ui.bidTeam === 0 ? "our" : "their") + " score.")
+          ? (teamLabel(ui.bidTeam) + " attempted to shoot the moon but fell short.")
+          : (teamLabel(ui.bidTeam) + " went set: bid of " + ui.bid + " subtracted from " + (bidTeamIsMine ? "our" : "their") + " score.")
       ]));
     } else if (moonBid && ui.bidderPts === POINTS_PER_DEAL) {
       kids.push(el("p", { class:"warn strong disp" }, [
         preTotal >= 0
-          ? (game.teams[ui.bidTeam] + " shot the MOON!")
-          : (game.teams[ui.bidTeam] + " take all 14, but are below zero: no moon, no win.")
+          ? (teamLabel(ui.bidTeam) + " shot the MOON!")
+          : (teamLabel(ui.bidTeam) + " take all 14, but are below zero: no moon, no win.")
       ]));
     }
 
@@ -2952,6 +3271,12 @@ window.SOMERSET_FB_CONFIG = {
   // recordDeal() below checks ui.editingDeal to update that deal in place
   // instead of pushing a new one.
   function startEditDeal(d) {
+    var am = currentGameAm();
+    if (am) {
+      var key = handLockKey(am, d.id, null);
+      if (!isMineOrUnlocked(key)) { ui.info = "Someone else is editing this hand right now."; softRender(); return; }
+      claimLock(key); ui.myLockKey = key;
+    }
     ui.editingDeal = d.id;
     ui.bidTeam = d.bidTeam;
     ui.bidderSeat = allPlayersNamed() ? ((d.bidderSeat != null) ? d.bidderSeat : d.bidTeam) : null;
@@ -2995,16 +3320,20 @@ window.SOMERSET_FB_CONFIG = {
     ui.bidderSeat = null;
     ui.bid = 6; /* ui.trump = ""; */ ui.bidderPts = 6;
     ui.showEntry = false; ui.entryStep = 1;
+    releaseMyHandLock();   // submitting the hand is the normal release point
     // Games archive themselves the moment they're won, so a result is never
     // lost to history just because nobody tapped a button. Tournament matches
-    // still need an explicit "Return to Bracket" tap before the bracket itself
-    // advances (see returnToBracket) — only the History record is automatic here.
+    // (and a shared Game-tab series) still need an explicit continue tap before
+    // the bracket/series itself advances (see returnToBracket / advanceSharedGame)
+    // — only the History record is automatic here.
     if (!game.archivedId) {
       var win = winner();
       if (win === 0 || win === 1) {
         if (ui.activeMatch) {
           var am = ui.activeMatch, m = getActiveMatchObj(am);
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
+        } else if (gameHasTourneyLink()) {
+          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
         } else {
           var seriesMeta = ui.series ? { format:"series", teams: game.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null;
           game.archivedId = archiveCurrentGame(seriesMeta) || null;
@@ -3051,6 +3380,68 @@ window.SOMERSET_FB_CONFIG = {
     persist();
   }
 
+  // Shared counterpart to newGame() for a still-in-progress (not yet won) game —
+  // discards the in-progress hand history and starts fresh in the SAME slot, same
+  // join code. Unlike advanceSharedGame, there's no winner to record here, so no
+  // series-target bookkeeping happens.
+  function resetSharedGame() {
+    setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+    if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+    ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
+    saveTourney();
+    render();
+  }
+
+  // Shared-series counterpart to newGame(): decides the just-finished game's slot
+  // (mirrors returnToBracket's explicit "Return to Bracket" step — there's no
+  // separate navigation here, so the tap itself both decides the slot and moves
+  // on) then either queues the next game toward an already-set best-of-N target,
+  // or — for a plain shared single game — offers one, same prompts a local solo
+  // game shows (see handleGameCompleteForSeries).
+  function advanceSharedGame() {
+    var gi = tourney.games.length - 1;
+    var slot = tourney.games[gi];
+    var win = winner();
+    slot.completedGame = JSON.parse(JSON.stringify(slot.game));
+    slot.game = null;
+    // Keep soloGame pointed at the clone too — gameHasTourneyLink()'s disconnected-
+    // orphan identity check needs it, and this is the one window (decided, but not
+    // yet advanced to the next game or clinched) where neither .game nor a fresh
+    // setLiveSeriesGame call would otherwise cover it.
+    soloGame = slot.completedGame;
+    var priorBestOf = tourney.bestOf;
+    setSeriesWinner(tourney, gi, win);
+    if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+    if (tourney.champion == null) {
+      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+    } else if (priorBestOf === 1) {
+      ui.offerSeries = { bestOf:3, seedWinner:win };
+    } else {
+      var w = seriesWins(tourney);
+      ui.seriesResult = { bestOf:priorBestOf, winnerIdx:win, wins:w.slice() };
+      ui.offerSeries = (priorBestOf === 3) ? { bestOf:5, wins:w.slice() } : null;
+    }
+    ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
+    saveTourney();
+    render();
+  }
+
+  // "New Game" after a shared series/plain game has clinched — keeps the same
+  // join code (no re-join needed) and starts a fresh best-of-1 shared game,
+  // mirroring newGame()'s default keepSeries:false: any completed target ends,
+  // play continues clean.
+  function startNextSharedGame() {
+    tourney.bestOf = 1;
+    tourney.champion = null;
+    tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
+    setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+    if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+    ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
+    ui.offerSeries = null; ui.seriesResult = null;
+    saveTourney();
+    render();
+  }
+
   // Best-of-N follow-up for casual (non-tournament) games: offer a series once a
   // standalone game is won, track wins across the games the player then chooses
   // to play, and escalate best-of-3 -> best-of-5 (but no further) on completion.
@@ -3075,6 +3466,21 @@ window.SOMERSET_FB_CONFIG = {
 
   function acceptSeriesOffer() {
     var o = ui.offerSeries;
+    if (gameHasTourneyLink()) {
+      // "Rematch best of X" for a shared game/series — bump the target and queue
+      // the next game under the *same* join code, no re-join needed for guests.
+      tourney.bestOf = o.bestOf;
+      tourney.champion = null;
+      if (liveSeriesSlot(tourney).winner != null) {
+        tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
+      }
+      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+      ui.offerSeries = null; ui.seriesResult = null;
+      saveTourney();
+      render();
+      return;
+    }
     var wins = o.wins ? o.wins.slice() : [0, 0];
     if (o.seedWinner === 0 || o.seedWinner === 1) wins[o.seedWinner] = 1;
     var id = o.id || Date.now();
@@ -3103,6 +3509,24 @@ window.SOMERSET_FB_CONFIG = {
   // starts a fresh standalone game — no series tracking, since a redraw
   // breaks up the two teams that would otherwise be rematching.
   function redrawSoloTeamsAndPlay() {
+    if (gameHasTourneyLink()) {
+      var lastGame = liveSeriesSlot(tourney).game || liveSeriesSlot(tourney).completedGame;
+      var shuffled = shuffle(lastGame.players.slice());
+      tourney.teams[0].players = [shuffled[0], shuffled[2]];
+      tourney.teams[1].players = [shuffled[1], shuffled[3]];
+      // Redraw breaks up the pairing a series would keep rematching, so — like
+      // newGame()'s default keepSeries:false — it also ends any best-of-N target
+      // and starts a fresh single shared game under the same code.
+      tourney.bestOf = 1;
+      tourney.champion = null;
+      tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null }];
+      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+      ui.offerSeries = null; ui.seriesResult = null;
+      saveTourney();
+      render();
+      return;
+    }
     soloGame.players = shuffle(soloGame.players.slice());
     newGame();
   }
@@ -4271,6 +4695,52 @@ window.SOMERSET_FB_CONFIG = {
       champion: null, locks: {}
     };
   }
+  // A series' live/pending game is always the last entry in .games — makeSeries
+  // seeds exactly one, and setSeriesWinner only ever pushes a new one at the end
+  // when the just-decided game didn't clinch it. The Game tab's shared-game view
+  // (see isGameShared) leans on this invariant instead of tracking its own pointer.
+  function liveSeriesSlot(t) { return t.games[t.games.length - 1]; }
+  function freshGameForTourneyTeams(t) {
+    var A = t.teams[0], B = t.teams[1];
+    var g = freshGame();
+    g.teams = [A.name, B.name];
+    g.players = [A.players[0] || "", B.players[0] || "", A.players[1] || "", B.players[1] || ""];
+    return g;
+  }
+  // Points the tourney's live slot at a (usually freshly-built) game object, and
+  // keeps soloGame pointing at the exact same object. That identity is what
+  // gameHasTourneyLink() checks to recognize "this orphaned local tourney is
+  // still mine" when a share hasn't (or hasn't yet) connected — every place that
+  // swaps in a new live game for a shared/linked series must go through here, or
+  // that check silently goes stale the moment a new game object replaces the one
+  // from share time.
+  function setLiveSeriesGame(t, g) {
+    liveSeriesSlot(t).game = g;
+    soloGame = g;
+  }
+  // True when the Game tab should be driven by tourney.games rather than the
+  // plain local soloGame: either a fully connected shared series (host or guest
+  // — see isGameShared) or a Share tap that hasn't (yet) minted a join code but
+  // still wraps this exact game (see startGameShare) — so a failed/offline Share
+  // doesn't leave the game invisible with no way to see it's linked or back out.
+  // Deliberately does NOT match an unrelated local (never-shared) Tournament-tab
+  // series just sitting around — only a truly connected one, or one built from
+  // this exact soloGame object, counts.
+  function gameHasTourneyLink() {
+    if (!tourney || tourney.format !== "series" || ui.view !== "game") return false;
+    if (syncCode) return true;
+    // Disconnected/orphaned case: identity check against whichever of the live
+    // slot's two game fields is currently populated — .game while in progress,
+    // .completedGame once decided but not yet advanced (see advanceSharedGame,
+    // which keeps soloGame pointed at that same clone for exactly this reason).
+    var lss = liveSeriesSlot(tourney);
+    return lss.game === soloGame || lss.completedGame === soloGame;
+  }
+  // True when the Game tab is showing a *connected* shared series specifically
+  // (as opposed to gameHasTourneyLink's broader "linked, maybe not connected yet").
+  function isGameShared() {
+    return gameHasTourneyLink() && !!syncCode;
+  }
   function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch
   function seriesWins(t) {
     var w = [0, 0];
@@ -4367,17 +4837,14 @@ window.SOMERSET_FB_CONFIG = {
       g.teams = [A.name, B.name];
       g.players = [A.players[0] || "", B.players[0] || "", A.players[1] || "", B.players[1] || ""];
       m.game = g;
+      // A new game starting is a good point to refresh the session's expiry
+      // window (see saveTourney's _createdAt comment) so a long tournament
+      // doesn't silently lapse mid-way through.
+      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     }
-    claimLock(am);
     ui.activeMatch = am;
     ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
     saveTourney(); render();
-  }
-
-  function watchMatchAm(am) {
-    ui.activeMatch = am;
-    ui.matchMenu = null; ui.showEntry = false; ui.entryStep = 1; ui.seatMenu = null;
-    render();
   }
 
   function matchScoreStr(m) {
@@ -4455,7 +4922,7 @@ window.SOMERSET_FB_CONFIG = {
       archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
     }
     var justArchived = gameHistory[0];
-    releaseLock(am);
+    releaseMyHandLock();
     m.completedGame = JSON.parse(JSON.stringify(m.game));
     m.game = null;
     routeMatchWinner(am, tournTeam);
@@ -4481,7 +4948,7 @@ window.SOMERSET_FB_CONFIG = {
     var isCompleted = !m.game && m.winner !== null;
     var hasUnrecordedResult = m.game && (gameWinner(m.game) === 0 || gameWinner(m.game) === 1);
     if (hasUnrecordedResult) { ui.backConfirm = true; render(); return; }
-    if (!isCompleted) releaseLock(am);
+    if (!isCompleted) releaseMyHandLock();
     if (m.game) m.game.pendingBid = null;
     ui.activeMatch = null; ui.showEntry = false;
     if (!isCompleted) saveTourney();
@@ -4654,7 +5121,7 @@ window.SOMERSET_FB_CONFIG = {
           var t = s.format === "double" ? makeDoubleElim(s.drawn)
                 : s.format === "round"  ? makeRoundRobin(s.drawn)
                 : makeSingleElim(s.drawn);
-          startSharedTournament(t);
+          startLocalTourney(t);
         } }, [ "Start " + formatName(s.format) ])
       ]));
     }
@@ -4803,7 +5270,7 @@ window.SOMERSET_FB_CONFIG = {
       rememberNames(s.players.map(function(p){ return p.trim(); }));
       var t = makeSeries(s.teams, s.bestOf);
       ui.sSetup = null;
-      startSharedTournament(t);
+      startLocalTourney(t);
     } }, ["Start series"]);
     card.appendChild(el("div", { style:"padding:8px 12px 16px;" }, [ startBtn ]));
 
@@ -5011,14 +5478,14 @@ window.SOMERSET_FB_CONFIG = {
     return sections;
   }
 
-  function renderBracket() {
-    var t = tourney;
-    var headTitle = t.format === "series" ? ("Best of " + t.bestOf + " Series") : ("Tournament · " + formatName(t.format));
-    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, [headTitle]) ]);
-
-    // Sync error banner — shown when startSharedTournament write failed
+  // Shared "who's connected" bar — error/notice banners, then join code + live
+  // status + who-am-I when a session is shared. Used by both the Tournament tab
+  // (renderBracket) and a shared Game tab. No-op past the banners if nothing is
+  // shared yet — callers add their own "Share" entry point for that case.
+  function renderSyncBar(container) {
+    // Sync error banner — shown when shareSession's write failed
     if (ui.syncError) {
-      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
+      container.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
         el("span", { style:"font-size:13px; color:var(--red); flex:1;" }, [ui.syncError]),
         el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; softRender(); } }, ["✕"])
       ]));
@@ -5026,49 +5493,58 @@ window.SOMERSET_FB_CONFIG = {
 
     // Sync notice — e.g. "tournament restarted, new code" after a rematch/redraw
     if (ui.syncNotice) {
-      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+      container.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
         el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
         el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; softRender(); } }, ["✕"])
       ]));
     }
 
-    // Sync bar — shows join code and live status when Firebase is active
-    if (syncCode) {
-      var offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
-      var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : syncStatus) });
-      var statusTxt = offline ? "Offline: sync paused" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
-      var codeStr = syncCode;
-      var codeBtn = el("button", { class:"join-code", title:"Tap to copy", onClick:function(){
-        try {
-          navigator.clipboard.writeText(codeStr).then(function(){
-            codeBtn.textContent = "Copied!";
-            setTimeout(function(){ codeBtn.textContent = codeStr; }, 1500);
-          });
-        } catch(e) {}
-      } }, [codeStr]);
-      var meNow = myNameForCurrentTourney();
-      var playingAsToggle = el("button", {
-        class:"link-btn disp",
-        "aria-expanded": ui.playingAsOpen ? "true" : "false",
-        "aria-label": ui.playingAsOpen ? "Hide player info" : "Show player info",
-        onClick:function(){ ui.playingAsOpen = !ui.playingAsOpen; softRender(); }
-      }, [ ui.playingAsOpen ? "▾" : "▸" ]);
-      card.appendChild(el("div", { class:"sync-bar" }, [
-        el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])]),
-        el("span", { style:"display:inline-flex; align-items:center; gap:10px;" }, [
-          el("span", { class:"join-code-badge" }, [
-            el("span", { class:"sync-label disp" }, ["Code: "]),
-            codeBtn
-          ]),
-          playingAsToggle
-        ])
+    if (!syncCode) return;
+    // Just a lightweight status indicator — the join code itself, and the
+    // actions that go with it (share code, playing as, end/leave), live in the
+    // Options menu now (see ui.gameOptionsOpen) rather than being on permanent
+    // display here.
+    var offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
+    var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : syncStatus) });
+    var statusTxt = offline ? "Offline: sync paused" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
+    container.appendChild(el("div", { class:"sync-bar" }, [
+      el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])])
+    ]));
+  }
+
+  // Label for the "End"/"Leave" action — shared by the Tournament tab's bracket
+  // button and the Game tab's Options menu, so the two stay in sync.
+  function endOrLeaveLabel(t) {
+    var isSeries = t.format === "series";
+    var isHost = !syncCode || syncRole === "host";
+    return isHost ? (isSeries ? "End Game" : "End Tournament") : (isSeries ? "Leave Game" : "Leave Tournament");
+  }
+
+  // Tournament tab's bottom-of-bracket "End"/"Leave" trigger. The actual confirm
+  // prompt is a shared modal (see ui.confirmEndT in renderModal), so it works the
+  // same way whether triggered from here or the Game tab's Options menu.
+  function renderEndSharedSessionControl(container, t) {
+    container.appendChild(el("div", { class:"add-wrap" }, [
+      el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;",
+        onClick:function(){ ui.confirmEndT = true; softRender(); } }, [ endOrLeaveLabel(t) ])
+    ]));
+  }
+
+  function renderBracket() {
+    var t = tourney;
+    var headTitle = t.format === "series" ? ("Best of " + t.bestOf + " Series") : ("Tournament · " + formatName(t.format));
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, [headTitle]) ]);
+
+    renderSyncBar(card);
+    if (!syncCode) {
+      card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
+        el("button", { class:"link-btn disp", onClick:shareSession },
+          [ "Share this " + (t.format === "series" ? "series" : "tournament") + " →" ])
       ]));
-      if (ui.playingAsOpen) {
-        card.appendChild(el("div", { class:"sync-bar" }, [
-          el("span", { class:"sync-label disp" }, [ meNow ? ("Playing as: " + meNow) : "Not tagged as a player" ]),
-          el("button", { class:"link-btn disp", onClick:function(){ ui.whoSheet = true; render(); } }, [ meNow ? "Change" : "I'm playing as…" ])
-        ]));
-      }
+    } else {
+      card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
+        el("button", { class:"link-btn disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
+      ]));
     }
 
     if (t.champion != null) {
@@ -5103,29 +5579,7 @@ window.SOMERSET_FB_CONFIG = {
       renderSeries().forEach(function(s) { card.appendChild(s); });
     }
 
-    var isSeries = t.format === "series";
-    // Ending destroys the bracket for whoever holds it locally, so only the host —
-    // the device that actually created the shared session — gets that button. Guests
-    // get a non-destructive "leave" instead: it just detaches their own device (see
-    // saveTourney's else-branch, which never touches the Firebase record), so the
-    // host's tournament keeps running untouched and the guest is free to join or
-    // start a different one.
-    var isHost = !syncCode || syncRole === "host";
-    if (ui.confirmEndT) {
-      var endLabel = isHost ? (isSeries ? "End this series and clear it?" : "End this tournament and clear the bracket?")
-                             : "Leave this tournament? It'll keep going for everyone else. You can rejoin with the code or start your own.";
-      card.appendChild(el("div", { class:"dealer-confirm fade" }, [
-        el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" }, [endLabel]),
-        el("div", { style:"display:flex; gap:8px;" }, [
-          el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.confirmEndT = false; softRender(); } }, ["Keep it"]),
-          el("button", { class:"btn btn-danger disp", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; softRender(); } }, [isHost ? "Yes, end it" : "Yes, leave"])
-        ])
-      ]));
-    } else {
-      card.appendChild(el("div", { class:"add-wrap" }, [
-        el("button", { class:"btn btn-cancel disp", style:"flex:0 0 auto; align-self:center; padding:12px 24px;", onClick:function(){ ui.confirmEndT = true; softRender(); } }, [isHost ? (isSeries ? "End Series" : "End Tournament") : "Leave Tournament"])
-      ]));
-    }
+    renderEndSharedSessionControl(card, t);
     viewRootEl.appendChild(card);
     var nw = viewRootEl.querySelector(".bracket-wrap");
     if (nw) nw.scrollLeft = bracketScroll;     // keep scroll position after a pick
@@ -5182,10 +5636,8 @@ window.SOMERSET_FB_CONFIG = {
       onClick: (ready || changeable) ? function(){ ui.matchMenu = { ri:r, mi:mi, confirm:null }; render(); } : null }, kids);
   }
 
-  document.getElementById("settingsToggle").addEventListener("click", function () {
-    if (!game.deals.length) { newGame(); return; }   // empty game — nothing to confirm
-    ui.confirmReset = !ui.confirmReset;
-    ui.showSettings = false;
+  document.getElementById("gameOptionsToggle").addEventListener("click", function () {
+    ui.gameOptionsOpen = true;
     render();
   });
 
@@ -5228,11 +5680,16 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
     if (ui.whoSheet) { ui.whoSheet = false; softRender(); return true; }
+    if (ui.shareSheetOpen) { ui.shareSheetOpen = false; softRender(); return true; }
+    if (ui.gameOptionsOpen) { ui.gameOptionsOpen = false; softRender(); return true; }
+    if (ui.shareNamesSetup) { ui.shareNamesSetup = null; softRender(); return true; }
+    if (ui.confirmEndT) { ui.confirmEndT = false; softRender(); return true; }
     if (ui.joinSheet) { ui.joinSheet = false; ui.joinError = null; softRender(); return true; }
     if (ui.backConfirm) { ui.backConfirm = false; softRender(); return true; }
     if (ui.matchMenu != null) { ui.matchMenu = null; softRender(); return true; }
     if (ui.showEntry) {
       ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null;
+      releaseMyHandLock();
       if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
       return true;
     }
