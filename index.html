@@ -2368,7 +2368,7 @@ window.SOMERSET_FB_CONFIG = {
       var addAm = currentGameAm();
       var addKey = addAm ? handLockKey(addAm, null, dealNo) : null;
       if (addKey && !isMineOrUnlocked(addKey)) {
-        pad.appendChild(el("div", { class:"view-only-bar disp" }, ["Being entered on another device"]));
+        pad.appendChild(el("div", { class:"view-only-bar disp" }, ["Someone else is currently entering this hand"]));
       } else {
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick:function(){
@@ -2825,12 +2825,11 @@ window.SOMERSET_FB_CONFIG = {
       var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
       var connected = onGameTab ? isGameShared() : !!syncCode;
       var blocked = onGameTab && !linked && !!tourney;   // an unrelated tourney/tournament is already active
-      var ogKids = [ el("h3", { class:"disp" }, ["Options"]) ];
-      if (onGameTab) {
+      var ogKids = [ el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Options"]) ];
+      if (onGameTab && game.deals.length > 0) {
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
           ui.gameOptionsOpen = false;
-          if (!game.deals.length) { if (linked) resetSharedGame(); else newGame(); }
-          else { ui.confirmReset = true; softRender(); }
+          ui.confirmReset = true; softRender();
         } }, ["New Game"]));
       }
       if (blocked) {
