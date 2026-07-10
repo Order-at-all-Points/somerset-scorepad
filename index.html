@@ -2571,7 +2571,7 @@ window.SOMERSET_FB_CONFIG = {
       if (os.bestOf === 3) {
         var offerSheet3 = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
           onClick:function(e){ e.stopPropagation(); } }, [
-          el("h3", { class:"disp" }, ["Play again?"]),
+          el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
           el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Rematch? Best of 3?"]),
           el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
           el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
@@ -2580,8 +2580,8 @@ window.SOMERSET_FB_CONFIG = {
         return;
       }
       var offerMsg = ui.seriesResult
-        ? (game.teams[ui.seriesResult.winnerIdx] + " Won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-5?")
-        : "Play a best-of-5 series?";
+        ? (game.teams[ui.seriesResult.winnerIdx] + " Won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-" + os.bestOf + "?")
+        : "Play a best-of-" + os.bestOf + " series?";
       var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"]),
@@ -3381,13 +3381,22 @@ window.SOMERSET_FB_CONFIG = {
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
         } else if (gameHasTourneyLink()) {
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
-          // Record the result on the tourney's live slot right away so the series
-          // tally/champion are correct for the between-games screen the very next
+          // Record just the winner on the tourney's live slot right away so the
+          // series tally is correct for the between-games screen the very next
           // render — advanceSharedGame still owns queuing the actual next game.
           // Scoped to an actual multi-game series: a plain best-of-1 shared game
           // defers everything, including which rematch prompt to offer, to the
           // explicit Continue tap (see advanceSharedGame's priorBestOf===1 branch).
-          if (tourney.format === "series" && tourney.bestOf > 1) recordSeriesResult(tourney, tourney.games.length - 1, win);
+          // Deliberately NOT recordSeriesResult here (that also sets t.champion):
+          // once champion is non-null, the post-game screen's own champion check
+          // takes priority and shows "New Game" instead of "Play Game N"/"Continue"
+          // — which is the only button wired to advanceSharedGame, the one place a
+          // shared series' escalate-to-the-next-length offer gets made. Setting
+          // champion this early made that offer permanently unreachable for the
+          // clinching game of any shared bestOf>1 series. Leave it to the explicit
+          // advance tap, same as recordManualMatchWin/returnToBracket already do
+          // for the Tournament tab's own bracket flow.
+          if (tourney.format === "series" && tourney.bestOf > 1) tourney.games[tourney.games.length - 1].winner = win;
         } else {
           var seriesMeta = ui.series ? { format:"series", teams: game.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null;
           game.archivedId = archiveCurrentGame(seriesMeta) || null;
@@ -3473,7 +3482,8 @@ window.SOMERSET_FB_CONFIG = {
     } else {
       var w = seriesWins(tourney);
       ui.seriesResult = { bestOf:priorBestOf, winnerIdx:win, wins:w.slice() };
-      ui.offerSeries = (priorBestOf === 3) ? { bestOf:5, wins:w.slice() } : null;
+      var nextBO = nextSeriesEscalation(priorBestOf);
+      ui.offerSeries = nextBO ? { bestOf:nextBO, wins:w.slice() } : null;
     }
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
@@ -3498,7 +3508,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // Best-of-N follow-up for casual (non-tournament) games: offer a series once a
   // standalone game is won, track wins across the games the player then chooses
-  // to play, and escalate best-of-3 -> best-of-5 (but no further) on completion.
+  // to play, and escalate best-of-3 -> best-of-5 -> best-of-7 on completion.
   function handleGameCompleteForSeries(win) {
     if (ui.series) {
       ui.series.wins[win]++;
@@ -3507,11 +3517,12 @@ window.SOMERSET_FB_CONFIG = {
         var finished = ui.series;
         ui.seriesResult = { bestOf:finished.bestOf, winnerIdx:win, wins:finished.wins.slice() };
         ui.series = null;
-        // Carry the series id and wins-so-far forward on escalation so the best-of-5
-        // games join the same history group as the best-of-3 games that preceded
-        // them, and the win count picks up where the best-of-3 left off rather than
+        // Carry the series id and wins-so-far forward on escalation so the next
+        // rung's games join the same history group as the ones that preceded
+        // them, and the win count picks up where they left off rather than
         // restarting at 0-0.
-        ui.offerSeries = (finished.bestOf === 3) ? { bestOf:5, id:finished.id, wins:finished.wins.slice() } : null;
+        var nextBO = nextSeriesEscalation(finished.bestOf);
+        ui.offerSeries = nextBO ? { bestOf:nextBO, id:finished.id, wins:finished.wins.slice() } : null;
       }
     } else if (!ui.offerSeries) {
       ui.offerSeries = { bestOf:3, seedWinner:win };
@@ -4813,6 +4824,12 @@ window.SOMERSET_FB_CONFIG = {
     return gameHasTourneyLink() && !!syncCode;
   }
   function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch
+  // The next rung up the escalation ladder after a series of this length clinches
+  // (3 -> 5 -> 7), or null once there's nowhere further to go. Mirrors the lengths
+  // offered by the Tournament tab's own series-length picker (renderSeriesSetup).
+  function nextSeriesEscalation(bestOf) {
+    return bestOf === 3 ? 5 : bestOf === 5 ? 7 : null;
+  }
   function seriesWins(t) {
     var w = [0, 0];
     t.games.forEach(function(g) { if (g.winner != null) w[g.winner]++; });
@@ -4902,10 +4919,21 @@ window.SOMERSET_FB_CONFIG = {
     return names;
   }
   function makeTourney(format, teams, bestOf) {
-    return format === "double" ? makeDoubleElim(teams)
-         : format === "round"  ? makeRoundRobin(teams)
-         : format === "series" ? makeSeries(teams, bestOf)
-         : makeSingleElim(teams);
+    if (format === "double") return makeDoubleElim(teams);
+    if (format === "round") return makeRoundRobin(teams);
+    if (format === "series") {
+      var t = makeSeries(teams, bestOf);
+      // Attach a live game to the seeded first slot — same reasoning as
+      // setSeriesWinner/clearSeriesWinner: a guest can land on the Game tab
+      // (auto-routed there for any format:"series" tourney) before the host
+      // ever opens Game 1 from the bracket, and gameHasTourneyLink() has
+      // nothing real to point them at otherwise (see the bug those fixed).
+      // startGameShare bypasses this path deliberately — it wires its own
+      // in-progress soloGame in as the live game instead.
+      setLiveSeriesGame(t, freshGameForTourneyTeams(t));
+      return t;
+    }
+    return makeSingleElim(teams);
   }
   function rematchSameTeams() {
     var t = makeTourney(tourney.format, shuffle(tourney.teams), tourney.bestOf);
@@ -5360,7 +5388,7 @@ window.SOMERSET_FB_CONFIG = {
     startBtn = el("button", { class:"btn btn-new disp", onClick:function(){
       if (!recompute()) return;
       rememberNames(s.players.map(function(p){ return p.trim(); }));
-      var t = makeSeries(s.teams, s.bestOf);
+      var t = makeTourney("series", s.teams, s.bestOf);
       ui.sSetup = null;
       startLocalTourney(t);
     } }, ["Start series"]);
