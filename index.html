@@ -1590,8 +1590,11 @@ window.SOMERSET_FB_CONFIG = {
       tourney._code = code;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(code);
+      // Just show the code — renderModal checks ui.whoSheet before ui.shareSheetOpen,
+      // so setting both here would hide the code behind the identify prompt before
+      // the host ever sees it. The share sheet has its own "Who am I playing as?"
+      // button that opens ui.whoSheet when the host actually wants it.
       ui.shareSheetOpen = true;
-      if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt the host to tag themselves too
       render();
     }).catch(function(err) {
       // Write failed — fall back to local-only (no join code)
@@ -3461,10 +3464,10 @@ window.SOMERSET_FB_CONFIG = {
     // setLiveSeriesGame call would otherwise cover it.
     soloGame = slot.completedGame;
     var priorBestOf = tourney.bestOf;
-    setSeriesWinner(tourney, gi, win);
+    setSeriesWinner(tourney, gi, win);   // also attaches the next game now, if the series isn't over
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     if (tourney.champion == null) {
-      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+      // Nothing left to do — setSeriesWinner already queued and attached it.
     } else if (priorBestOf === 1) {
       ui.offerSeries = { bestOf:3, seedWinner:win };
     } else {
@@ -4829,9 +4832,17 @@ window.SOMERSET_FB_CONFIG = {
   }
   function setSeriesWinner(t, gi, winnerTeamIdx) {
     recordSeriesResult(t, gi, winnerTeamIdx);
-    // No clinch yet — queue the next game if this was the last slot.
+    // No clinch yet — queue the next game if this was the last slot, and attach
+    // a live game to it immediately (not just on the Game tab's own advance/offer
+    // paths, which used to be the only callers that did this). The Tournament
+    // tab's bracket flow (returnToBracket/recordManualMatchWin -> routeMatchWinner)
+    // also lands here, and it used to leave the new slot's .game null until
+    // someone tapped into the match — which left gameHasTourneyLink() with no
+    // real game to point a connected guest's Game tab at, so it silently fell
+    // back to that guest's own unrelated local game (see the bug this fixed).
     if (t.champion == null && gi === t.games.length - 1) {
       t.games.push({ a: 0, b: 1, winner: null, game: null, completedGame: null });
+      setLiveSeriesGame(t, freshGameForTourneyTeams(t));
     }
   }
   function lastDecidedSeriesGame(t) {
@@ -4849,6 +4860,9 @@ window.SOMERSET_FB_CONFIG = {
     t.games[gi].completedGame = null;
     t.games = t.games.slice(0, gi + 1);  // drop the now-orphaned pending slot, if any
     t.champion = null;
+    // Re-attach a live game to the now-undecided slot — same reasoning as
+    // setSeriesWinner: a connected guest's Game tab needs a real game to show.
+    setLiveSeriesGame(t, freshGameForTourneyTeams(t));
   }
 
   function nextMatch(t) {
