@@ -1616,6 +1616,10 @@ window.SOMERSET_FB_CONFIG = {
     var t = makeSeries([teamA, teamB], bestOf);
     t.games = [];
     if (ui.series) {
+      // Reuse the local series' id (rather than the fresh one makeSeries just minted)
+      // so games already archived under it stay grouped with the ones still to come
+      // instead of splitting into two separate history entries once this is shared.
+      t.id = ui.series.id;
       var i;
       for (i = 0; i < ui.series.wins[0]; i++) t.games.push({ a:0, b:1, winner:0, game:null, completedGame:null });
       for (i = 0; i < ui.series.wins[1]; i++) t.games.push({ a:0, b:1, winner:1, game:null, completedGame:null });
