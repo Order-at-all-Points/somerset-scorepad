@@ -925,6 +925,30 @@ window.SOMERSET_FB_CONFIG = {
     if (!isDefault) return game.teams[teamIdx];
     return teamIdx === mt ? "We" : "They";
   }
+  // ui.series/offerSeries/seriesResult track an in-progress (or just-decided)
+  // best-of-N series/offer — deliberately local-only, never written to the
+  // synced tourney object (see acceptSeriesOffer's `linked` comment). But
+  // "local-only" still needs to survive a page reload or the OS evicting the
+  // tab/PWA mid-series, or the running win tally (and the pips derived from
+  // it — see renderScorePad's seriesInfo) silently vanishes the moment the
+  // page comes back, even though the game in progress and its deals are still
+  // there. Persisted separately from soloGame/tourney since it's UI state, not
+  // game data. Declared ahead of `ui` itself so its initial-load restore below
+  // can run immediately (var hoisting only hoists the declaration, not the
+  // assignment, so SERIES_UI_KEY must already be assigned by the time that runs).
+  var SERIES_UI_KEY = "somerset:dev-series-ui";
+  function loadSeriesUi() { try { var r = localStorage.getItem(SERIES_UI_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
+  var lastSavedSeriesUi = null;   // skip redundant writes — render() calls this on every pass
+  function saveSeriesUi() {
+    try {
+      var blob = { series: ui.series, offerSeries: ui.offerSeries, seriesResult: ui.seriesResult };
+      var json = (blob.series || blob.offerSeries || blob.seriesResult) ? JSON.stringify(blob) : null;
+      if (json === lastSavedSeriesUi) return;
+      lastSavedSeriesUi = json;
+      if (json) localStorage.setItem(SERIES_UI_KEY, json);
+      else localStorage.removeItem(SERIES_UI_KEY);
+    } catch (e) {}
+  }
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
@@ -939,6 +963,17 @@ window.SOMERSET_FB_CONFIG = {
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null
   };
+  // Restore an in-progress local series/offer that survived a reload (see
+  // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
+  // without this the running win tally would silently reset to "no series"
+  // the moment the page reloads mid-series.
+  (function restoreSeriesUi() {
+    var saved = loadSeriesUi();
+    if (!saved) return;
+    ui.series = saved.series || null;
+    ui.offerSeries = saved.offerSeries || null;
+    ui.seriesResult = saved.seriesResult || null;
+  })();
 
   // ---- Display theme (light/dark/auto) ----
   var THEME_KEY = "somerset:theme-pref";
@@ -2042,6 +2077,7 @@ window.SOMERSET_FB_CONFIG = {
     // it, so the modal layer can honor softRender() too (sheets otherwise replay
     // their fade-in animation on every in-sheet re-render — the name-edit judder).
     var modalNoFade = suppressFade;
+    saveSeriesUi();   // keep the local-series reload snapshot current on every pass (see SERIES_UI_KEY)
     renderNav();
     document.getElementById("storageWarn").style.display = ui.storageOk ? "none" : "block";
     // point the active game at the right context
@@ -2600,16 +2636,20 @@ window.SOMERSET_FB_CONFIG = {
         modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet3]));
         return;
       }
-      var offerMsg = ui.seriesResult
-        ? (game.teams[ui.seriesResult.winnerIdx] + " Won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + ". Play a best-of-" + os.bestOf + "?")
-        : "Play a best-of-" + os.bestOf + " series?";
+      var offerMsgKids = [];
+      if (ui.seriesResult) {
+        offerMsgKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 0;" },
+          [game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + "."]));
+      }
+      offerMsgKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:" + (ui.seriesResult ? "2px 0 14px" : "8px 0 14px") + ";" },
+        ["Play a best-of-" + os.bestOf + (ui.seriesResult ? "" : " series") + "?"]));
       var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
         onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"]),
-        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" }, [offerMsg]),
+        el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"])
+      ].concat(offerMsgKids).concat([
         el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Yes, Best of " + os.bestOf]),
         el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
-      ]);
+      ]));
       modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet]));
       return;
     }
