@@ -2094,7 +2094,7 @@ window.SOMERSET_FB_CONFIG = {
 
     // Winner banner
     if (win !== null) {
-      var bannerKids = [teamLabel(win) + " win the game!"];
+      var bannerKids = [teamLabel(win).split(" & ").join(" and ") + " Win!"];
       if (winDetail.tieBreak) {
         bannerKids.push(el("span", { class:"banner-note disp" },
           ["Both teams landed on the same score, so " + teamLabel(win) + " take it as the high bidder."]));
