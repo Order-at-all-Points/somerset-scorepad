@@ -241,6 +241,11 @@
   .empty { text-align:center; color:var(--ink-soft); padding:20px 16px; margin:0; }
   .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
   .deal-row.open { border-bottom-color:transparent; }
+  /* The bid's been confirmed but the hand hasn't been recorded yet (game.pendingBid) —
+     not clickable (there's no deal id to open) and its score slot is a placeholder,
+     not a real 0, so it's dimmed and tinted to read as "in progress" rather than final. */
+  .deal-row.pending { cursor:default; background:var(--cream-shade); }
+  .pending-score .score-digits { color:var(--ink-soft); font-weight:400; }
   /* The no./score/dash/score block is fixed-width (ch-based cells, one glyph dash) —
      wrapping it lets the expanded row measure and reuse that exact width so Trump
      lands centered directly underneath it. See alignDealDetail(). */
@@ -1974,6 +1979,16 @@ window.SOMERSET_FB_CONFIG = {
     return el("span", props, kids);
   }
 
+  // Placeholder for a score-cell slot before a hand's points are known — reuses
+  // scoreCell's markup (sign + digit slots) so the dash lands in the same column
+  // a real score would, just with no value yet. Used by the game.pendingBid row
+  // in renderScorePad below.
+  function pendingScoreCell(mirrorSign) {
+    var kids = [ el("span", { class:"score-sign" }, []), el("span", { class:"score-digits" }, ["–"]) ];
+    if (mirrorSign) kids.push(el("span", { class:"score-sign" }, []));
+    return el("span", { class:"score-cell mono pending-score" }, kids);
+  }
+
   // ---- Render ----
   var padEl = document.getElementById("pad");
   var subtitleEl = document.getElementById("subtitle");
@@ -2239,6 +2254,36 @@ window.SOMERSET_FB_CONFIG = {
           };
         }
       });
+    }
+    // A bid confirmed by the entering device (game.pendingBid, set in renderEntry's
+    // step 1 → step 2 transition) but not yet recorded gets its own row here, so
+    // spectators see the bidder and bid land in the table immediately instead of
+    // waiting for the full deal. The score columns stay blank — points aren't known
+    // until recordDeal() runs — and the row is skipped on the entering device itself,
+    // which already shows the same info in its open entry sheet.
+    if (game.pendingBid && !(ui.showEntry && ui.editingDeal == null)) {
+      var pb = game.pendingBid;
+      var pbBidderLabel = (pb.bidderSeat != null) ? seatName(pb.bidderSeat) : teamLabel(pb.bidTeam);
+      var pbInnerKids = (pb.bid === POINTS_PER_DEAL)
+        ? [ pbBidderLabel + " shot the", el("strong", { class:"set-flag disp" }, ["MOON"]) ]
+        : [ pbBidderLabel + " bid ", el("span", { class:"deal-desc-num" }, [String(pb.bid)]) ];
+      var pbDlr = dealerSeat();
+      var pbScoreBlockEl = el("span", { class:"deal-score-block" }, [
+        pendingScoreCell(true),
+        el("span", { class:"dash" }, ["|"]),
+        pendingScoreCell()
+      ]);
+      var pbInnerEl = el("span", { class:"deal-desc-inner" }, pbInnerKids);
+      var pbDescEl = el("span", { class:"deal-desc disp" }, [pbInnerEl]);
+      target.__dealBidRows.push({ innerEl:pbInnerEl, descEl:pbDescEl });
+      var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
+        class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
+        style:"transform:rotate(" + [180, 270, 0, 90][pbDlr] + "deg);"
+      })]);
+      history.appendChild(el("div", {
+        class:"deal-row pending" + (noFade ? "" : " fade"),
+        "aria-label":"Deal " + dealNo + " in progress, points not yet recorded"
+      }, [ pbScoreBlockEl, pbDescEl, pbDealerLabelEl ]));
     }
     pad.appendChild(history);
 
