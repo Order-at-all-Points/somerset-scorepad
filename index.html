@@ -1161,6 +1161,16 @@ window.SOMERSET_FB_CONFIG = {
     allMatches(tourney).forEach(function (entry) {
       var am = entry.am, m = entry.m;
       if (!m || m.a == null || m.b == null || m.winner == null) return;
+      // A shared series' Game-tab flow (see recordDeal's gameHasTourneyLink
+      // branch) sets .winner the instant the deciding deal is recorded, ahead of
+      // the explicit continue/advance tap that nulls .game and — for a clinching
+      // game — sets tourney.champion. Archiving here is a one-shot, locked-forever
+      // action (see archivedMatches below), so grabbing a "decided" match while
+      // .game is still populated would permanently miss the championship flag if
+      // this snapshot arrived before that tap. Every other flow (bracket play,
+      // manual wins) nulls .game in the same synchronous action that sets
+      // .winner, so this only ever defers the series/Game-tab case.
+      if (m.game) return;
       var uid = matchUid(am);
       if (archivedMatches[uid]) return;
       var A = tourney.teams[m.a], B = tourney.teams[m.b];
