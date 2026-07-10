@@ -3543,10 +3543,27 @@ window.SOMERSET_FB_CONFIG = {
     newGame(true);
   }
 
+  // "No thanks" ends the just-finished game outright rather than leaving it
+  // sitting there decided-but-idle: for a shared game that means ending the
+  // live/synced session (same as the host's "End Game" action), and either way
+  // a fresh unlinked solo game replaces it. The bottom seat (mySeatIndex(), or
+  // real seat 0 when nobody's identified — see seatViewOrder) is the one tile
+  // that's really "you" holding the device, so its name carries over; every
+  // other seat clears since those were this session's guests/opponents.
   function declineSeriesOffer() {
+    var mySeat = mySeatIndex();
+    var keepName = (mySeat != null ? game.players[mySeat] : game.players[0]) || "";
+    if (gameHasTourneyLink()) {
+      tourney = null;
+      saveTourney();
+    }
+    soloGame = freshGame();
+    soloGame.players[0] = keepName;
+    game = soloGame;
+    ui.series = null;
     ui.offerSeries = null;
     ui.seriesResult = null;
-    render();
+    persist();
   }
 
   // Scrambles who's paired with whom (keeping the same 4 seats/names), then
