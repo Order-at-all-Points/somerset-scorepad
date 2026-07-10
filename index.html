@@ -958,7 +958,7 @@ window.SOMERSET_FB_CONFIG = {
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
-    openDeal:null, whoSheet:false, editingDeal:null, playingAsOpen:false,
+    openDeal:null, whoSheet:false, editingDeal:null, identitySuggestion:null, identityEditor:false,
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null
@@ -1082,29 +1082,116 @@ window.SOMERSET_FB_CONFIG = {
   var nameBook = loadNames();
   var nameAliases = loadNameAliases();
 
-  // ---- "Which player am I?" identity, for auto-saving tournament games to my History ----
-  var MY_NAME_KEY = "somerset:dev-my-name";         // { code, name } — which roster name is "me" for the active join code
+  // ---- "Which player am I?" identity, for auto-saving tournament games to my History
+  // (and, once known, for the local Game tab's "We/They" viewer perspective too) ----
+  var MY_NAME_KEY = "somerset:dev-my-name";         // { code, name } — explicit per-shared-session decision (name may be null = "not playing/spectating")
+  var MY_DEVICE_NAME_KEY = "somerset:dev-my-device-name"; // plain string — persistent, device-wide default identity, reused silently across every game (local or shared)
+  var IDENTITY_NUDGE_SEEN_KEY = "somerset:dev-identity-nudge-seen"; // one-shot: don't re-offer "is this you?" once it's been shown, accepted or not
   var ARCHIVED_KEY = "somerset:dev-archived-matches"; // map of matchUid -> true, so auto-sync never double-archives a match
   function loadMyName() { try { var r = localStorage.getItem(MY_NAME_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
+  function loadMyDeviceName() { try { return localStorage.getItem(MY_DEVICE_NAME_KEY) || null; } catch (e) { return null; } }
+  function saveMyDeviceName(name) { try { localStorage.setItem(MY_DEVICE_NAME_KEY, name); } catch (e) {} }
+  function identityNudgeSeen() { try { return localStorage.getItem(IDENTITY_NUDGE_SEEN_KEY) === "1"; } catch (e) { return false; } }
+  function markIdentityNudgeSeen() { try { localStorage.setItem(IDENTITY_NUDGE_SEEN_KEY, "1"); } catch (e) {} }
+  // First time any local seat gets a real name with no device identity saved yet,
+  // offer a one-tap, fully-dismissable "is this you?" nudge (never a blocking
+  // prompt — local play never forces this, see whoSheetForced() below which only
+  // applies to shared sessions). One-shot: fires at most once ever per device,
+  // whether accepted or dismissed.
+  function maybeSuggestIdentity(name) {
+    if (syncCode || myDeviceName || identityNudgeSeen() || !name) return;
+    markIdentityNudgeSeen();
+    ui.identitySuggestion = name;
+  }
+  function acceptIdentitySuggestion() {
+    myDeviceName = ui.identitySuggestion;
+    saveMyDeviceName(myDeviceName);
+    ui.identitySuggestion = null;
+    softRender();
+  }
   function loadArchivedMatches() { try { var r = localStorage.getItem(ARCHIVED_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
   function saveArchivedMatches() { try { localStorage.setItem(ARCHIVED_KEY, JSON.stringify(archivedMatches)); } catch (e) {} }
   var myIdentity = loadMyName();           // {code, name} or null
+  var myDeviceName = loadMyDeviceName();   // string or null
   var archivedMatches = loadArchivedMatches();
+  // A decision (name chosen, or explicitly "not playing") is distinct from never
+  // having been asked — hasIdentityDecision() lets the forced whoSheet (below) stop
+  // reprompting once a real choice is made for *this* shared session, even the
+  // "not playing" choice — separate from myDeviceName, the persistent default that
+  // spans every session (so scorekeeping once for someone else on your own device
+  // doesn't overwrite who you generally are).
+  function hasIdentityDecision() {
+    return !!myIdentity && !!syncCode && myIdentity.code === syncCode;
+  }
   function myNameForCurrentTourney() {
-    if (!myIdentity || !syncCode || myIdentity.code !== syncCode) return null;
-    return myIdentity.name;
+    if (hasIdentityDecision()) return myIdentity.name;
+    // No explicit decision for this session: in a local (unsynced) game there's
+    // nothing to force a decision about, so fall back to the persisted device
+    // identity silently. In a shared session with no decision yet, stay null --
+    // whoSheetForced()/autoIdentifyFromDeviceName() below own that gap instead.
+    return syncCode ? null : myDeviceName;
   }
   function identifyAs(name) {
     myIdentity = { code: syncCode, name: name };
     try { localStorage.setItem(MY_NAME_KEY, JSON.stringify(myIdentity)); } catch (e) {}
+    myDeviceName = name;
+    saveMyDeviceName(name);
     ui.whoSheet = false;
     syncMyHistoryFromTourney();
     softRender();
   }
   function clearIdentity() {
-    myIdentity = null;
-    try { localStorage.removeItem(MY_NAME_KEY); } catch (e) {}
+    myIdentity = { code: syncCode, name: null };
+    try { localStorage.setItem(MY_NAME_KEY, JSON.stringify(myIdentity)); } catch (e) {}
     ui.whoSheet = false; softRender();
+  }
+  // Even one named roster slot is the signal that this is a real game (not a
+  // quick unnamed one) — once true, a shared session's players shouldn't be able
+  // to slip past the "which player are you?" prompt without a decision, since
+  // stats/History attribution silently no-ops for anyone who never identifies.
+  // Doesn't fire if autoIdentifyFromDeviceName() already resolved it below.
+  function whoSheetForced() {
+    return !!syncCode && !!tourney && !hasIdentityDecision() && rosterPlayers(tourney).length > 0;
+  }
+  // Called right after joining/creating a shared session: if this device already
+  // has a saved identity and it matches exactly one roster name, silently record
+  // that as the decision for this session -- no prompt at all. Ambiguous cases
+  // (no saved name yet, or it doesn't appear in this roster) are left for
+  // whoSheetForced() to ask about instead of guessing.
+  function autoIdentifyFromDeviceName() {
+    if (!syncCode || !tourney || hasIdentityDecision() || !myDeviceName) return;
+    var meLc = myDeviceName.trim().toLowerCase();
+    var match = rosterPlayers(tourney).filter(function (nm) { return nm.toLowerCase() === meLc; })[0];
+    if (match) identifyAs(match);
+  }
+  // Manual escape route (ui.identityEditor, opened from the Display sheet): lets
+  // someone fix a wrong auto-detected/guessed name, or set one up front instead
+  // of waiting on the one-shot local nudge. If a shared session is live and
+  // undecided, setting a name here also tries to resolve it immediately via
+  // identifyAs (which keeps myDeviceName in lockstep) rather than just the
+  // device-wide default alone.
+  function setMyDeviceIdentity(name) {
+    name = (name || "").trim();
+    if (!name) return;
+    rememberNames([name]);
+    ui.identityEditor = false;
+    if (syncCode) { identifyAs(name); return; }
+    myDeviceName = name;
+    saveMyDeviceName(name);
+    softRender();
+  }
+  function clearMyDeviceIdentity() {
+    myDeviceName = null;
+    try { localStorage.removeItem(MY_DEVICE_NAME_KEY); } catch (e) {}
+    ui.identityEditor = false;
+    softRender();
+  }
+  // Dismissing the share sheet is where a host would otherwise slip past
+  // identifying themselves — reroute into the (now-forced) whoSheet instead of
+  // just closing when a decision is still owed.
+  function closeShareSheet() {
+    if (whoSheetForced()) { ui.shareSheetOpen = false; ui.whoSheet = true; render(); return; }
+    ui.shareSheetOpen = false; softRender();
   }
   // Stable id for a match within a synced tournament, so a completed match is
   // archived to a player's History at most once even as snapshots re-arrive.
@@ -1642,6 +1729,7 @@ window.SOMERSET_FB_CONFIG = {
       tourney._code = code;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       subscribeToTourney(code);
+      autoIdentifyFromDeviceName();   // silently tag the host if their saved name is on the roster
       // Just show the code — renderModal checks ui.whoSheet before ui.shareSheetOpen,
       // so setting both here would hide the code behind the identify prompt before
       // the host ever sees it. The share sheet has its own "Who am I playing as?"
@@ -1742,7 +1830,8 @@ window.SOMERSET_FB_CONFIG = {
       // Tournament tab, since there's no single game to jump into.
       ui.view = (tourney.format === "series") ? "game" : "tournament";
       ui.tSetup = null; ui.joinSheet = false; ui.joinError = null;
-      if (!myNameForCurrentTourney()) ui.whoSheet = true;   // prompt new joiners to tag themselves
+      autoIdentifyFromDeviceName();   // silently tag the guest if their saved name is on the roster
+      if (!myNameForCurrentTourney()) ui.whoSheet = true;   // otherwise prompt new joiners to tag themselves
       render();
     }).catch(function(err) {
       if (settled) return;
@@ -2101,7 +2190,7 @@ window.SOMERSET_FB_CONFIG = {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
-           ui.confirmEndT || ui.shareNamesSetup != null;
+           ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -2717,9 +2806,43 @@ window.SOMERSET_FB_CONFIG = {
             return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); softRender(); } }, [opt[1]]);
           })),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } },
+          [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Set your name" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
+      return;
+    }
+    if (ui.identityEditor) {
+      // Manual escape route for the device-wide identity: fix a wrong guess,
+      // set one up front, or clear it entirely -- never blocking, just a normal
+      // dismissable sheet (see maybeSuggestIdentity/whoSheetForced for the
+      // automatic paths this exists to back up).
+      var idInput = el("input", { class:"sheet-input disp", type:"text", value:myDeviceName || "",
+        placeholder:"Your name", maxlength:24, "aria-label":"Your name",
+        onKeydown:function(e){ if (e.key === "Enter") setMyDeviceIdentity(idInput.value); } });
+      var idKids = [
+        el("h3", { class:"disp" }, ["Playing as"]),
+        el("p", { class:"sub disp" }, ["Saved once and reused everywhere — local and shared games both attribute stats to this name automatically when it matches a named seat."]),
+        idInput
+      ];
+      if (nameBook.length) {
+        idKids.push(el("div", { class:"quick-add", style:"padding:6px 0;" }, [
+          el("span", { class:"label disp" }, ["Recent names"]),
+          el("div", { class:"chips" }, nameBook.slice(0, 40).map(function (nm) {
+            return el("button", { class:"chip disp", onClick:function(){ setMyDeviceIdentity(nm); } }, [nm]);
+          }))
+        ]));
+      }
+      idKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ setMyDeviceIdentity(idInput.value); } }, ["Save"]));
+      if (myDeviceName) {
+        idKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:clearMyDeviceIdentity }, ["Clear"]));
+      }
+      idKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.identityEditor = false; softRender(); } }, ["Cancel"]));
+      var idSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Playing as",
+        onClick:function(e){ e.stopPropagation(); } }, idKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.identityEditor = false; softRender(); } }, [idSheet]));
+      setTimeout(function(){ try { idInput.focus(); idInput.select(); } catch (e) {} }, 30);
       return;
     }
     if (ui.gameDetailRecId != null) {
@@ -2945,6 +3068,8 @@ window.SOMERSET_FB_CONFIG = {
           softRender();
         } }, ["Share this game"]));
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
+          [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Playing as…" ]));
       } else if (linked) {
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
           ui.gameOptionsOpen = false;
@@ -3010,9 +3135,12 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.whoSheet && tourney) {
       var roster = dedupeNames(rosterPlayers(tourney));
       var meNow = myNameForCurrentTourney();
+      var forcedWho = whoSheetForced();
       var wKids = [
         el("h3", { class:"disp" }, ["Which player are you?"]),
-        el("p", { class:"sub disp" }, ["Tag yourself so matches you play in this tournament are saved to your own History."])
+        el("p", { class:"sub disp" }, [ forcedWho
+          ? "Everyone in this game is named — pick who you are so your stats save correctly."
+          : "Tag yourself so matches you play in this tournament are saved to your own History." ])
       ];
       roster.forEach(function (nm) {
         wKids.push(el("button", { class:"sheet-btn" + (nm === meNow ? " primary" : "") + " disp", onClick:function(){ identifyAs(nm); } }, [nm]));
@@ -3020,10 +3148,15 @@ window.SOMERSET_FB_CONFIG = {
       if (meNow) {
         wKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:clearIdentity }, ["Not playing / clear"]));
       }
-      wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.whoSheet = false; softRender(); } }, ["Cancel"]));
+      if (forcedWho) {
+        wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:clearIdentity }, ["I'm just spectating"]));
+      } else {
+        wKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.whoSheet = false; softRender(); } }, ["Cancel"]));
+      }
       var wSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Identify yourself",
         onClick:function(e){ e.stopPropagation(); } }, wKids);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.whoSheet = false; softRender(); } }, [wSheet]));
+      var wOverlayProps = forcedWho ? { class:"overlay" } : { class:"overlay", onClick:function(){ ui.whoSheet = false; softRender(); } };
+      modalRoot.appendChild(el("div", wOverlayProps, [wSheet]));
       return;
     }
     if (ui.shareSheetOpen && syncCode) {
@@ -3049,10 +3182,10 @@ window.SOMERSET_FB_CONFIG = {
       var shMeNow = myNameForCurrentTourney();
       shKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.shareSheetOpen = false; ui.whoSheet = true; render(); } },
         [ shMeNow ? ("Playing as: " + shMeNow + " · Change") : "Who am I playing as?" ]));
-      shKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.shareSheetOpen = false; softRender(); } }, ["Done"]));
+      shKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeShareSheet }, ["Done"]));
       var shSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Share",
         onClick:function(e){ e.stopPropagation(); } }, shKids);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.shareSheetOpen = false; softRender(); } }, [shSheet]));
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:closeShareSheet }, [shSheet]));
       return;
     }
     if (ui.mergeSheet) {
@@ -3118,7 +3251,7 @@ window.SOMERSET_FB_CONFIG = {
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
     if (ui.seatMenuMode === "edit") {
-      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); syncMatchTeamNames(); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
+      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); syncMatchTeamNames(); maybeSuggestIdentity(nm); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
       var input = el("input", { class:"sheet-input disp", type:"text", value:game.players[i] || "",
         placeholder:"Player name", maxlength:24, "aria-label":"Player name",
         onKeydown:function(e){ if (e.key === "Enter") { saveName(input.value); } } });
@@ -5813,6 +5946,17 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
+    // One-shot "is this you?" nudge for local play (see maybeSuggestIdentity) --
+    // never blocking, just a dismissable suggestion so future games (local or
+    // shared) can silently attribute stats/perspective to the right person.
+    if (ui.identitySuggestion) {
+      container.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, ["Playing as " + ui.identitySuggestion + "?"]),
+        el("button", { class:"link-btn disp", style:"flex:none; font-size:13px;", onClick:acceptIdentitySuggestion }, ["Yes, that's me"]),
+        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.identitySuggestion = null; softRender(); } }, ["✕"])
+      ]));
+    }
+
     if (!syncCode) return;
     // Just a lightweight status indicator — the join code itself, and the
     // actions that go with it (share code, playing as, end/leave), live in the
@@ -5985,6 +6129,7 @@ window.SOMERSET_FB_CONFIG = {
   function closeTopLayer() {
     if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); return true; }
     if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
+    if (ui.identityEditor) { ui.identityEditor = false; softRender(); return true; }
     if (ui.mergeSheet) {
       ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
       softRender();
@@ -5993,8 +6138,8 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.info != null) { ui.info = null; softRender(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
-    if (ui.whoSheet) { ui.whoSheet = false; softRender(); return true; }
-    if (ui.shareSheetOpen) { ui.shareSheetOpen = false; softRender(); return true; }
+    if (ui.whoSheet) { if (!whoSheetForced()) { ui.whoSheet = false; softRender(); } return true; }
+    if (ui.shareSheetOpen) { closeShareSheet(); return true; }
     if (ui.gameOptionsOpen) { ui.gameOptionsOpen = false; softRender(); return true; }
     if (ui.shareNamesSetup) { ui.shareNamesSetup = null; softRender(); return true; }
     if (ui.confirmEndT) { ui.confirmEndT = false; softRender(); return true; }
@@ -6027,6 +6172,7 @@ window.SOMERSET_FB_CONFIG = {
     if (e.key !== "Escape") return;
     if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); }
     else if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); }
+    else if (ui.identityEditor) { ui.identityEditor = false; softRender(); }
     else if (ui.mergeSheet) { ui.mergeSheet = null; softRender(); }
     else if (ui.info) { ui.info = null; softRender(); }
     else if (ui.matchMenu) { ui.matchMenu = null; softRender(); }
