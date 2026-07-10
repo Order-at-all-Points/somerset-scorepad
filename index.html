@@ -2774,7 +2774,7 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Who's playing?"]),
         el("p", { class:"sub disp" }, ["Enter everyone's name before sharing — it's how each device knows which seat is you, so the table can show your view."])
       ];
-      var snsWrap = el("div", { class:"tplayers" });
+      var snsWrap = el("div", { class:"tplayers", style:"padding-bottom:14px;" });
       sns.players.forEach(function (nm, i) {
         var input = el("input", {
           class:"tinput disp", value:nm, placeholder:"Player " + (i + 1), "aria-label":"Player " + (i + 1) + " name",
