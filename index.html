@@ -3560,11 +3560,20 @@ window.SOMERSET_FB_CONFIG = {
       // offer is answered from the Tournament tab (e.g. right after a bracket
       // clinch). Bump the target and queue the next game under the *same* join
       // code, no re-join needed for guests.
+      // Remember which game's clinch triggered this escalation, and what the
+      // length was before it, so clearing that game's result later (see
+      // clearSeriesWinner) can undo the escalation along with it — otherwise
+      // the series would be left claiming a longer length than anyone actually
+      // decided once its trigger is erased.
+      var clinchIdx = tourney.games.length - 1;
+      var fromBestOf = tourney.bestOf;
       tourney.bestOf = o.bestOf;
       tourney.champion = null;
       if (liveSeriesSlot(tourney).winner != null) {
         tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
       }
+      if (!tourney.escalations) tourney.escalations = [];
+      tourney.escalations.push({ afterGameIndex: clinchIdx, from: fromBestOf, to: o.bestOf });
       setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
       if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
       ui.offerSeries = null; ui.seriesResult = null;
@@ -4912,6 +4921,13 @@ window.SOMERSET_FB_CONFIG = {
     t.games[gi].completedGame = null;
     t.games = t.games.slice(0, gi + 1);  // drop the now-orphaned pending slot, if any
     t.champion = null;
+    // If this game's clinch is what triggered the most recent best-of-N
+    // escalation (see acceptSeriesOffer), undo that decision along with it —
+    // otherwise the series would be left claiming a longer length than anyone
+    // actually agreed to once its trigger is erased.
+    if (t.escalations && t.escalations.length && t.escalations[t.escalations.length - 1].afterGameIndex === gi) {
+      t.bestOf = t.escalations.pop().from;
+    }
     // Re-attach a live game to the now-undecided slot — same reasoning as
     // setSeriesWinner: a connected guest's Game tab needs a real game to show.
     setLiveSeriesGame(t, freshGameForTourneyTeams(t));
