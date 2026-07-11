@@ -3438,7 +3438,8 @@ window.SOMERSET_FB_CONFIG = {
       var infoSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Hand detail",
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Set"]),
-        el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" }, [ui.info]),
+        el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
+          Array.isArray(ui.info) ? ui.info.reduce(function (acc, line, i) { if (i > 0) acc.push(el("br", {}, [])); acc.push(line); return acc; }, []) : [ui.info]),
         el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.info = null; softRender(); } }, ["Got it"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.info = null; softRender(); } }, [infoSheet]));
@@ -3484,12 +3485,12 @@ window.SOMERSET_FB_CONFIG = {
               ["Current winner: " + curName + "."])
           ].concat(actionBtns);
         } else {
-          var doneMsg = mm.bracket
-            ? ("Match complete: " + curName + " advanced. Undo subsequent results first to clear this one.")
-            : ("Can't change: " + curName + " has already played in the next round. Undo that result first.");
+          var doneMsgLines = mm.bracket
+            ? ["Match complete: " + curName + " advanced.", "Undo subsequent results first to clear this one."]
+            : ["Can't change: " + curName + " has already played in the next round.", "Undo that result first."];
           mkids = [
             el("h3", { class:"disp" }, [TA.name + " vs " + TB.name]),
-            el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" }, [doneMsg]),
+            el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" }, [doneMsgLines[0], el("br", {}, []), doneMsgLines[1]]),
             el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.matchMenu = null; softRender(); } }, ["Got it"])
           ];
         }
@@ -3499,14 +3500,14 @@ window.SOMERSET_FB_CONFIG = {
         var cHasGame = cMatch && cMatch.game && cMatch.game.deals && cMatch.game.deals.length;
         var cWin = cHasGame ? gameWinner(cMatch.game) : null;
         var cComplete = cWin === 0 || cWin === 1;   // a finished game is saved, not discarded
+        var cMsgChildren = !cHasGame
+          ? [ "Record " + tourney.teams[wT].name + " as the winner of this match?" ]
+          : cComplete
+          ? [ "This finished game will be saved to History and " + tourney.teams[wT].name + " set as the winner." ]
+          : [ "This match has an unfinished game.", el("br", {}, []), "Discard it and set " + tourney.teams[wT].name + " as the winner?" ];
         mkids = [
           el("h3", { class:"disp" }, [ !cHasGame ? "Set winner?" : cComplete ? "Save game & set winner?" : "Discard game?" ]),
-          el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" },
-            [ !cHasGame
-                ? ("Record " + tourney.teams[wT].name + " as the winner of this match?")
-                : cComplete
-                ? ("This finished game will be saved to History and " + tourney.teams[wT].name + " set as the winner.")
-                : ("This match has an unfinished game. Discard it and set " + tourney.teams[wT].name + " as the winner?") ]),
+          el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink);" }, cMsgChildren),
           el("button", { class:"sheet-btn primary disp", onClick:function(){
               recordManualMatchWin(mm, getActiveMatchObj(mm), wT);
               ui.matchMenu = null; saveTourney(); softRender();
@@ -3537,7 +3538,7 @@ window.SOMERSET_FB_CONFIG = {
       var bcSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Bracket not updated", onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, ["Update the bracket?"]),
         el("p", { class:"disp", style:"margin:10px 0 16px; font-size:15px; line-height:1.4; color:var(--ink); text-align:center;" },
-          ["This match has a winner. The game is already saved to History, so return to the bracket to advance it, or leave the match marked in-progress."]),
+          ["This match has a winner.", el("br", {}, []), "The game is already saved to History, so return to the bracket to advance it, or leave the match marked in-progress."]),
         el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.backConfirm = false; returnToBracket(); } }, ["Return to Bracket"]),
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
           ui.backConfirm = false; releaseMyHandLock();
@@ -3619,7 +3620,7 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (blocked) {
         ogKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink-soft); margin:2px 0 4px;" },
-          [ "You're already in a shared " + (tourney.format === "series" ? "game" : "tournament") + ". Leave it from the Tournament tab to share or join a different one." ]));
+          [ "You're already in a shared " + (tourney.format === "series" ? "game" : "tournament") + ".", el("br", {}, []), "Leave it from the Tournament tab to share or join a different one." ]));
       } else if (onGameTab && !linked) {
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
           ui.gameOptionsOpen = false;
@@ -3650,12 +3651,15 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.confirmEndT && tourney) {
       var isSeries = tourney.format === "series";
       var isHost = !syncCode || syncRole === "host";
-      var endLabel = isHost ? ("End this " + (isSeries ? "game" : "tournament") + " and clear it?")
-                             : ("Leave this " + (isSeries ? "game" : "tournament") + "? It'll keep going for everyone else. You can rejoin with the code or start your own.");
+      var endLabelChildren = isHost
+        ? [ "End this " + (isSeries ? "game" : "tournament") + " and clear it?" ]
+        : [ "Leave this " + (isSeries ? "game" : "tournament") + "?", el("br", {}, []),
+            "It'll keep going for everyone else.", el("br", {}, []),
+            "You can rejoin with the code or start your own." ];
       var ceSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"End or leave",
         onClick:function(e){ e.stopPropagation(); } }, [
         el("h3", { class:"disp" }, [ isHost ? "End it?" : "Leave it?" ]),
-        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" }, [endLabel]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" }, endLabelChildren),
         el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ tourney = null; saveTourney(); ui.confirmEndT = false; softRender(); } },
           [ isHost ? "Yes, end it" : "Yes, leave" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmEndT = false; softRender(); } }, ["Keep it"])
@@ -3730,7 +3734,7 @@ window.SOMERSET_FB_CONFIG = {
       } }, [shCodeStr]);
       var shKids = [
         el("h3", { class:"disp" }, ["Share"]),
-        el("p", { class:"sub disp" }, ["Anyone with this code can join and score live from their own device. Tap the code to copy it."]),
+        el("p", { class:"sub disp" }, ["Anyone with this code can join and score live from their own device.", el("br", {}, []), "Tap the code to copy it."]),
         shCodeEl
       ];
       if (navigator.share) {
@@ -3915,7 +3919,7 @@ window.SOMERSET_FB_CONFIG = {
       var pd = ui.pendingDealer;
       children.push(el("div", { class:"dealer-confirm fade" }, [
         el("p", { class:"disp", style:"margin:0 0 10px; font-size:15px; color:var(--ink);" },
-          ["Change the dealer to ", el("b", {}, [seatName(pd)]), " mid-game? The clockwise rotation will continue from there."]),
+          ["Change the dealer to ", el("b", {}, [seatName(pd)]), " mid-game?", el("br", {}, []), "The clockwise rotation will continue from there."]),
         el("div", { style:"display:flex; gap:8px;" }, [
           el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.pendingDealer = null; softRender(); } }, ["Keep current"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
@@ -4529,7 +4533,7 @@ window.SOMERSET_FB_CONFIG = {
       });
       gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
       saveHistory();
-      ui.info = added ? ("Restored " + added + " game" + (added === 1 ? "" : "s") + ".") : "No new games to restore. They're already in your History.";
+      ui.info = added ? ("Restored " + added + " game" + (added === 1 ? "" : "s") + ".") : ["No new games to restore.", "They're already in your History."];
       render();
     };
     reader.readAsText(file);
@@ -4854,7 +4858,7 @@ window.SOMERSET_FB_CONFIG = {
     ]);
 
     if (!players.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet. Play a few to start building stats."]));
+      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet.", el("br", {}, []), "Play a few to start building stats."]));
     } else {
       players.forEach(function (p, idx) { card.appendChild(renderRankRow(p, idx, sortDef, maxMetric)); });
     }
@@ -5768,7 +5772,7 @@ window.SOMERSET_FB_CONFIG = {
       viewRootEl.appendChild(el("div", { class:"pad fade" }, [
         el("div", { class:"view-head disp" }, ["Tournament"]),
         el("p", { class:"disp", style:"padding:16px; color:var(--red); font-size:13px;" },
-          ["Display error: " + e.message + ". This usually means stored tournament data is in an unexpected format."]),
+          ["Display error: " + e.message + ".", el("br", {}, []), "This usually means stored tournament data is in an unexpected format."]),
         el("div", { style:"padding:0 12px 16px;" }, [
           el("button", { class:"btn btn-danger disp", onClick:function(){
             tourney = null; saveTourney(); render();
