@@ -1015,6 +1015,14 @@ window.SOMERSET_FB_CONFIG = {
           // and unwritable) for the host and every guest. Re-stamp when missing.
           var payload = JSON.parse(JSON.stringify(tourney));
           if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+          // Claim this write's timestamp as the new floor *before* it round-trips,
+          // so subscribeToTourney can recognize and discard a stale echo that
+          // arrives while this write is still in flight (see lastAcceptedUpdatedAt).
+          var stamp = Date.now();
+          if (stamp <= lastAcceptedUpdatedAt) stamp = lastAcceptedUpdatedAt + 1;
+          payload._updatedAt = stamp;
+          tourney._updatedAt = stamp;
+          lastAcceptedUpdatedAt = stamp;
           fb.ref("tournaments/" + syncCode).set(payload).catch(function() {
             syncStatus = "error"; render();
           });
@@ -1315,6 +1323,15 @@ window.SOMERSET_FB_CONFIG = {
   var syncCode = null;        // active 6-char join code
   var syncRole = null;        // "host" | "guest"
   var syncStatus = "offline"; // "offline" | "connecting" | "live" | "error"
+  // Floor for subscribeToTourney's listener: the _updatedAt of the newest
+  // write this device has itself issued (claimed the instant the write is
+  // fired, not when it echoes back) or accepted from a snapshot. Firebase can
+  // deliver a stale/incomplete echo of an in-flight write — briefly reflecting
+  // state from *before* another still-pending local write on an overlapping
+  // path — and blindly adopting every incoming snapshot (as this app used to)
+  // would silently revert whatever that pending write was about to save. See
+  // saveTourney() and subscribeToTourney() below.
+  var lastAcceptedUpdatedAt = 0;
 
   // Reconnect to an in-progress shared tournament on page load
   (function() {
@@ -1366,22 +1383,75 @@ window.SOMERSET_FB_CONFIG = {
   // moment a hand-entry sheet opens (new deal or edit), released on submit or an
   // explicit close-without-submitting. No device can take over a hand another
   // device holds except via the stale timeout below.
-  function claimLock(key) {
-    if (!syncCode || !tourney) return;
-    if (!tourney.locks) tourney.locks = {};
-    tourney.locks[key] = { deviceId: deviceId, claimedAt: Date.now() };
-    saveTourney();
+  var CLAIM_TIMEOUT_MS = 3000; // give up waiting on the transaction round trip and fall back to a local-only claim
+  function claimLock(key, cb) {
+    if (!syncCode || !tourney || !fb) { if (cb) cb(true); return; }
+    var settled = false;
+    // Local-only fallback claim -- exactly what this function always did
+    // before the atomic-claim fix. Used when there's plainly nobody to race
+    // against: genuinely offline (a transaction can't round-trip to the
+    // server at all, so waiting on it would hang the entry form open
+    // forever), or the round trip is just taking unusually long.
+    var claimLocally = function() {
+      if (settled) return;
+      settled = true;
+      if (!tourney.locks) tourney.locks = {};
+      tourney.locks[key] = { deviceId: deviceId, claimedAt: Date.now() };
+      saveTourney();
+      if (cb) cb(true);
+    };
+    if (typeof navigator.onLine === "boolean" && !navigator.onLine) { claimLocally(); return; }
+    var timeoutId = setTimeout(claimLocally, CLAIM_TIMEOUT_MS);
+    // Atomic compare-and-set against the SAME tournaments/<code> ref that
+    // saveTourney()/subscribeToTourney() already use, via a transaction
+    // instead of an unconditional .set() -- this is what actually fixes the
+    // TOCTOU race (two devices both reading "unlocked" and each believing
+    // they'd won). Deliberately does NOT extend the same treatment to
+    // release (see releaseLock) -- see the note there for why.
+    fb.ref("tournaments/" + syncCode).transaction(function (current) {
+      if (!current) return; // nothing there yet -- abort, let saveTourney's normal path establish it
+      var locks = current.locks || {};
+      var lk = locks[key];
+      if (lk && lk.deviceId !== deviceId && (Date.now() - lk.claimedAt) <= LOCK_TIMEOUT_MS) {
+        return; // someone else genuinely holds it -- abort, don't touch anything
+      }
+      locks = Object.assign({}, locks);
+      locks[key] = { deviceId: deviceId, claimedAt: Date.now() };
+      current.locks = locks;
+      return current;
+    }, function (err, committed, snapshot) {
+      if (settled) return;
+      clearTimeout(timeoutId);
+      settled = true;
+      var val = snapshot && snapshot.val();
+      var lk = val && val.locks && val.locks[key];
+      var won = !err && committed && lk && lk.deviceId === deviceId;
+      if (won) {
+        if (!tourney.locks) tourney.locks = {};
+        tourney.locks[key] = lk;   // optimistic local mirror; subscribeToTourney's .on("value") reconciles the rest shortly after
+        if (val._updatedAt > lastAcceptedUpdatedAt) lastAcceptedUpdatedAt = val._updatedAt;
+      }
+      if (cb) cb(!!won);
+    });
   }
+  // Deliberately NOT a transaction (or any write outside saveTourney's usual
+  // whole-object .set()): recordDeal() calls this immediately before persist()
+  // with zero gap, and a separate Firebase write issued in that gap was found
+  // (empirically, via a two-device stress repro) to trigger a stale echo of
+  // subscribeToTourney's listener that silently reverted the deal just
+  // recorded, even with a monotonic-timestamp staleness guard on that
+  // listener -- any wholesale reassignment of `tourney`, even one that isn't
+  // technically "stale" by that guard, still clobbers whatever local mutation
+  // hasn't been flushed yet. Nothing else is racing to release the *same*
+  // lock a device is voluntarily giving up, so release doesn't need the same
+  // atomicity claim needs — folding it into the very next saveTourney() call
+  // (as originally) keeps it safe by construction.
   function releaseLock(key) {
     if (!tourney || !tourney.locks) return;
     var lk = tourney.locks[key];
     if (lk && lk.deviceId === deviceId) {
       delete tourney.locks[key];
-      // Mirror claimLock: without this, the release only ever happens in
-      // this device's in-memory `tourney` -- other devices (and this one,
-      // after a reload) keep seeing the stale lock in localStorage/Firebase
-      // until it expires on its own after LOCK_TIMEOUT_MS.
-      saveTourney();
+      saveTourney();   // whole-object write, same mechanism as everything else -- see the note above for why this one deliberately isn't split out
     }
   }
   function isMineOrUnlocked(key) {
@@ -1691,6 +1761,19 @@ window.SOMERSET_FB_CONFIG = {
       var data = snap.val();
       if (!data) { syncStatus = "error"; syncRender(); return; }
       syncStatus = "live";
+      // Reject a snapshot older than a write this device already knows
+      // supersedes it (see lastAcceptedUpdatedAt) -- a genuinely delayed or
+      // out-of-order snapshot (e.g. from a flaky connection re-delivering an
+      // older value) would otherwise blindly overwrite newer local/committed
+      // state. Legacy records with no _updatedAt at all still always pass.
+      // NOTE: this guard alone can't protect an in-memory mutation that
+      // hasn't reached saveTourney() yet (there's no timestamp for something
+      // not yet written) -- see claimLock/releaseLock's own comments for why
+      // lock claim/release are deliberately kept off of any write path that
+      // could echo back in that gap.
+      var incomingUpdatedAt = data._updatedAt || 0;
+      if (incomingUpdatedAt < lastAcceptedUpdatedAt) return;
+      lastAcceptedUpdatedAt = incomingUpdatedAt;
       var normalized = normalizeFirebaseTourney(data);
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
@@ -2562,8 +2645,13 @@ window.SOMERSET_FB_CONFIG = {
       } else {
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick:function(){
-            if (addKey) { claimLock(addKey); ui.myLockKey = addKey; }
-            ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView();
+            var openEntry = function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); };
+            if (!addKey) { openEntry(); return; }
+            claimLock(addKey, function(won){
+              if (!won) { ui.info = "Someone else just started entering this hand."; softRender(); return; }
+              ui.myLockKey = addKey;
+              openEntry();
+            });
           } }, ["Record Deal " + dealNo])
         ]));
       }
@@ -3567,23 +3655,28 @@ window.SOMERSET_FB_CONFIG = {
   // instead of pushing a new one.
   function startEditDeal(d) {
     var am = currentGameAm();
-    if (am) {
-      var key = handLockKey(am, d.id, null);
-      if (!isMineOrUnlocked(key)) { ui.info = "Someone else is editing this hand right now."; softRender(); return; }
-      claimLock(key); ui.myLockKey = key;
-    }
-    ui.editingDeal = d.id;
-    ui.bidTeam = d.bidTeam;
-    ui.bidderSeat = allPlayersNamed() ? ((d.bidderSeat != null) ? d.bidderSeat : d.bidTeam) : null;
-    ui.bidderWarn = false;
-    ui.bid = d.bid;
-    // ui.trump = d.trump || "";   // trump recording disabled for now
-    ui.bidderPts = d.pts[d.bidTeam];
-    ui.showEntry = true;
-    ui.entryStep = 1;
-    ui.openDeal = null;
-    softRender();
-    scrollEntryIntoView();
+    var openEditEntry = function(){
+      ui.editingDeal = d.id;
+      ui.bidTeam = d.bidTeam;
+      ui.bidderSeat = allPlayersNamed() ? ((d.bidderSeat != null) ? d.bidderSeat : d.bidTeam) : null;
+      ui.bidderWarn = false;
+      ui.bid = d.bid;
+      // ui.trump = d.trump || "";   // trump recording disabled for now
+      ui.bidderPts = d.pts[d.bidTeam];
+      ui.showEntry = true;
+      ui.entryStep = 1;
+      ui.openDeal = null;
+      softRender();
+      scrollEntryIntoView();
+    };
+    if (!am) { openEditEntry(); return; }
+    var key = handLockKey(am, d.id, null);
+    if (!isMineOrUnlocked(key)) { ui.info = "Someone else is editing this hand right now."; softRender(); return; }
+    claimLock(key, function(won){
+      if (!won) { ui.info = "Someone else is editing this hand right now."; softRender(); return; }
+      ui.myLockKey = key;
+      openEditEntry();
+    });
   }
 
   function recordDeal() {
