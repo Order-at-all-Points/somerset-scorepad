@@ -87,16 +87,7 @@ function syncCase(bestOf) {
       try {
         const names = [`SA${bestOf}`, `SB${bestOf}`, `SC${bestOf}`, `SD${bestOf}`];
         await startSeriesLocal(host.page, bestOf, names);
-        await sync.shareFromBracket(host.page);
-        const code = await sync.readJoinCode(host.page);
-        await sync.identifyFromShareSheet(host.page, names[0]);
-
-        await nav.goto(guest.page, "Tournament");
-        await tSetup.openJoinSheet(guest.page);
-        await sync.joinWithCode(guest.page, code);
-        if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
-          await sync.chooseIdentity(guest.page, names[1]);
-        }
+        if (!(await sync.connectGuest(host, guest, { hostName: names[0], guestName: names[1], logger }))) return;
 
         const played = await simulator.playTournamentToChampion(host.page, {
           logger,

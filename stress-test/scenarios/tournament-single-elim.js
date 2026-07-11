@@ -77,29 +77,9 @@ function syncCase(playerCount) {
         await nav.goto(host.page, "Tournament");
         await tSetup.setupAndStart(host.page, { names, format: "single" });
 
-        await sync.shareFromBracket(host.page);
-        const code = await sync.readJoinCode(host.page);
-        await sync.identifyFromShareSheet(host.page, names[0]);
-
-        await nav.goto(guest.page, "Tournament");
-        await tSetup.openJoinSheet(guest.page);
-        await sync.joinWithCode(guest.page, code);
-        const joinErr = await sync.joinErrorText(guest.page);
-        if (joinErr) {
-          await logger.record({
-            severity: "critical",
-            category: "sync-divergence",
-            summary: `Guest failed to join with a fresh code: ${joinErr}`,
-            page: guest.page,
-            contextLabel: "guest",
-          });
-          return;
-        }
-        // Joining prompts "Which player are you?" -- this scenario only cares
-        // about bracket/champion sync, so identify as the second roster name.
-        if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
-          await sync.chooseIdentity(guest.page, names[1]);
-        }
+        // This scenario only cares about bracket/champion sync, so host and
+        // guest just identify as the first two roster names.
+        if (!(await sync.connectGuest(host, guest, { hostName: names[0], guestName: names[1], logger }))) return;
 
         const played = await simulator.playTournamentToChampion(host.page, { logger, contextLabel: "host" });
         logger.step(`Matches played by host: ${played}`);
@@ -112,8 +92,8 @@ function syncCase(playerCount) {
         await nav.goto(guest.page, "Tournament");
         const guestChamp = await bracket.championText(guest.page);
         if (!hostChamp || hostChamp !== guestChamp) {
-          const hostT = await storage.readKey(host.page, "somerset:dev-tournament");
-          const guestT = await storage.readKey(guest.page, "somerset:dev-tournament");
+          const hostT = await storage.readKey(host.page, storage.KEYS.tournament);
+          const guestT = await storage.readKey(guest.page, storage.KEYS.tournament);
           await logger.record({
             severity: "critical",
             category: "sync-divergence",

@@ -1,5 +1,7 @@
 "use strict";
 const config = require("../../config");
+const nav = require("./nav");
+const tSetup = require("./tournamentSetup");
 
 /** Bracket/series view's "Share this tournament →" / "Share this series →" link. Opens the Share sheet. */
 async function shareFromBracket(page) {
@@ -115,6 +117,43 @@ async function waitForSyncLabel(page, expected, timeout = config.syncSettleMs) {
   return syncStatus(page);
 }
 
+/**
+ * The standard two-device handshake for an already-started tournament/series:
+ * host shares from the bracket view and identifies as hostName; guest opens
+ * the join sheet, joins with the minted code, and identifies as guestName if
+ * prompted. Returns the join code, or null after recording a critical finding
+ * when the join failed (callers should bail out on null).
+ */
+async function connectGuest(host, guest, { hostName, guestName, logger }) {
+  await shareFromBracket(host.page);
+  const code = await readJoinCode(host.page);
+  await identifyFromShareSheet(host.page, hostName);
+
+  await nav.goto(guest.page, "Tournament");
+  await tSetup.openJoinSheet(guest.page);
+  await joinWithCode(guest.page, code);
+  const joinErr = await joinErrorText(guest.page);
+  if (joinErr) {
+    await logger.record({
+      severity: "critical",
+      category: "sync-divergence",
+      summary: `Guest failed to join with a fresh code: ${joinErr}`,
+      page: guest.page,
+      contextLabel: "guest",
+    });
+    return null;
+  }
+  // The forced "Identify yourself" prompt only renders once the joined
+  // tournament's first snapshot adopts, which races the join round-trip —
+  // sampling count() instantly can miss it, and the sheet then blocks every
+  // later click. Give it a moment to appear before deciding.
+  await whoSheet(guest.page).waitFor({ state: "visible", timeout: 1500 }).catch(() => {});
+  if (await whoSheet(guest.page).count()) {
+    await chooseIdentity(guest.page, guestName);
+  }
+  return code;
+}
+
 /** The per-hand lock-contention banner shown to a second device viewing a hand someone else has open. */
 async function viewOnlyBarText(page) {
   const bar = page.locator(".view-only-bar:visible");
@@ -136,6 +175,7 @@ module.exports = {
   closeShareSheet,
   joinWithCode,
   joinErrorText,
+  connectGuest,
   syncStatus,
   waitForSyncLabel,
   viewOnlyBarText,

@@ -59,8 +59,8 @@ const shareGameHostGuest = {
 
       logger.step("Compare tourney state across devices after settle delay");
       await host.page.waitForTimeout(config.syncSettleMs);
-      const hostT = await storage.readKey(host.page, "somerset:dev-tournament");
-      const guestT = await storage.readKey(guest.page, "somerset:dev-tournament");
+      const hostT = await storage.readKey(host.page, storage.KEYS.tournament);
+      const guestT = await storage.readKey(guest.page, storage.KEYS.tournament);
       const hostCode = hostT.value && hostT.value._code;
       const guestCode = guestT.value && guestT.value._code;
       if (!hostCode || hostCode !== guestCode) {

@@ -1016,20 +1016,18 @@ window.SOMERSET_FB_CONFIG = {
   function saveTourney() {
     try {
       if (tourney) {
-        localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+        var json = JSON.stringify(tourney);
+        localStorage.setItem(TOURNEY_KEY, json);
         if (fb && syncCode) {
-          var payload = JSON.parse(JSON.stringify(tourney));
+          var payload = JSON.parse(json);
           // Write only the units that changed since the last synced state, as
-          // one atomic multi-location update() — two devices editing different
+          // one atomic id-checked transaction — two devices editing different
           // matches at the same moment no longer clobber each other the way
           // whole-object .set() writes did (last-write-wins on the entire
           // record). A structural change (rematch/redraw swaps in a whole new
           // tourney) or a missing baseline still takes the .set() path below.
           var diff = tourneyUnitDiff(lastSyncedTourney, payload);
-          if (diff && Object.keys(diff).length === 0) {
-            lastSyncedTourney = payload;   // nothing the server doesn't already have
-            return;
-          }
+          if (diff && Object.keys(diff).length === 0) return;   // nothing the server doesn't already have
           // Claim this write's timestamp as the new floor *before* it round-trips,
           // so subscribeToTourney can recognize and discard a stale echo that
           // arrives while this write is still in flight (see lastAcceptedUpdatedAt).
@@ -1852,14 +1850,18 @@ window.SOMERSET_FB_CONFIG = {
     // change (game payloads etc.) rewrites the match as one unit, keeping an
     // actively-played match's fields atomic.
     function matchUnits(path, bM, nM) {
-      if (fbEq(bM, nM)) return;
       if (!bM || !nM || typeof bM !== "object" || typeof nM !== "object") { addUnit(path, bM, nM); return; }
+      // The per-field comparison doubles as the whole-match equality check
+      // (fbCanon equality is exactly "every field canon-equal"), so there's
+      // no leading whole-object fbEq — that canonicalized the entire match,
+      // deals array included, a second time on every diff.
       var fields = {};
       Object.keys(bM).forEach(function (f) { fields[f] = 1; });
       Object.keys(nM).forEach(function (f) { fields[f] = 1; });
       var changed = Object.keys(fields).filter(function (f) { return !fbEq(bM[f], nM[f]); });
-      var seedOnly = changed.length > 0 && changed.every(function (f) { return f === "a" || f === "b" || f === "winner"; });
-      if (!seedOnly) { addUnit(path, bM, nM); return; }
+      if (changed.length === 0) return;
+      var seedOnly = changed.every(function (f) { return f === "a" || f === "b" || f === "winner"; });
+      if (!seedOnly) { diff[path] = nM; return; }   // known unequal — addUnit's fbEq would re-canonicalize both
       changed.forEach(function (f) { addUnit(path + "/" + f, bM[f], nM[f]); });
     }
     // Per-match units for a rounds grid; a shape change (rebuilt bracket)
@@ -2242,9 +2244,10 @@ window.SOMERSET_FB_CONFIG = {
         }
       }
       lastSyncedTourney = serverBase;
-      var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
+      var normStr = JSON.stringify(normalized);
+      var changed = normStr !== JSON.stringify(tourney);
       tourney = normalized;
-      localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+      localStorage.setItem(TOURNEY_KEY, normStr);
       syncMyHistoryFromTourney();   // pick up any newly-completed matches I played in
       if (changed) syncRender();
   }

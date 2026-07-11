@@ -72,7 +72,7 @@ async function setUpSharedNamedGame(host, guest, logger) {
   await tSetup.openJoinSheet(guest.page);
   await sync.joinWithCode(guest.page, code);
   await guest.page.waitForTimeout(300);
-  if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
+  if (await sync.whoSheet(guest.page).count()) {
     await sync.chooseIdentity(guest.page, "L3");
   }
   await nav.goto(guest.page, "Game");
@@ -224,27 +224,7 @@ const concurrentDifferentMatches = {
       const names = Array.from({ length: 8 }, (_, i) => `X${i + 1}`);
       await nav.goto(host.page, "Tournament");
       await tSetup.setupAndStart(host.page, { names, format: "single" });
-      await sync.shareFromBracket(host.page);
-      const code = await sync.readJoinCode(host.page);
-      await sync.identifyFromShareSheet(host.page, names[0]);
-
-      await nav.goto(guest.page, "Tournament");
-      await tSetup.openJoinSheet(guest.page);
-      await sync.joinWithCode(guest.page, code);
-      const joinErr = await sync.joinErrorText(guest.page);
-      if (joinErr) {
-        await logger.record({
-          severity: "critical",
-          category: "sync-divergence",
-          summary: `Guest failed to join with a fresh code: ${joinErr}`,
-          page: guest.page,
-          contextLabel: "guest",
-        });
-        return;
-      }
-      if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
-        await sync.chooseIdentity(guest.page, names[1]);
-      }
+      if (!(await sync.connectGuest(host, guest, { hostName: names[0], guestName: names[1], logger }))) return;
       await guest.page.waitForTimeout(config.syncSettleMs);
 
       logger.step("Host opens match 1's options, guest opens match 2's options");
@@ -270,10 +250,10 @@ const concurrentDifferentMatches = {
       }
 
       for (const [label, device] of [["host", host], ["guest", guest]]) {
-        const t = (await storage.readKey(device.page, "somerset:dev-tournament")).value;
+        const t = (await storage.readKey(device.page, storage.KEYS.tournament)).value;
         const r0 = (t && t.rounds && t.rounds[0]) || [];
         const winners = r0.map((m) => (m ? m.winner : null));
-        const decided = winners.filter((w) => w === 0 || w === 1 || typeof w === "number").length;
+        const decided = winners.filter((w) => typeof w === "number").length;
         if (decided < 2) {
           await logger.record({
             severity: "critical",
