@@ -1038,14 +1038,60 @@ window.SOMERSET_FB_CONFIG = {
           payload._updatedAt = stamp;
           tourney._updatedAt = stamp;
           lastAcceptedUpdatedAt = stamp;
+          // Advance the baseline optimistically, but keep what's needed to
+          // walk it back: if the write is rejected, a baseline that claims the
+          // server holds these units would mean they're never re-sent (later
+          // diffs see them clean) AND the next incoming snapshot's merge sees
+          // them non-dirty and silently reverts them locally. The old
+          // whole-object .set() self-healed on the next save; re-dirtying the
+          // failed units restores that property.
+          var prevBaseline = lastSyncedTourney;
+          var genAtWrite = syncGen;
           lastSyncedTourney = payload;
           if (diff) {
             diff._updatedAt = stamp;
+            var expectedId = payload.id;
             pendingSyncWrites++;
-            fb.ref("tournaments/" + syncCode).update(diff).then(syncWriteDone, function() {
-              syncWriteDone();
-              syncStatus = "error"; render();
-            });
+            // A transaction rather than a plain update(): update() applies
+            // unconditionally, so a granular write racing a rematch/redraw's
+            // whole-record .set() — or queued while offline and replayed on
+            // reconnect — would stamp old-bracket paths (a phantom winner,
+            // stale locks) onto the freshly drawn bracket for every device.
+            // The transaction re-runs against the actual server value, so the
+            // id check makes it apply only to the tournament the diff was
+            // computed against, and abort otherwise. Concurrent writers still
+            // merge: a retry re-applies only OUR paths onto the other
+            // device's committed state, same as update()'s multi-location
+            // merge. applyLocally:false suppresses the optimistic
+            // intermediate value events a transaction otherwise raises (the
+            // exact stale-echo class the listener's floor guards against).
+            fb.ref("tournaments/" + syncCode).transaction(function (current) {
+              if (!current || current.id !== expectedId) return;   // abort — not the record this diff belongs to
+              Object.keys(diff).forEach(function (path) {
+                setAtPath(current, path, diff[path]);   // null = delete once written
+              });
+              return current;
+            }, function (err, committed) {
+              syncWriteDone(genAtWrite);
+              if (err || !committed) {
+                // Re-dirty exactly the units this write carried: restore
+                // their pre-write values in the (possibly since-advanced)
+                // baseline so the next saveTourney() re-sends them and the
+                // listener's merge keeps preserving the local copies
+                // meanwhile. Skip when the baseline has moved to a DIFFERENT
+                // tournament (the abort case after a restart): these units
+                // belong to a dead bracket, and re-dirtying them onto the new
+                // baseline would flush phantom paths into the new record —
+                // the exact corruption the id check above exists to stop.
+                if (syncGen === genAtWrite && lastSyncedTourney && lastSyncedTourney.id === expectedId) {
+                  Object.keys(diff).forEach(function(path) {
+                    if (path === "_updatedAt") return;
+                    setAtPath(lastSyncedTourney, path, getAtPath(prevBaseline, path));
+                  });
+                }
+                if (err) { syncStatus = "error"; render(); }
+              }
+            }, false);
           } else {
             // A full .set() replaces the whole record, so it must always carry
             // _createdAt — the security rules require a recent _createdAt for BOTH
@@ -1054,12 +1100,18 @@ window.SOMERSET_FB_CONFIG = {
             // creation before the first read-back populates it; either case would
             // otherwise write a record with no _createdAt and brick it (unreadable
             // and unwritable) for the host and every guest. Re-stamp when missing.
-            // (The update() path above never touches _createdAt unless a caller
-            // deliberately re-stamped it, so only .set() needs this guard.)
+            // (The transaction path above never touches _createdAt unless a
+            // caller deliberately re-stamped it, so only .set() needs this guard.)
             if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
             pendingSyncWrites++;
-            fb.ref("tournaments/" + syncCode).set(payload).then(syncWriteDone, function() {
-              syncWriteDone();
+            fb.ref("tournaments/" + syncCode).set(payload).then(function() { syncWriteDone(genAtWrite); }, function() {
+              syncWriteDone(genAtWrite);
+              // The .set() never landed, so the server still holds whatever it
+              // held before (or nothing). Restoring the pre-write baseline
+              // makes the next saveTourney() diff against reality — a
+              // structural change (id mismatch) or null baseline routes it
+              // back to this .set() path to retry the full write.
+              if (syncGen === genAtWrite) lastSyncedTourney = prevBaseline;
               syncStatus = "error"; render();
             });
           }
@@ -1073,7 +1125,10 @@ window.SOMERSET_FB_CONFIG = {
           syncCode = null; syncRole = null; syncStatus = "offline";
         }
         lastSyncedTourney = null;
-        pendingSyncWrites = 0;   // acks from the torn-down session must not linger into the next one
+        syncGen++;               // in-flight writes now belong to a dead session; their late acks are ignored
+        pendingSyncWrites = 0;   // ...so zeroing the counter here can't be double-decremented by them
+        deferredSnapshot = null;
+        clearAcceptedStamps();   // millisecond stamps could collide across sessions
       }
     } catch (e) {}
   }
@@ -1388,7 +1443,76 @@ window.SOMERSET_FB_CONFIG = {
   // the only carrier of another device's concurrent granular write, and
   // rejecting it would leave this device permanently missing that result).
   var pendingSyncWrites = 0;
-  function syncWriteDone() { if (pendingSyncWrites > 0) pendingSyncWrites--; }
+  // Generation counter for sync sessions, bumped at teardown. Every write
+  // captures the generation it was issued under and hands it back to
+  // syncWriteDone: a write that settles AFTER its session was torn down must
+  // not decrement the NEXT session's counter (teardown zeroes the counter,
+  // so a stale late ack would steal a decrement from a genuinely pending
+  // write and disarm the listener's strict floor during exactly the
+  // stale-echo window it exists to guard).
+  var syncGen = 0;
+  // Newest snapshot the floor rejected during an in-flight window. Value
+  // listeners never re-fire for unchanged data, so a rejected snapshot that
+  // was the sole carrier of another device's concurrent lower-stamped write
+  // (e.g. a claimLock transaction's post-commit state, which never bumps
+  // _updatedAt) would otherwise be lost for good. Stash it and give it a
+  // second pass once every pending write has settled; any snapshot ACCEPTED
+  // in the meantime supersedes it and clears the stash.
+  var deferredSnapshot = null;
+  // Ring of recently ACCEPTED _updatedAt stamps. A below-floor snapshot
+  // arriving while this device is idle is ambiguous: it's either a foreign
+  // device's fresh write from a behind clock (must accept — it may be the
+  // sole carrier of that device's result) or the network re-delivering a
+  // state this device already processed (must reject — adopting it would
+  // silently revert every newer result, and the three-way merge can't help
+  // because none of the reverted units are locally dirty). Content can't
+  // tell the two apart, but provenance can: a re-delivery carries a stamp
+  // that was already accepted once, while a fresh write always mints a new
+  // stamp (each device floors its stamps above everything it has accepted).
+  // Known blind spot: a lock-only transaction doesn't change _updatedAt, so
+  // a foreign lock claim arriving under an already-seen stamp is dropped —
+  // lock claims resolve server-side (claimLock's transaction) and stale
+  // locks expire via LOCK_TIMEOUT_MS, so the cost is a briefly stale lock
+  // indicator, not lost data.
+  var seenUpdateStamps = {};
+  var seenStampOrder = [];
+  function noteAcceptedStamp(s) {
+    if (!s || seenUpdateStamps[s]) return;
+    seenUpdateStamps[s] = true;
+    seenStampOrder.push(s);
+    if (seenStampOrder.length > 100) delete seenUpdateStamps[seenStampOrder.shift()];
+  }
+  function clearAcceptedStamps() { seenUpdateStamps = {}; seenStampOrder = []; }
+  // Re-create a server record that vanished mid-session (expiry cleanup,
+  // manual delete) from this device's local state. The granular update()
+  // path can never re-create a record — a partial write can't satisfy the
+  // rules' format/teams/_createdAt validation — so without this the session
+  // wedges in "error" forever with every per-unit save failing. Nulling the
+  // baseline routes the next save onto the whole-object .set() path, and
+  // clearing _createdAt makes that .set() re-stamp a fresh server timestamp
+  // (the old one may be past the 48h expiry that got the record deleted in
+  // the first place). Rate-limited: a rejected re-establish just surfaces
+  // another null/cancel, and this keeps that from spinning.
+  var lastReestablishAt = 0;
+  function reestablishTourney() {
+    if (!fb || !tourney || !syncCode) return false;
+    if (Date.now() - lastReestablishAt <= 5000) return false;
+    lastReestablishAt = Date.now();
+    lastSyncedTourney = null;
+    delete tourney._createdAt;
+    syncStatus = "connecting";
+    saveTourney();
+    syncRender();
+    return true;
+  }
+  function syncWriteDone(gen) {
+    if (gen !== syncGen) return;   // late ack from a torn-down session
+    if (pendingSyncWrites > 0) pendingSyncWrites--;
+    if (pendingSyncWrites === 0 && deferredSnapshot) {
+      var d = deferredSnapshot; deferredSnapshot = null;
+      applyTourneySnapshot(d);
+    }
+  }
 
   // Reconnect to an in-progress shared tournament on page load
   (function() {
@@ -1466,6 +1590,7 @@ window.SOMERSET_FB_CONFIG = {
     // they'd won). Deliberately does NOT extend the same treatment to
     // release (see releaseLock) -- see the note there for why.
     pendingSyncWrites++;   // a running transaction can raise intermediate local snapshots — keep the listener's floor strict until it settles
+    var genAtClaim = syncGen;
     fb.ref("tournaments/" + syncCode).transaction(function (current) {
       if (!current) return; // nothing there yet -- abort, let saveTourney's normal path establish it
       var locks = current.locks || {};
@@ -1478,7 +1603,7 @@ window.SOMERSET_FB_CONFIG = {
       current.locks = locks;
       return current;
     }, function (err, committed, snapshot) {
-      syncWriteDone();
+      syncWriteDone(genAtClaim);
       if (settled) return;
       clearTimeout(timeoutId);
       settled = true;
@@ -1689,6 +1814,19 @@ window.SOMERSET_FB_CONFIG = {
     }
     cur[segs[segs.length - 1]] = value;
   }
+  // Local-tree counterpart of a Firebase null write: actually remove the key
+  // (a literal null entry is what Firebase deletes on write, but locally it
+  // lingers — e.g. tourney.locks = {key: null} — differing in JSON shape
+  // from every future snapshot and never converging). No-op when the path's
+  // parent doesn't exist.
+  function deleteAtPath(obj, path) {
+    var segs = path.split("/"), cur = obj;
+    for (var i = 0; i < segs.length - 1; i++) {
+      cur = cur[segs[i]];
+      if (cur == null || typeof cur !== "object") return;
+    }
+    delete cur[segs[segs.length - 1]];
+  }
   // The finest subtrees a single user action edits as one thing ("units"):
   // individual bracket matches, series games, schedule slots, locks, teams,
   // and every scalar top-level field. Two devices writing different units
@@ -1749,6 +1887,22 @@ window.SOMERSET_FB_CONFIG = {
       if (nArr.length < bArr.length) { addUnit(key, bArr, nArr); return; }
       for (var i = 0; i < nArr.length; i++) matchUnits(key + "/" + i, bArr[i], nArr[i]);
     }
+    // Unknown TOP-LEVEL keys already degrade safely (the final addUnit arm
+    // writes them whole), but the containers below get bespoke splits of
+    // SPECIFIC children — any sibling a future schema change adds must still
+    // diff, coarsely, rather than be silently omitted (an omitted key would
+    // never sync yet still advance the baseline: permanent divergence with
+    // no error, and the empty-diff early-return would even skip the write
+    // when it's the only change).
+    function siblingUnits(prefix, bObj, nObj, handled) {
+      var ks = {};
+      Object.keys(bObj || {}).forEach(function (x) { ks[x] = 1; });
+      Object.keys(nObj || {}).forEach(function (x) { ks[x] = 1; });
+      Object.keys(ks).forEach(function (x) {
+        if (handled[x]) return;
+        addUnit(prefix + "/" + x, bObj && bObj[x], nObj && nObj[x]);
+      });
+    }
     var keys = {};
     Object.keys(base).forEach(function (x) { keys[x] = 1; });
     Object.keys(next).forEach(function (x) { keys[x] = 1; });
@@ -1756,10 +1910,14 @@ window.SOMERSET_FB_CONFIG = {
       if (k === "_updatedAt") return;                      // stamped fresh on every write instead
       if (k === "_createdAt" && next[k] == null) return;   // never delete — it anchors the 48h expiry (see FIREBASE_SETUP.md)
       if (k === "rounds") gridUnits("rounds", base.rounds, next.rounds);
-      else if (k === "wBracket" || k === "lBracket") gridUnits(k + "/rounds", base[k] && base[k].rounds, next[k] && next[k].rounds);
+      else if (k === "wBracket" || k === "lBracket") {
+        gridUnits(k + "/rounds", base[k] && base[k].rounds, next[k] && next[k].rounds);
+        siblingUnits(k, base[k], next[k], { rounds: 1 });
+      }
       else if (k === "grandFinal") {
         matchUnits("grandFinal/m1", base.grandFinal && base.grandFinal.m1, next.grandFinal && next.grandFinal.m1);
         matchUnits("grandFinal/m2", base.grandFinal && base.grandFinal.m2, next.grandFinal && next.grandFinal.m2);
+        siblingUnits("grandFinal", base.grandFinal, next.grandFinal, { m1: 1, m2: 1 });
       }
       else if (k === "schedule" || k === "games" || k === "teams") arrayUnits(k, base[k], next[k]);
       else if (k === "locks") {
@@ -1947,26 +2105,64 @@ window.SOMERSET_FB_CONFIG = {
 
   function subscribeToTourney(code) {
     if (!fb) return;
+    deferredSnapshot = null;     // a stash from a previous subscription must not replay into this one
+    clearAcceptedStamps();       // ...and neither must its stamp history suppress this one's snapshots
     fb.ref("tournaments/" + code).on("value", function(snap) {
-      var data = snap.val();
-      if (!data) { syncStatus = "error"; syncRender(); return; }
+      applyTourneySnapshot(snap.val());
+    }, function() {
+      // Cancelled by the server — the rules gate reads on data.exists() and
+      // a recent _createdAt, so this fires when the record was deleted or
+      // expired, and the listener is DEAD from this point on. If the record
+      // is simply gone, re-establish it and re-attach: the .set() and the
+      // new listen travel the same ordered client connection, so the listen
+      // is evaluated after the write has landed. An EXPIRED record refuses
+      // the re-establishing write too, so that path fails closed into
+      // "error" (the rate limit in reestablishTourney stops any spin).
+      if (reestablishTourney()) subscribeToTourney(code);
+      else { syncStatus = "error"; syncRender(); }
+    });
+  }
+  // The whole accept/merge/adopt pipeline for one incoming snapshot — shared
+  // by the live listener above and syncWriteDone's deferred replay.
+  function applyTourneySnapshot(data) {
+      if (!data) {
+        // A null VALUE event mostly means a local rollback after this
+        // device's own rejected .set() (server-side deletion usually arrives
+        // as a listener CANCEL instead — the rules gate reads on
+        // data.exists(); see subscribeToTourney's error callback). Either
+        // way the record is gone: try to re-establish it from local state.
+        if (reestablishTourney()) return;
+        syncStatus = "error"; syncRender(); return;
+      }
       syncStatus = "live";
-      // While one of THIS device's writes is still in flight, reject a
+      // While one of THIS device's writes is still in flight, hold back a
       // snapshot older than the stamp that write claimed (see
       // lastAcceptedUpdatedAt) -- that window is where a stale/incomplete
       // echo (most notably a lock transaction's intermediate state) can
-      // surface pre-write state and silently revert it. Once everything is
-      // acked the floor must NOT reject: _updatedAt stamps come from
-      // different devices' clocks and aren't globally ordered, so with
-      // granular writes a lower-stamped snapshot can still be the newest
-      // server state -- and the sole carrier of another device's concurrent
-      // result (found empirically: the guest device permanently missing a
-      // match result the host recorded at the same instant, whenever the
-      // host's clock ran behind). Legacy records with no _updatedAt at all
-      // still always pass.
+      // surface pre-write state and silently revert it. Held-back snapshots
+      // are stashed, not dropped: _updatedAt stamps come from different
+      // devices' clocks and aren't globally ordered, so with granular writes
+      // a lower-stamped snapshot can still be the newest server state -- and
+      // the sole carrier of another device's concurrent result (found
+      // empirically: the guest device permanently missing a match result the
+      // host recorded at the same instant, whenever the host's clock ran
+      // behind). Once every pending write settles, syncWriteDone replays the
+      // newest stashed snapshot -- unless a later-accepted snapshot already
+      // superseded it. Legacy records with no _updatedAt at all always pass.
       var incomingUpdatedAt = data._updatedAt || 0;
-      if (incomingUpdatedAt < lastAcceptedUpdatedAt && pendingSyncWrites > 0) return;
+      if (incomingUpdatedAt < lastAcceptedUpdatedAt) {
+        if (pendingSyncWrites > 0) {
+          deferredSnapshot = data;
+          return;
+        }
+        // Idle, below the floor: accept only a stamp we've never processed
+        // (a behind-clock device's fresh write); drop an already-seen stamp
+        // (the network re-delivering old state — see seenUpdateStamps).
+        if (incomingUpdatedAt && seenUpdateStamps[incomingUpdatedAt]) return;
+      }
+      deferredSnapshot = null;   // this snapshot supersedes anything held back
       if (incomingUpdatedAt > lastAcceptedUpdatedAt) lastAcceptedUpdatedAt = incomingUpdatedAt;
+      noteAcceptedStamp(incomingUpdatedAt);
       var normalized = normalizeFirebaseTourney(data);
       // Server truth as delivered — captured before the merge below so any
       // units the merge preserves stay "dirty" against the baseline and get
@@ -1980,12 +2176,67 @@ window.SOMERSET_FB_CONFIG = {
       // edited since the last sync that the server itself hasn't changed;
       // where both sides changed the same unit, the server wins (the
       // per-hand locks make a genuine both-changed conflict a non-case).
-      if (tourney && lastSyncedTourney) {
+      // Only merge into the SAME tournament: a rematch/redraw mints a new id
+      // and .set()s a whole new bracket at the same code. tourneyUnitDiff's
+      // own id guard covers baseline-vs-local, but not the graft target — an
+      // undecided slot in the fresh bracket fbEq-matches the old baseline's
+      // null, so a stale local winner would graft straight into the new
+      // bracket (between different teams!) and the next save would flush the
+      // phantom result to every device. Local edits that predate a restart
+      // belong to a dead bracket; adopt the new tournament wholesale.
+      if (tourney && lastSyncedTourney && normalized.id === tourney.id && normalized.format === tourney.format) {
         var dirty = tourneyUnitDiff(lastSyncedTourney, tourney);
         if (dirty) {
           Object.keys(dirty).forEach(function(path) {
-            if (fbEq(getAtPath(lastSyncedTourney, path), getAtPath(normalized, path))) {
+            var baseVal = getAtPath(lastSyncedTourney, path);
+            var srvVal = getAtPath(normalized, path);
+            if (fbEq(baseVal, srvVal)) {
+              // Dirty paths speak Firebase write vocabulary; translate at the
+              // boundary instead of writing it into the local tree verbatim.
+              // (1) null means DELETE, not a literal null entry.
+              if (dirty[path] == null) { deleteAtPath(normalized, path); return; }
+              // (2) Don't fabricate a container the server deliberately
+              // dropped: a per-field path whose parent unit the server
+              // deleted (e.g. grandFinal/m2 reset by a feeder-result change
+              // — its winner slot fbEq-matches the old baseline's null, so
+              // the guard above passes) must not conjure a partial match
+              // like {winner: 0} with no a/b. Parent absent on BOTH sides is
+              // different and fine — that's just Firebase collapsing an
+              // empty container (locks), and creating it locally is benign.
+              var slash = path.lastIndexOf("/");
+              if (slash > 0) {
+                var srvParent = getAtPath(normalized, path.slice(0, slash));
+                var baseParent = getAtPath(lastSyncedTourney, path.slice(0, slash));
+                if ((srvParent == null || typeof srvParent !== "object") &&
+                    baseParent && typeof baseParent === "object") return;
+              }
               setAtPath(normalized, path, dirty[path]);
+              return;
+            }
+            // Both sides changed this unit. Server wins as a rule — but when
+            // the server's own change is confined to the seed fields
+            // (a/b/winner: another device's feeder result cascading into this
+            // match), a whole-unit server win would throw away a local edit
+            // (an in-progress game, a just-recorded deal) over a DISJOINT
+            // field. Keep the local unit and graft the server's seed fields
+            // onto it instead; the server still wins any field both sides
+            // touched. (Local seed-only edits never reach here as whole
+            // units — tourneyUnitDiff already splits those per-field.)
+            var local = dirty[path];
+            if (local && baseVal && srvVal && typeof local === "object" && typeof baseVal === "object" && typeof srvVal === "object") {
+              var fields = {};
+              Object.keys(baseVal).forEach(function(f) { fields[f] = 1; });
+              Object.keys(srvVal).forEach(function(f) { fields[f] = 1; });
+              var srvChanged = Object.keys(fields).filter(function(f) { return !fbEq(baseVal[f], srvVal[f]); });
+              var seedOnly = srvChanged.length > 0 && srvChanged.every(function(f) { return f === "a" || f === "b" || f === "winner"; });
+              if (seedOnly) {
+                var merged = JSON.parse(JSON.stringify(local));
+                srvChanged.forEach(function(f) {
+                  if (srvVal[f] === undefined) delete merged[f];
+                  else merged[f] = JSON.parse(JSON.stringify(srvVal[f]));
+                });
+                setAtPath(normalized, path, merged);
+              }
             }
           });
         }
@@ -1996,7 +2247,6 @@ window.SOMERSET_FB_CONFIG = {
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       syncMyHistoryFromTourney();   // pick up any newly-completed matches I played in
       if (changed) syncRender();
-    }, function() { syncStatus = "error"; syncRender(); });
   }
 
   // Local-only creation — the default for every "Start Tournament/Series" button.
