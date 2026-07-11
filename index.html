@@ -5154,11 +5154,14 @@ window.SOMERSET_FB_CONFIG = {
     softRender();
   }
   // The tournament champion (if any) for a set of records — used for the 🏆
-  // "... Won" line shown when a tournament group is collapsed.
+  // "... Won" line shown when a tournament group is collapsed. Prefers the
+  // winning side's named players over the generic team label, same as
+  // historyWinnerText does for the expanded row (rosterLine is defined below,
+  // but function declarations hoist within this scope).
   function groupStats(records) {
     var champion = null;
     records.forEach(function (rec) {
-      if (rec.tournament && rec.tournament.championship) champion = rec.teams[rec.winner];
+      if (rec.tournament && rec.tournament.championship) champion = rosterLine(rec, rec.winner) || rec.teams[rec.winner];
     });
     return { champion: champion };
   }
