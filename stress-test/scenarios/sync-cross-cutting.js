@@ -7,6 +7,8 @@ const sync = require("../lib/pageobjects/sync");
 const handEntry = require("../lib/pageobjects/handEntry");
 const dealHistory = require("../lib/pageobjects/dealHistory");
 const newGame = require("../lib/pageobjects/newGame");
+const bracket = require("../lib/pageobjects/bracket");
+const storage = require("../lib/pageobjects/storage");
 const config = require("../config");
 
 const invalidJoinCode = {
@@ -202,6 +204,117 @@ const concurrentSameHand = {
   },
 };
 
+// The cross-match lost-update race: two devices record results for two
+// DIFFERENT matches at (as near as possible) the same instant. Under the old
+// whole-object .set() sync, each device's write replaced the entire record
+// based on its own local snapshot -- whichever write landed second erased the
+// other match's result (last-write-wins). The per-hand lock system never
+// covered this, since the two devices aren't touching the same hand. Granular
+// per-unit writes (see tourneyUnitDiff in index.html) are the fix; this
+// scenario is its regression guard.
+const concurrentDifferentMatches = {
+  name: "sync-cross-cutting/concurrent-different-matches-no-lost-update",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("sync-cross-cutting/concurrent-different-matches-no-lost-update");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      // 8 players -> 4 teams -> round 0 has two independent matches.
+      const names = Array.from({ length: 8 }, (_, i) => `X${i + 1}`);
+      await nav.goto(host.page, "Tournament");
+      await tSetup.setupAndStart(host.page, { names, format: "single" });
+      await sync.shareFromBracket(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, names[0]);
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      const joinErr = await sync.joinErrorText(guest.page);
+      if (joinErr) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Guest failed to join with a fresh code: ${joinErr}`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
+        await sync.chooseIdentity(guest.page, names[1]);
+      }
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      logger.step("Host opens match 1's options, guest opens match 2's options");
+      await host.page.locator(".mbox.ready:visible").nth(0).click({ timeout: config.actionTimeoutMs });
+      await guest.page.locator(".mbox.ready:visible").nth(1).click({ timeout: config.actionTimeoutMs });
+      await host.page.waitForTimeout(80);
+      await guest.page.waitForTimeout(80);
+      // The ready-match sheet's h3 is "TeamA  vs  TeamB" -- first team wins each.
+      const hostTeam = (await bracket.matchOptionsHeader(host.page)).split(/\s+vs\s+/)[0].trim();
+      const guestTeam = (await bracket.matchOptionsHeader(guest.page)).split(/\s+vs\s+/)[0].trim();
+      logger.step(`Simultaneous manual wins: host records "${hostTeam}" (match 1), guest records "${guestTeam}" (match 2)`);
+      await Promise.all([
+        bracket.recordManualWin(host.page, hostTeam),
+        bracket.recordManualWin(guest.page, guestTeam),
+      ]);
+
+      await host.page.waitForTimeout(config.syncSettleMs);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      // Force a render pass on both so the UI reflects the latest snapshot.
+      for (const device of [host, guest]) {
+        await nav.goto(device.page, "Game");
+        await nav.goto(device.page, "Tournament");
+      }
+
+      for (const [label, device] of [["host", host], ["guest", guest]]) {
+        const t = (await storage.readKey(device.page, "somerset:dev-tournament")).value;
+        const r0 = (t && t.rounds && t.rounds[0]) || [];
+        const winners = r0.map((m) => (m ? m.winner : null));
+        const decided = winners.filter((w) => w === 0 || w === 1 || typeof w === "number").length;
+        if (decided < 2) {
+          await logger.record({
+            severity: "critical",
+            category: "sync-divergence",
+            summary: `Cross-match lost update: after host and guest recorded wins for two different matches simultaneously, ${label}'s round 0 only shows ${decided}/2 results (winners=${JSON.stringify(winners)})`,
+            expected: "both round-0 matches decided on both devices",
+            actual: { device: label, winners },
+            pages: { host: host.page, guest: guest.page },
+          });
+        } else {
+          // Both results present -- also confirm the winners actually advanced
+          // into round 1 (a merge that kept the winner but dropped the cascade
+          // would still corrupt the bracket).
+          const next = t.rounds[1] && t.rounds[1][0];
+          if (!next || next.a == null || next.b == null) {
+            await logger.record({
+              severity: "critical",
+              category: "sync-divergence",
+              summary: `Cross-match advancement lost: both round-0 winners recorded, but ${label}'s round 1 slot is missing an advanced team (a=${next && next.a}, b=${next && next.b})`,
+              expected: "round 1 match seeded with both winners",
+              actual: { device: label, next },
+              pages: { host: host.page, guest: guest.page },
+            });
+          }
+        }
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
 const offlineReconnect = {
   name: "sync-cross-cutting/offline-then-reconnect",
   phase: "sync",
@@ -288,4 +401,4 @@ const offlineReconnect = {
   },
 };
 
-module.exports = [invalidJoinCode, concurrentDifferentHands, concurrentSameHand, offlineReconnect];
+module.exports = [invalidJoinCode, concurrentDifferentHands, concurrentSameHand, concurrentDifferentMatches, offlineReconnect];

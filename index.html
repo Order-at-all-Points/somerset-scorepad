@@ -1018,15 +1018,18 @@ window.SOMERSET_FB_CONFIG = {
       if (tourney) {
         localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
         if (fb && syncCode) {
-          // A full .set() replaces the whole record, so it must always carry
-          // _createdAt — the security rules require a recent _createdAt for BOTH
-          // read and write. A rematch/redraw (restartTourney) swaps in a fresh
-          // tourney object that has none, and there's a brief race right after
-          // creation before the first read-back populates it; either case would
-          // otherwise write a record with no _createdAt and brick it (unreadable
-          // and unwritable) for the host and every guest. Re-stamp when missing.
           var payload = JSON.parse(JSON.stringify(tourney));
-          if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+          // Write only the units that changed since the last synced state, as
+          // one atomic multi-location update() — two devices editing different
+          // matches at the same moment no longer clobber each other the way
+          // whole-object .set() writes did (last-write-wins on the entire
+          // record). A structural change (rematch/redraw swaps in a whole new
+          // tourney) or a missing baseline still takes the .set() path below.
+          var diff = tourneyUnitDiff(lastSyncedTourney, payload);
+          if (diff && Object.keys(diff).length === 0) {
+            lastSyncedTourney = payload;   // nothing the server doesn't already have
+            return;
+          }
           // Claim this write's timestamp as the new floor *before* it round-trips,
           // so subscribeToTourney can recognize and discard a stale echo that
           // arrives while this write is still in flight (see lastAcceptedUpdatedAt).
@@ -1035,9 +1038,31 @@ window.SOMERSET_FB_CONFIG = {
           payload._updatedAt = stamp;
           tourney._updatedAt = stamp;
           lastAcceptedUpdatedAt = stamp;
-          fb.ref("tournaments/" + syncCode).set(payload).catch(function() {
-            syncStatus = "error"; render();
-          });
+          lastSyncedTourney = payload;
+          if (diff) {
+            diff._updatedAt = stamp;
+            pendingSyncWrites++;
+            fb.ref("tournaments/" + syncCode).update(diff).then(syncWriteDone, function() {
+              syncWriteDone();
+              syncStatus = "error"; render();
+            });
+          } else {
+            // A full .set() replaces the whole record, so it must always carry
+            // _createdAt — the security rules require a recent _createdAt for BOTH
+            // read and write. A rematch/redraw (restartTourney) swaps in a fresh
+            // tourney object that has none, and there's a brief race right after
+            // creation before the first read-back populates it; either case would
+            // otherwise write a record with no _createdAt and brick it (unreadable
+            // and unwritable) for the host and every guest. Re-stamp when missing.
+            // (The update() path above never touches _createdAt unless a caller
+            // deliberately re-stamped it, so only .set() needs this guard.)
+            if (payload._createdAt == null) payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
+            pendingSyncWrites++;
+            fb.ref("tournaments/" + syncCode).set(payload).then(syncWriteDone, function() {
+              syncWriteDone();
+              syncStatus = "error"; render();
+            });
+          }
         }
       } else {
         localStorage.removeItem(TOURNEY_KEY);
@@ -1047,6 +1072,8 @@ window.SOMERSET_FB_CONFIG = {
           localStorage.removeItem(SYNC_ROLE_KEY);
           syncCode = null; syncRole = null; syncStatus = "offline";
         }
+        lastSyncedTourney = null;
+        pendingSyncWrites = 0;   // acks from the torn-down session must not linger into the next one
       }
     } catch (e) {}
   }
@@ -1344,6 +1371,24 @@ window.SOMERSET_FB_CONFIG = {
   // would silently revert whatever that pending write was about to save. See
   // saveTourney() and subscribeToTourney() below.
   var lastAcceptedUpdatedAt = 0;
+  // Baseline for granular sync writes: the last full tournament state the
+  // server is known to hold — either what this device last wrote, or the last
+  // snapshot delivered by subscribeToTourney. saveTourney() diffs against it
+  // to write only the units that actually changed (see tourneyUnitDiff), and
+  // the listener diffs against it to spot local edits an incoming snapshot
+  // must not wipe. Null whenever there's no live sync session.
+  var lastSyncedTourney = null;
+  // Count of this device's own Firebase writes (update/set/lock transaction)
+  // still awaiting server acknowledgement. While it's non-zero, the listener
+  // enforces the lastAcceptedUpdatedAt floor strictly — that in-flight window
+  // is where a stale/incomplete echo can appear. Once everything is acked,
+  // snapshots are accepted regardless of stamp: _updatedAt values come from
+  // different devices' wall clocks and are NOT globally ordered, so a
+  // lower-stamped snapshot can still be the newest server state (it may be
+  // the only carrier of another device's concurrent granular write, and
+  // rejecting it would leave this device permanently missing that result).
+  var pendingSyncWrites = 0;
+  function syncWriteDone() { if (pendingSyncWrites > 0) pendingSyncWrites--; }
 
   // Reconnect to an in-progress shared tournament on page load
   (function() {
@@ -1420,6 +1465,7 @@ window.SOMERSET_FB_CONFIG = {
     // TOCTOU race (two devices both reading "unlocked" and each believing
     // they'd won). Deliberately does NOT extend the same treatment to
     // release (see releaseLock) -- see the note there for why.
+    pendingSyncWrites++;   // a running transaction can raise intermediate local snapshots — keep the listener's floor strict until it settles
     fb.ref("tournaments/" + syncCode).transaction(function (current) {
       if (!current) return; // nothing there yet -- abort, let saveTourney's normal path establish it
       var locks = current.locks || {};
@@ -1432,6 +1478,7 @@ window.SOMERSET_FB_CONFIG = {
       current.locks = locks;
       return current;
     }, function (err, committed, snapshot) {
+      syncWriteDone();
       if (settled) return;
       clearTimeout(timeoutId);
       settled = true;
@@ -1441,29 +1488,35 @@ window.SOMERSET_FB_CONFIG = {
       if (won) {
         if (!tourney.locks) tourney.locks = {};
         tourney.locks[key] = lk;   // optimistic local mirror; subscribeToTourney's .on("value") reconciles the rest shortly after
+        // Mirror into the sync baseline too — the server already holds this
+        // lock (the transaction just wrote it), so the next saveTourney()
+        // shouldn't see it as a local edit still needing a flush.
+        if (lastSyncedTourney) {
+          if (!lastSyncedTourney.locks) lastSyncedTourney.locks = {};
+          lastSyncedTourney.locks[key] = JSON.parse(JSON.stringify(lk));
+        }
         if (val._updatedAt > lastAcceptedUpdatedAt) lastAcceptedUpdatedAt = val._updatedAt;
       }
       if (cb) cb(!!won);
     });
   }
   // Deliberately NOT a transaction (or any write outside saveTourney's usual
-  // whole-object .set()): recordDeal() calls this immediately before persist()
-  // with zero gap, and a separate Firebase write issued in that gap was found
+  // path): recordDeal() calls this immediately before persist() with zero
+  // gap, and a separate Firebase write issued in that gap was found
   // (empirically, via a two-device stress repro) to trigger a stale echo of
   // subscribeToTourney's listener that silently reverted the deal just
-  // recorded, even with a monotonic-timestamp staleness guard on that
-  // listener -- any wholesale reassignment of `tourney`, even one that isn't
-  // technically "stale" by that guard, still clobbers whatever local mutation
-  // hasn't been flushed yet. Nothing else is racing to release the *same*
-  // lock a device is voluntarily giving up, so release doesn't need the same
-  // atomicity claim needs — folding it into the very next saveTourney() call
-  // (as originally) keeps it safe by construction.
+  // recorded. The listener's three-way merge now guards that class of race
+  // directly, but the original reasoning still holds: nothing else is racing
+  // to release the *same* lock a device is voluntarily giving up, so release
+  // doesn't need the atomicity claim needs — folding it into the very next
+  // saveTourney() call keeps it safe by construction (and the granular diff
+  // there turns it into a single locks/<key> delete anyway).
   function releaseLock(key) {
     if (!tourney || !tourney.locks) return;
     var lk = tourney.locks[key];
     if (lk && lk.deviceId === deviceId) {
       delete tourney.locks[key];
-      saveTourney();   // whole-object write, same mechanism as everything else -- see the note above for why this one deliberately isn't split out
+      saveTourney();   // same write path as everything else -- see the note above for why this one deliberately isn't split out
     }
   }
   function isMineOrUnlocked(key) {
@@ -1597,6 +1650,131 @@ window.SOMERSET_FB_CONFIG = {
     }
     return lens;
   }
+  // ---- Granular sync diff ----
+  // What Firebase actually stores for a value: null properties, empty arrays,
+  // and empty objects all collapse to "absent". Canonicalizing both sides of a
+  // comparison this way keeps a locally-built {winner:null} from reading as
+  // different from its own echo (where Firebase dropped the key).
+  function fbCanon(v) {
+    if (v === null || v === undefined) return undefined;
+    if (typeof v !== "object") return v;
+    var keys = Object.keys(v).sort();
+    var out = {}, any = false;
+    for (var i = 0; i < keys.length; i++) {
+      var c = fbCanon(v[keys[i]]);
+      if (c !== undefined) { out[keys[i]] = c; any = true; }
+    }
+    return any ? out : undefined;
+  }
+  function fbEq(a, b) {
+    return JSON.stringify(fbCanon(a)) === JSON.stringify(fbCanon(b));
+  }
+  function getAtPath(obj, path) {
+    var segs = path.split("/"), cur = obj;
+    for (var i = 0; i < segs.length; i++) {
+      if (cur == null || typeof cur !== "object") return undefined;
+      cur = cur[segs[i]];
+    }
+    return cur;
+  }
+  function setAtPath(obj, path, value) {
+    var segs = path.split("/"), cur = obj;
+    for (var i = 0; i < segs.length - 1; i++) {
+      var next = cur[segs[i]];
+      if (next == null || typeof next !== "object") {
+        next = (String(Number(segs[i + 1])) === segs[i + 1]) ? [] : {};
+        cur[segs[i]] = next;
+      }
+      cur = next;
+    }
+    cur[segs[segs.length - 1]] = value;
+  }
+  // The finest subtrees a single user action edits as one thing ("units"):
+  // individual bracket matches, series games, schedule slots, locks, teams,
+  // and every scalar top-level field. Two devices writing different units
+  // never share a write path, so neither can clobber the other.
+  // Returns a map of Firebase-relative paths -> new values (null = delete)
+  // covering everything that differs between base and next, or null when the
+  // change is structural (different tournament or format) and only a
+  // whole-object write makes sense.
+  function tourneyUnitDiff(base, next) {
+    if (!base || !next) return null;
+    if (base.id !== next.id || base.format !== next.format) return null;
+    var diff = {};
+    function addUnit(path, bVal, nVal) {
+      if (fbEq(bVal, nVal)) return;
+      diff[path] = (nVal === undefined) ? null : nVal;
+    }
+    // a/b/winner are the only fields two devices legitimately write on the
+    // SAME match at the same moment: two feeder matches each seed one slot of
+    // the shared next-round / losers-bracket / grand-final match as their
+    // results cascade. Diff those per-field so concurrent seedings merge
+    // server-side instead of clobbering (writing the whole match object from
+    // two devices erases whichever slot the other just seeded). Any other
+    // change (game payloads etc.) rewrites the match as one unit, keeping an
+    // actively-played match's fields atomic.
+    function matchUnits(path, bM, nM) {
+      if (fbEq(bM, nM)) return;
+      if (!bM || !nM || typeof bM !== "object" || typeof nM !== "object") { addUnit(path, bM, nM); return; }
+      var fields = {};
+      Object.keys(bM).forEach(function (f) { fields[f] = 1; });
+      Object.keys(nM).forEach(function (f) { fields[f] = 1; });
+      var changed = Object.keys(fields).filter(function (f) { return !fbEq(bM[f], nM[f]); });
+      var seedOnly = changed.length > 0 && changed.every(function (f) { return f === "a" || f === "b" || f === "winner"; });
+      if (!seedOnly) { addUnit(path, bM, nM); return; }
+      changed.forEach(function (f) { addUnit(path + "/" + f, bM[f], nM[f]); });
+    }
+    // Per-match units for a rounds grid; a shape change (rebuilt bracket)
+    // falls back to rewriting the grid as a single unit.
+    function gridUnits(prefix, bRounds, nRounds) {
+      bRounds = bRounds || []; nRounds = nRounds || [];
+      var sameShape = bRounds.length === nRounds.length && nRounds.every(function (r, ri) {
+        return (bRounds[ri] || []).length === (r || []).length;
+      });
+      if (!sameShape) { addUnit(prefix, bRounds, nRounds); return; }
+      nRounds.forEach(function (round, ri) {
+        (round || []).forEach(function (m, mi) {
+          matchUnits(prefix + "/" + ri + "/" + mi, bRounds[ri][mi], m);
+        });
+      });
+    }
+    // Per-index units for a flat list. A shrink rewrites the whole list so
+    // stale tail entries actually delete (update() can't remove what it
+    // isn't told about). Elements route through matchUnits: for real match
+    // slots that gives the per-field seeding treatment above; for anything
+    // else (teams) no change is ever a/b/winner-only, so it degrades to the
+    // whole-element write.
+    function arrayUnits(key, bArr, nArr) {
+      bArr = bArr || []; nArr = nArr || [];
+      if (nArr.length < bArr.length) { addUnit(key, bArr, nArr); return; }
+      for (var i = 0; i < nArr.length; i++) matchUnits(key + "/" + i, bArr[i], nArr[i]);
+    }
+    var keys = {};
+    Object.keys(base).forEach(function (x) { keys[x] = 1; });
+    Object.keys(next).forEach(function (x) { keys[x] = 1; });
+    Object.keys(keys).forEach(function (k) {
+      if (k === "_updatedAt") return;                      // stamped fresh on every write instead
+      if (k === "_createdAt" && next[k] == null) return;   // never delete — it anchors the 48h expiry (see FIREBASE_SETUP.md)
+      if (k === "rounds") gridUnits("rounds", base.rounds, next.rounds);
+      else if (k === "wBracket" || k === "lBracket") gridUnits(k + "/rounds", base[k] && base[k].rounds, next[k] && next[k].rounds);
+      else if (k === "grandFinal") {
+        matchUnits("grandFinal/m1", base.grandFinal && base.grandFinal.m1, next.grandFinal && next.grandFinal.m1);
+        matchUnits("grandFinal/m2", base.grandFinal && base.grandFinal.m2, next.grandFinal && next.grandFinal.m2);
+      }
+      else if (k === "schedule" || k === "games" || k === "teams") arrayUnits(k, base[k], next[k]);
+      else if (k === "locks") {
+        var lkeys = {};
+        Object.keys(base.locks || {}).forEach(function (x) { lkeys[x] = 1; });
+        Object.keys(next.locks || {}).forEach(function (x) { lkeys[x] = 1; });
+        Object.keys(lkeys).forEach(function (x) {
+          addUnit("locks/" + x, base.locks && base.locks[x], next.locks && next.locks[x]);
+        });
+      }
+      else addUnit(k, base[k], next[k]);
+    });
+    return diff;
+  }
+
   function normalizeFirebaseTourney(t) {
     if (!t || typeof t !== "object") return t;
     if (t.teams)  t.teams  = fbObjToArr(t.teams);
@@ -1773,20 +1951,46 @@ window.SOMERSET_FB_CONFIG = {
       var data = snap.val();
       if (!data) { syncStatus = "error"; syncRender(); return; }
       syncStatus = "live";
-      // Reject a snapshot older than a write this device already knows
-      // supersedes it (see lastAcceptedUpdatedAt) -- a genuinely delayed or
-      // out-of-order snapshot (e.g. from a flaky connection re-delivering an
-      // older value) would otherwise blindly overwrite newer local/committed
-      // state. Legacy records with no _updatedAt at all still always pass.
-      // NOTE: this guard alone can't protect an in-memory mutation that
-      // hasn't reached saveTourney() yet (there's no timestamp for something
-      // not yet written) -- see claimLock/releaseLock's own comments for why
-      // lock claim/release are deliberately kept off of any write path that
-      // could echo back in that gap.
+      // While one of THIS device's writes is still in flight, reject a
+      // snapshot older than the stamp that write claimed (see
+      // lastAcceptedUpdatedAt) -- that window is where a stale/incomplete
+      // echo (most notably a lock transaction's intermediate state) can
+      // surface pre-write state and silently revert it. Once everything is
+      // acked the floor must NOT reject: _updatedAt stamps come from
+      // different devices' clocks and aren't globally ordered, so with
+      // granular writes a lower-stamped snapshot can still be the newest
+      // server state -- and the sole carrier of another device's concurrent
+      // result (found empirically: the guest device permanently missing a
+      // match result the host recorded at the same instant, whenever the
+      // host's clock ran behind). Legacy records with no _updatedAt at all
+      // still always pass.
       var incomingUpdatedAt = data._updatedAt || 0;
-      if (incomingUpdatedAt < lastAcceptedUpdatedAt) return;
-      lastAcceptedUpdatedAt = incomingUpdatedAt;
+      if (incomingUpdatedAt < lastAcceptedUpdatedAt && pendingSyncWrites > 0) return;
+      if (incomingUpdatedAt > lastAcceptedUpdatedAt) lastAcceptedUpdatedAt = incomingUpdatedAt;
       var normalized = normalizeFirebaseTourney(data);
+      // Server truth as delivered — captured before the merge below so any
+      // units the merge preserves stay "dirty" against the baseline and get
+      // flushed by the next saveTourney().
+      var serverBase = JSON.parse(JSON.stringify(normalized));
+      // Three-way merge instead of wholesale adoption. The timestamp floor
+      // above can't protect an in-memory mutation that hasn't reached
+      // saveTourney() yet (there's no timestamp for something not yet
+      // written) -- a non-stale snapshot arriving in that gap used to
+      // silently revert a just-recorded deal. So: keep every local unit
+      // edited since the last sync that the server itself hasn't changed;
+      // where both sides changed the same unit, the server wins (the
+      // per-hand locks make a genuine both-changed conflict a non-case).
+      if (tourney && lastSyncedTourney) {
+        var dirty = tourneyUnitDiff(lastSyncedTourney, tourney);
+        if (dirty) {
+          Object.keys(dirty).forEach(function(path) {
+            if (fbEq(getAtPath(lastSyncedTourney, path), getAtPath(normalized, path))) {
+              setAtPath(normalized, path, dirty[path]);
+            }
+          });
+        }
+      }
+      lastSyncedTourney = serverBase;
       var changed = JSON.stringify(normalized) !== JSON.stringify(tourney);
       tourney = normalized;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
@@ -1823,6 +2027,7 @@ window.SOMERSET_FB_CONFIG = {
       localStorage.setItem(SYNC_ROLE_KEY, "host");
       tourney._code = code;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+      lastSyncedTourney = JSON.parse(JSON.stringify(payload));
       subscribeToTourney(code);
       autoIdentifyFromDeviceName();   // silently tag the host if their saved name is on the roster
       // Just show the code — renderModal checks ui.whoSheet before ui.shareSheetOpen,
@@ -1918,6 +2123,7 @@ window.SOMERSET_FB_CONFIG = {
       localStorage.setItem(SYNC_ROLE_KEY, "guest");
       tourney = normalizeFirebaseTourney(data);
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
+      lastSyncedTourney = JSON.parse(JSON.stringify(tourney));
       subscribeToTourney(syncCode);
       // A shared standard game (format:"series") plays out on the Game tab, not
       // the bracket — land joiners straight on the in-progress game instead of
