@@ -296,8 +296,11 @@
   .undo-toast button { background:var(--brass); color:var(--cream); border:none; border-radius:var(--r-pill); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-text); padding:7px 14px; flex:0 0 auto; }
   .undo-toast button:active { opacity:.75; }
   .deal-detail b { font-weight:600; color:var(--brass-text); margin-left:4px; }
-  .del { background:none; border:none; color:var(--ink-soft); font-size:17px; cursor:pointer; padding:12px; border-radius:var(--r-control); transition:color .08s, background .08s; line-height:1; }
+  .del { background:none; border:none; color:var(--ink-soft); cursor:pointer; padding:12px; border-radius:var(--r-control); transition:color .08s, background .08s; line-height:1; }
   .del:active { color:var(--red); background:color-mix(in srgb, var(--red) 10%, transparent); }
+  .del svg { display:block; width:14px; height:14px; }
+  .chip-x { display:inline-block; width:11px; height:11px; vertical-align:-1px; margin-left:3px; }
+  .chip-x svg { display:block; width:100%; height:100%; }
 
   .entry { border-top:2px solid var(--rule); padding:16px 16px 20px; background:var(--cream-shade); }
   .entry h2 { margin:0 0 4px; font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--ink); }
@@ -572,7 +575,8 @@
   .draw-list { padding:8px 12px 4px; }
   .draw-team { font-size:15px; color:var(--ink); padding:4px 0; }
   .back-btn { display:inline-flex; align-items:center; gap:4px; background:none; border:none; padding:8px; cursor:pointer; color:var(--ink-soft); font-family:var(--font-text); font-size:15px; }
-  .back-btn .chev { font-size:20px; line-height:0.8; font-weight:600; }
+  .back-btn .chev { display:inline-block; width:12px; height:12px; }
+  .back-btn .chev svg { display:block; width:100%; height:100%; }
   .back-btn:active { color:var(--ink); }
   .quick-add { padding:6px 12px 14px; }
   .quick-add .chip.del-chip { border-color:var(--red); color:var(--red); }
@@ -622,7 +626,8 @@
   .rank-bar-fill { height:100%; background:var(--brass-text); border-radius:2px; }
   .rank-metric { flex:none; text-align:right; font-size:15px; font-weight:600; color:var(--ink); min-width:56px; }
   .rank-metric small { display:block; font-size:11px; font-weight:500; color:var(--ink-soft); }
-  .rank-chevron { flex:none; color:var(--ink-soft); font-size:15px; }
+  .rank-chevron { flex:none; color:var(--ink-soft); display:inline-block; width:12px; height:12px; }
+  .rank-chevron svg { display:block; width:100%; height:100%; }
 
   .stats-hero { text-align:center; padding:20px 16px 18px; border-bottom:1px solid var(--cream-shade); }
   .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
@@ -845,6 +850,13 @@ window.SOMERSET_FB_CONFIG = {
   // seating table and inline in deal history — an SVG shape renders as a consistently
   // bold, solid point on every platform, unlike a text arrow glyph.
   var DEALER_ARROW_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1 L17 9 L13 9 L13 23 L11 23 L11 9 L7 9 Z"/></svg>';
+  // Line-weight icon set replacing text glyphs (‹ › ✕) — same stroke style as
+  // the header's hamburger icon (round caps, currentColor) so every inline
+  // icon in the app reads as one consistent family rather than mismatched
+  // font glyphs of varying weight/baseline across platforms.
+  var CHEVRON_LEFT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
+  var CHEVRON_RIGHT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
+  var CLOSE_X_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>';
   // Trump recording disabled for now — see renderEntry()/recordDeal() below.
   // var TRUMP_CHIPS = ["0","1","2","3","4","5","6"];
 
@@ -3363,7 +3375,7 @@ window.SOMERSET_FB_CONFIG = {
         } else {
           qa.appendChild(el("div", { class:"chips" }, listNames.slice(0, 40).map(function (nm) {
             if (ui.editNames) {
-              return el("button", { class:"chip disp del-chip", "aria-label":"Delete " + nm, onClick:function(){ deleteName(nm); } }, [ nm + "  ✕" ]);
+              return el("button", { class:"chip disp del-chip", "aria-label":"Delete " + nm, onClick:function(){ deleteName(nm); } }, [ nm + " ", el("span", { class:"chip-x", "aria-hidden":"true", html:CLOSE_X_SVG }) ]);
             }
             return el("button", { class:"chip disp", onClick:function(){ saveName(nm); } }, [nm]);
           })));
@@ -4358,7 +4370,7 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"rank-bar-track" }, [ el("div", { class:"rank-bar-fill", style:"width:" + pct + "%;" }, []) ])
       ]),
       el("div", { class:"rank-metric mono" }, [ disp.main, el("small", {}, [disp.small]) ]),
-      el("div", { class:"rank-chevron" }, ["›"])
+      el("div", { class:"rank-chevron", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG })
     ]);
   }
 
@@ -4461,7 +4473,7 @@ window.SOMERSET_FB_CONFIG = {
       el("div", { class:"view-head disp" }, [p ? p.name : (ui.statsPlayer || "Player")]),
       el("div", { style:"padding:6px 6px 0;" }, [
         el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; softRender(); } },
-          [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Stats" ])
+          [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Stats" ])
       ])
     ]);
 
@@ -5563,7 +5575,7 @@ window.SOMERSET_FB_CONFIG = {
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Player names"]) ]);
     card.appendChild(el("div", { style:"padding:6px 6px 0;" }, [
       el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.tCount = s.players.length; ui.tSetup = null; ui.editNames = false; render(); } },
-        [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Back" ])
+        [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Back" ])
     ]));
 
     var msgEl, drawBtn, inputs = [];
@@ -5592,8 +5604,8 @@ window.SOMERSET_FB_CONFIG = {
       pwrap.appendChild(el("div", { class:"trow" }, [
         el("span", { class:"tnum mono" }, [String(i + 1)]),
         input,
-        el("button", { class:"del", "aria-label":"Remove player " + (i + 1),
-          onClick:function(){ s.players.splice(i, 1); s.drawn = null; softRender(); } }, ["✕"])
+        el("button", { class:"del", "aria-label":"Remove player " + (i + 1), html:CLOSE_X_SVG,
+          onClick:function(){ s.players.splice(i, 1); s.drawn = null; softRender(); } })
       ]));
     });
     card.appendChild(pwrap);
@@ -5618,7 +5630,7 @@ window.SOMERSET_FB_CONFIG = {
       } else {
         qa.appendChild(el("div", { class:"chips" }, listNames.slice(0, 40).map(function (nm) {
           if (ui.editNames) {
-            return el("button", { class:"chip disp del-chip", "aria-label":"Delete " + nm, onClick:function(){ deleteName(nm); } }, [ nm + "  ✕" ]);
+            return el("button", { class:"chip disp del-chip", "aria-label":"Delete " + nm, onClick:function(){ deleteName(nm); } }, [ nm + " ", el("span", { class:"chip-x", "aria-hidden":"true", html:CLOSE_X_SVG }) ]);
           }
           return el("button", { class:"chip disp", onClick:function(){ quickAdd(nm); } }, [nm]);
         })));
@@ -5670,7 +5682,7 @@ window.SOMERSET_FB_CONFIG = {
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Best-of Series"]) ]);
     card.appendChild(el("div", { style:"padding:6px 6px 0;" }, [
       el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.sSetup = null; ui.editNames = false; render(); } },
-        [ el("span", { class:"chev", "aria-hidden":"true" }, ["‹"]), "Back" ])
+        [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Back" ])
     ]));
 
     function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
@@ -6027,7 +6039,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.syncError) {
       container.appendChild(el("div", { class:"sync-bar disp", style:"background:#fff3f3; border-bottom:1px solid var(--red);" }, [
         el("span", { style:"font-size:13px; color:var(--red); flex:1;" }, [ui.syncError]),
-        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncError = null; softRender(); } }, ["✕"])
+        el("button", { class:"del", style:"flex:none;", "aria-label":"Dismiss error", html:CLOSE_X_SVG, onClick:function(){ ui.syncError = null; softRender(); } })
       ]));
     }
 
@@ -6035,7 +6047,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.syncNotice) {
       container.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
         el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, [ui.syncNotice]),
-        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.syncNotice = null; softRender(); } }, ["✕"])
+        el("button", { class:"del", style:"flex:none;", "aria-label":"Dismiss notice", html:CLOSE_X_SVG, onClick:function(){ ui.syncNotice = null; softRender(); } })
       ]));
     }
 
@@ -6046,7 +6058,7 @@ window.SOMERSET_FB_CONFIG = {
       container.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
         el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, ["Playing as " + ui.identitySuggestion + "?"]),
         el("button", { class:"link-btn disp", style:"flex:none; font-size:13px;", onClick:acceptIdentitySuggestion }, ["Yes, that's me"]),
-        el("button", { class:"del", style:"flex:none;", onClick:function(){ ui.identitySuggestion = null; softRender(); } }, ["✕"])
+        el("button", { class:"del", style:"flex:none;", "aria-label":"Dismiss", html:CLOSE_X_SVG, onClick:function(){ ui.identitySuggestion = null; softRender(); } })
       ]));
     }
 
