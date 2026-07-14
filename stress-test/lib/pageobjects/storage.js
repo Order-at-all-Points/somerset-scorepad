@@ -10,6 +10,10 @@ const KEYS = {
   syncCode: "somerset:dev-sync-code",
   syncRole: "somerset:dev-sync-role",
   deviceId: "somerset:dev-device-id",
+  authUid: "somerset:dev-auth-uid",
+  cloudSyncEnabled: "somerset:dev-cloud-sync-enabled",
+  personId: "somerset:dev-person-id",
+  linkedUids: "somerset:dev-linked-uids",
 };
 
 /** Read + JSON.parse a single localStorage key. Never throws. */

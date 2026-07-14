@@ -21,4 +21,12 @@ module.exports = {
     // reliable -- correctness matters more than speed here.
     sync: 1,
   },
+  // Every device boots into an unconditional signInAnonymously() call (see
+  // index.html's initAuth), so a full run can mint 60+ fresh anonymous users
+  // in a couple minutes -- enough to trip Firebase's own anti-abuse rate
+  // limiting on the Identity Toolkit endpoint (surfaces as a 400 on every
+  // subsequent page load, app-wide, until it cools down). createDevice()
+  // serializes new-device creation behind this minimum spacing so a run never
+  // fires sign-ins faster than this, regardless of scenario concurrency.
+  authThrottleMs: 1500,
 };

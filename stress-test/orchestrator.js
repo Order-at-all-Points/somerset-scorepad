@@ -18,6 +18,7 @@ const SCENARIO_FILES = [
   "series-best-of",
   "sync-cross-cutting",
   "history-export-import",
+  "device-linking",
 ];
 
 function parseArgs() {

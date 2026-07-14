@@ -802,6 +802,7 @@
 <!-- Firebase Realtime Database — powers shared tournaments -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
 // ---- Firebase config — paste your project credentials here ----
 // Get from: Firebase console → Project settings → Your apps → SDK setup & configuration
@@ -973,7 +974,8 @@ window.SOMERSET_FB_CONFIG = {
     openDeal:null, whoSheet:false, editingDeal:null, identitySuggestion:null, identityEditor:false,
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
-    gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null
+    gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
+    linkDeviceSheet:null, backupPrompt:false
   };
   // Restore an in-progress local series/offer that survived a reload (see
   // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
@@ -1011,7 +1013,209 @@ window.SOMERSET_FB_CONFIG = {
   var HISTORY_KEY = "somerset:dev-history";
   var TOURNEY_KEY = "somerset:dev-tournament";
   function loadHistory() { try { var r = localStorage.getItem(HISTORY_KEY); if (r) return JSON.parse(r); } catch (e) {} return []; }
-  function saveHistory() { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(gameHistory)); } catch (e) {} }
+  function saveHistory() {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(gameHistory)); } catch (e) {}
+    syncHistoryToCloud();
+  }
+  // Push any not-yet-synced History records to users/<authUid>/history and prune
+  // ones deleted locally. Records are immutable once archived and single-writer
+  // (only their own device ever writes them), so plain per-id set()/remove() is
+  // enough — no transaction/diff machinery needed the way saveTourney() requires.
+  function syncHistoryToCloud() {
+    if (!cloudSyncEnabled || !authUid || !fb) return;
+    var ids = {};
+    gameHistory.forEach(function (r) { ids[r.id] = true; });
+    gameHistory.forEach(function (r) {
+      if (lastSyncedHistoryIds[r.id]) return;
+      fb.ref("users/" + authUid + "/history/" + r.id).set(r);
+    });
+    Object.keys(lastSyncedHistoryIds).forEach(function (id) {
+      if (!ids[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
+    });
+    lastSyncedHistoryIds = ids;
+  }
+  // One-shot, fully-dismissable "back up your History?" nudge — exact mirror of
+  // maybeSuggestIdentity() above. Checked on every renderSyncBar pass (cheap,
+  // idempotent via BACKUP_NUDGE_SEEN_KEY) rather than wired into every archive
+  // call site, since the trigger condition is just "has any history at all."
+  function maybeSuggestBackup() {
+    if (cloudSyncEnabled || backupNudgeSeen() || !gameHistory.length) return;
+    markBackupNudgeSeen();
+    ui.backupPrompt = true;
+  }
+  // Flip cloud sync on for this device (first-time link, either generating or
+  // redeeming a code) and immediately back-fill this device's existing History.
+  // Single owner of ALL subscription wiring — callers (boot, generateLinkCode,
+  // redeemLinkCode) must not attach their own subset, or the generator/redeemer
+  // paths drift apart (the generator once skipped subscribeLinkedHistories and
+  // couldn't see a linked device's games until reload).
+  function enableCloudSync() {
+    cloudSyncEnabled = true;
+    saveCloudSyncEnabled(true);
+    subscribeMyHistory();
+    if (personId) subscribeLinkedHistories();
+    syncHistoryToCloud();
+  }
+  // Seeded from the first snapshot so opting into cloud sync back-fills existing
+  // history instead of silently no-op'ing (every local record looks "unsynced"
+  // until this baseline is known). Beyond seeding the diff baseline, every
+  // snapshot also reconciles in BOTH directions:
+  // - cloud records missing locally are imported (the restore path — without it,
+  //   re-enabling backup after localStorage loss seeded the baseline and the
+  //   next saveHistory() prune WIPED the entire cloud copy, because the prune
+  //   can't tell "deleted locally" from "never had locally"). Known tradeoff:
+  //   with no deletion tombstones, a record deleted while offline (remove()
+  //   never flushed) is re-imported on the next online boot — re-deleting it
+  //   then sticks. See SECURITY_REVIEW.md C1/C4.
+  // - local records missing from the cloud are pushed (a record archived just
+  //   before an offline reload otherwise stranded until the NEXT archive,
+  //   since saveHistory() is syncHistoryToCloud()'s only other caller).
+  function subscribeMyHistory() {
+    if (!fb || !authUid || myHistorySubscribed) return;
+    myHistorySubscribed = true;
+    fb.ref("users/" + authUid + "/history").on("value", function (snap) {
+      var val = snap.val() || {};
+      lastSyncedHistoryIds = {};
+      Object.keys(val).forEach(function (id) { lastSyncedHistoryIds[id] = true; });
+      var localIds = {};
+      gameHistory.forEach(function (r) { localIds[r.id] = true; });
+      var imported = false;
+      Object.keys(val).forEach(function (id) {
+        var rec = val[id];
+        if (!rec || rec.id == null || !rec.date || localIds[rec.id]) return;
+        gameHistory.push(rec);
+        imported = true;
+      });
+      if (imported) {
+        gameHistory.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(gameHistory)); } catch (e) {}
+        if (!sheetOpen()) softRender();
+      }
+      syncHistoryToCloud();
+    });
+  }
+  // Generate a short-lived code (reusing genCode(), the same mechanism tournament
+  // join-codes use) that another device can redeem to join this device's "person"
+  // — see redeemLinkCode(). Devices are added to people/<personId>.linkedUids
+  // rather than merged into one uid, so linking is reversible and never clobbers
+  // either device's own history.
+  function generateLinkCode() {
+    if (!authUid || !initFb()) {
+      if (ui.linkDeviceSheet) { ui.linkDeviceSheet.error = "Couldn't connect."; render(); }
+      return;
+    }
+    var pid = personId || ("p" + genCode());
+    var code = genCode();
+    // First-time only: create the group, then the reverse index (uid -> personId,
+    // which lets the users/$uid security rule verify two uids are linked without
+    // an unbounded scan). A device that already has a personId is already a
+    // member — personId is only saved after the membership write succeeds — and
+    // re-writing its linkedUids entry would trip the proof-of-code .validate once
+    // the hardened rules ship (SECURITY_REVIEW.md #8). The personOf write is
+    // still re-issued as a repair: it's idempotent under both rule sets, and a
+    // partial failure between the two writes would otherwise never heal.
+    var setup = personId
+      ? fb.ref("personOf/" + authUid).set(pid)
+      : fb.ref("people/" + pid + "/linkedUids/" + authUid).set(true).then(function () {
+          personId = pid; savePersonId(pid);
+          return fb.ref("personOf/" + authUid).set(pid);
+        });
+    setup.then(function () {
+      return fb.ref("linkCodes/" + code).set({ ownerUid: authUid, personId: pid, createdAt: firebase.database.ServerValue.TIMESTAMP });
+    }).then(function () {
+      enableCloudSync();
+      // The sheet may have been closed (overlay tap) while the writes were in
+      // flight — sync is enabled either way, but don't reopen UI the user left.
+      if (ui.linkDeviceSheet) { ui.linkDeviceSheet = { step: "show", code: code, error: null }; render(); }
+    }).catch(function () {
+      if (!ui.linkDeviceSheet) return;
+      ui.linkDeviceSheet.error = "Couldn't generate a code. Try again.";
+      render();
+    });
+  }
+  // Redeem a code generated by generateLinkCode() on another device, joining this
+  // device into the same people/<personId>.linkedUids set. Mirrors joinTournament's
+  // offline pre-check + timeout (2488-2509) — without either, a genuinely
+  // unreachable Firebase never rejects once("value") at all, leaving the sheet
+  // looking like the tap did nothing (the exact bug already found/fixed there).
+  var LINK_REDEEM_TIMEOUT_MS = 10000;
+  function redeemLinkCode(code, onError) {
+    if (!initFb()) { onError("Firebase is not configured on this device."); return; }
+    // authUid null means anonymous sign-in hasn't resolved (offline boot, or the
+    // auth endpoint refusing — e.g. its anti-abuse rate limiting) — that's a
+    // connectivity condition, not a configuration one, so say so.
+    if (!authUid) { onError("Couldn't connect. Check your internet connection."); return; }
+    if (typeof navigator.onLine === "boolean" && !navigator.onLine) {
+      onError("Couldn't connect. Check your internet connection.");
+      return;
+    }
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      onError("Couldn't connect. Check your internet connection.");
+    }, LINK_REDEEM_TIMEOUT_MS);
+    fb.ref("linkCodes/" + code).once("value").then(function (snap) {
+      if (settled) return;
+      var data = snap.val();
+      if (!data) { settled = true; clearTimeout(timeoutId); onError("No link code found."); return; }
+      // The membership value is the redeemed code itself, not `true`: inert under
+      // the current rules (everything checks .exists(), not the value), and it's
+      // the proof-of-code the hardened .validate keys on (SECURITY_REVIEW.md #8).
+      return fb.ref("people/" + data.personId + "/linkedUids/" + authUid).set(code).then(function () {
+        return fb.ref("personOf/" + authUid).set(data.personId);
+      }).then(function () {
+        if (settled) return;
+        settled = true; clearTimeout(timeoutId);
+        personId = data.personId; savePersonId(personId);
+        enableCloudSync();
+        ui.linkDeviceSheet = null;
+        render();
+      });
+    }).catch(function (err) {
+      if (settled) return;
+      settled = true; clearTimeout(timeoutId);
+      onError(err && err.code === "PERMISSION_DENIED" ? "No link code found." : "Couldn't connect. Check your internet connection.");
+    });
+  }
+  // Fan out from the people/<personId> membership list to each linked device's
+  // own history, so mergedHistoryForStats() (see computePlayerStats) can read the
+  // union across every device this person plays from. Listener bookkeeping
+  // matters here: every `on()` with a fresh closure is a NEW listener to
+  // Firebase, so re-running the forEach on each membership snapshot used to
+  // stack duplicates — attach only never-seen uids, detach (and drop the stats
+  // cache of) departed ones, and tear the whole group down if this device
+  // re-links to a different personId.
+  function subscribeLinkedHistories() {
+    if (!personId || !fb || linkedListPid === personId) return;
+    if (linkedListPid) {
+      fb.ref("people/" + linkedListPid + "/linkedUids").off();
+      Object.keys(linkedUidSubs).forEach(function (uid) { fb.ref("users/" + uid + "/history").off(); });
+      linkedUidSubs = {};
+      linkedHistoryCache = {};
+    }
+    linkedListPid = personId;
+    fb.ref("people/" + personId + "/linkedUids").on("value", function (snap) {
+      var uids = Object.keys(snap.val() || {});
+      linkedUids = uids; saveLinkedUids(uids);
+      uids.forEach(function (uid) {
+        if (uid === authUid || linkedUidSubs[uid]) return;   // own copy is already local gameHistory
+        linkedUidSubs[uid] = true;
+        fb.ref("users/" + uid + "/history").on("value", function (hsnap) {
+          var hv = hsnap.val() || {};
+          linkedHistoryCache[uid] = Object.keys(hv).map(function (id) { return hv[id]; });
+          if (!sheetOpen()) softRender();
+        });
+      });
+      Object.keys(linkedUidSubs).forEach(function (uid) {
+        if (uids.indexOf(uid) !== -1) return;
+        fb.ref("users/" + uid + "/history").off();
+        delete linkedUidSubs[uid];
+        delete linkedHistoryCache[uid];
+      });
+      if (!sheetOpen()) softRender();
+    });
+  }
   function loadTourney() { try { var r = localStorage.getItem(TOURNEY_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
   function saveTourney() {
     try {
@@ -1345,9 +1549,15 @@ window.SOMERSET_FB_CONFIG = {
     var winnerIdx = (m.winner === m.a) ? 0 : 1;
     var champ = isClinchingMatch(t, am);
     var g = m.completedGame;
+    // Every device that has identified as a player in a shared match archives its
+    // own copy of this record independently, each with its own random id (below)
+    // — so id alone can't dedup across devices. matchUid is stable across every
+    // device that archives this same match (it's already used for archivedMatches,
+    // 1409), so mergedHistoryForStats() can dedup on it instead.
     if (g && g.deals && g.deals.length) {
       return {
         id: Date.now() + Math.floor(Math.random() * 1000),
+        matchUid: matchUid(am),
         date: new Date().toISOString(),
         teams: [A.name, B.name],
         players: (g.players && g.players.length) ? g.players.slice() : [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
@@ -1361,6 +1571,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     return {
       id: Date.now() + Math.floor(Math.random() * 1000),
+      matchUid: matchUid(am),
       date: new Date().toISOString(),
       teams: [A.name, B.name],
       players: [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
@@ -1537,6 +1748,55 @@ window.SOMERSET_FB_CONFIG = {
   })();
   var LOCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 min stale lock
 
+  // ---- Cloud history sync + device-linking identity (opt-in) ----
+  var AUTH_UID_KEY = "somerset:dev-auth-uid";
+  // Deliberately NOT seeded from localStorage: only onAuthStateChanged assigns
+  // this, so it is either null or the uid Firebase actually authenticated. A
+  // cached uid can be stale (Firebase's own persistence cleared while app
+  // localStorage survives), and subscribing under a stale uid gets the listener
+  // cancelled with PERMISSION_DENIED — permanently, since cancelled listens are
+  // never retried. The key is still written (below) as a debug/stress-test
+  // oracle; nothing reads it back at runtime.
+  var authUid = null;
+
+  var CLOUD_SYNC_KEY = "somerset:dev-cloud-sync-enabled";
+  function loadCloudSyncEnabled() { try { return localStorage.getItem(CLOUD_SYNC_KEY) === "1"; } catch (e) { return false; } }
+  function saveCloudSyncEnabled(v) { try { localStorage.setItem(CLOUD_SYNC_KEY, v ? "1" : "0"); } catch (e) {} }
+  var cloudSyncEnabled = loadCloudSyncEnabled();
+
+  var PERSON_ID_KEY = "somerset:dev-person-id";
+  function loadPersonId() { try { return localStorage.getItem(PERSON_ID_KEY); } catch (e) { return null; } }
+  function savePersonId(id) { try { localStorage.setItem(PERSON_ID_KEY, id); } catch (e) {} }
+  var personId = loadPersonId();
+
+  var LINKED_UIDS_KEY = "somerset:dev-linked-uids";
+  function loadLinkedUids() { try { var r = localStorage.getItem(LINKED_UIDS_KEY); if (r) return JSON.parse(r); } catch (e) {} return []; }
+  function saveLinkedUids(arr) { try { localStorage.setItem(LINKED_UIDS_KEY, JSON.stringify(arr)); } catch (e) {} }
+  var linkedUids = loadLinkedUids();
+
+  var lastSyncedHistoryIds = {};   // in-memory baseline for syncHistoryToCloud() diffing, seeded by subscribeMyHistory()
+  var linkedHistoryCache = {};     // in-memory { uid: [rec,...] }, populated by subscribeLinkedHistories()
+  var myHistorySubscribed = false; // subscribeMyHistory() idempotence (enableCloudSync may be re-entered on re-link)
+  var linkedUidSubs = {};          // { uid: true } for each users/<uid>/history listener currently attached
+  var linkedListPid = null;        // personId whose linkedUids list is subscribed; re-link triggers teardown
+
+  var BACKUP_NUDGE_SEEN_KEY = "somerset:dev-backup-nudge-seen"; // one-shot, mirrors IDENTITY_NUDGE_SEEN_KEY
+  function backupNudgeSeen() { try { return localStorage.getItem(BACKUP_NUDGE_SEEN_KEY) === "1"; } catch (e) { return false; } }
+  function markBackupNudgeSeen() { try { localStorage.setItem(BACKUP_NUDGE_SEEN_KEY, "1"); } catch (e) {} }
+
+  // Boot-time re-attach for devices that already opted in. Runs inside initAuth's
+  // callback — i.e. only once Firebase has delivered the REAL uid — never against
+  // a cached one (see the authUid comment above for why that matters). Cost: on a
+  // boot where auth can't resolve (fully offline), cloud sync stays dormant until
+  // the next reload — the same net result the old eager path produced, minus the
+  // permanently-cancelled listeners.
+  initAuth(function () {
+    if (cloudSyncEnabled && authUid && initFb()) {
+      subscribeMyHistory();
+      if (personId) subscribeLinkedHistories();
+    }
+  });
+
   // ---- Match descriptor helpers ----
   function amKey(am) {
     if (!am) return "";
@@ -1677,6 +1937,26 @@ window.SOMERSET_FB_CONFIG = {
       fb = firebase.database();
       return true;
     } catch (e) { return false; }
+  }
+
+  // Anonymous auth: mints a stable per-device uid with no login UI, so a device
+  // can own a users/<uid>/history path in the security rules. Resolving does not
+  // itself open a Realtime Database connection — that stays lazy via initFb(),
+  // exactly as before — so this is safe to call unconditionally at boot even for
+  // devices that never touch cloud sync.
+  function initAuth(cb) {
+    try {
+      var cfg = window.SOMERSET_FB_CONFIG;
+      if (!cfg || !cfg.apiKey || typeof firebase === "undefined" || !firebase.auth) { if (cb) cb(null); return; }
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+      firebase.auth().onAuthStateChanged(function (user) {
+        if (!user) return;
+        authUid = user.uid;
+        try { localStorage.setItem(AUTH_UID_KEY, authUid); } catch (e) {}
+        if (cb) cb(authUid);
+      });
+      if (!firebase.auth().currentUser) firebase.auth().signInAnonymously().catch(function () {});
+    } catch (e) { if (cb) cb(null); }
   }
 
   var CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -2744,7 +3024,8 @@ window.SOMERSET_FB_CONFIG = {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
-           ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor;
+           ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
+           ui.linkDeviceSheet != null || ui.backupPrompt;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -3367,6 +3648,8 @@ window.SOMERSET_FB_CONFIG = {
           })),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } },
           [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Set your name" ]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } },
+          [ cloudSyncEnabled ? "Cloud backup: On" : "Back up my History" ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
@@ -3693,6 +3976,67 @@ window.SOMERSET_FB_CONFIG = {
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
+      return;
+    }
+    if (ui.linkDeviceSheet) {
+      var lds = ui.linkDeviceSheet;
+      var ldClose = function(){ ui.linkDeviceSheet = null; softRender(); };
+      var ldKids;
+      if (lds.step === "show" && lds.code) {
+        var ldCodeStr = lds.code;
+        var ldCodeEl = el("button", { class:"join-code", style:"display:block; margin:4px auto 14px; font-size:26px;", title:"Tap to copy", onClick:function(){
+          try {
+            navigator.clipboard.writeText(ldCodeStr).then(function(){
+              ldCodeEl.textContent = "Copied!";
+              setTimeout(function(){ ldCodeEl.textContent = ldCodeStr; }, 1500);
+            });
+          } catch(e) {}
+        } }, [ldCodeStr]);
+        ldKids = [
+          el("h3", { class:"disp" }, ["Link This Device"]),
+          el("p", { class:"sub disp" }, ["Enter this code on your other device to back up its History to the same place.", el("br", {}, []), "Tap the code to copy it."]),
+          ldCodeEl,
+          el("button", { class:"sheet-btn ghost disp", onClick:ldClose }, ["Done"])
+        ];
+      } else if (lds.step === "enter") {
+        var ldInput = el("input", {
+          class:"join-input", type:"text", maxlength:6, placeholder:"ABC123",
+          autocomplete:"off", autocorrect:"off", autocapitalize:"characters", spellcheck:false,
+          "aria-label":"Link code",
+          onInput:function(e){
+            ldInput.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6);
+            ui.linkDeviceSheet.error = null;
+          }
+        });
+        ldKids = [
+          el("h3", { class:"disp" }, ["Link This Device"]),
+          el("p", { class:"sub disp" }, ["Enter the 6-character code shown on your other device"]),
+          ldInput
+        ];
+        if (lds.error) ldKids.push(el("p", { class:"join-error disp" }, [lds.error]));
+        ldKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
+          var code = ldInput.value.trim().toUpperCase();
+          if (code.length < 6) { ui.linkDeviceSheet.error = "Code must be 6 characters."; softRender(); return; }
+          redeemLinkCode(code, function(msg){
+            if (!ui.linkDeviceSheet) return;   // closed while the redeem was in flight
+            ui.linkDeviceSheet.error = msg; softRender();
+          });
+        } }, ["Link →"]));
+        ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"menu" }; softRender(); } }, ["Back"]));
+        setTimeout(function(){ try { ldInput.focus(); } catch(e){} }, 50);
+      } else {
+        ldKids = [
+          el("h3", { class:"disp" }, ["Back Up My History"]),
+          el("p", { class:"sub disp" }, ["Sync this device's History to the cloud, and merge it with other devices you've played on."]),
+          el("button", { class:"sheet-btn primary disp", onClick:function(){ generateLinkCode(); } }, ["Show a code to link this device"]),
+          el("button", { class:"sheet-btn disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Enter a code from another device"])
+        ];
+        if (lds.error) ldKids.push(el("p", { class:"join-error disp" }, [lds.error]));
+        ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:ldClose }, ["Cancel"]));
+      }
+      var ldSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Link this device",
+        onClick:function(e){ e.stopPropagation(); } }, ldKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:ldClose }, [ldSheet]));
       return;
     }
     if (ui.whoSheet && tourney) {
@@ -4194,9 +4538,10 @@ window.SOMERSET_FB_CONFIG = {
       if (win === 0 || win === 1) {
         if (ui.activeMatch) {
           var am = ui.activeMatch, m = getActiveMatchObj(am);
-          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
+          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }, am) || null;
         } else if (gameHasTourneyLink()) {
-          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }) || null;
+          var seriesAm = { bracket:"series", gi: tourney.games.length - 1 };
+          game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }, seriesAm) || null;
           // Record just the winner on the tourney's live slot right away so the
           // series tally is correct for the between-games screen the very next
           // render — advanceSharedGame still owns queuing the actual next game.
@@ -4223,12 +4568,17 @@ window.SOMERSET_FB_CONFIG = {
     persist();
   }
 
-  function archiveCurrentGame(meta) {
+  // `am` (the match descriptor) is only passed for a shared/synced match, so its
+  // matchUid can dedup this record against a teammate's independently-archived
+  // copy of the SAME match (see mergedHistoryForStats). A local/unsynced game
+  // has no syncCode to key a matchUid against, so it's omitted there — same
+  // "casual records never get this field" rule buildHistoryRecordForMatch follows.
+  function archiveCurrentGame(meta, am) {
     if (!game.deals.length) return;
     var detail = winnerDetail();
     if (detail.winner === null) return;   // only archive completed games
     var id = Date.now();
-    gameHistory.unshift({
+    var rec = {
       id: id,
       date: new Date().toISOString(),
       teams: game.teams.slice(),
@@ -4240,7 +4590,9 @@ window.SOMERSET_FB_CONFIG = {
       tieBreak: detail.tieBreak,   // true if both teams finished level and the bidder took it
       deals: JSON.parse(JSON.stringify(game.deals)),
       tournament: meta || null
-    });
+    };
+    if (am && syncCode) rec.matchUid = matchUid(am);
+    gameHistory.unshift(rec);
     saveHistory();
     return id;
   }
@@ -4561,6 +4913,22 @@ window.SOMERSET_FB_CONFIG = {
       renderHistoryViewToggle("log"),
       renderHistoryFilterRow()
     ]);
+    // One-shot "back up your History?" nudge (see maybeSuggestBackup) — checked
+    // only here, on the History tab itself, never on the Game/Tournament views:
+    // this used to live in the shared renderSyncBar (every view, every render
+    // pass) and could pop up mid-hand-entry during active tournament play,
+    // shifting layout under the simulator's clicks and corrupting the deal being
+    // entered — confirmed via the stress-test regression it caused on
+    // tournament-single-elim/sync-6p (a moon-shot deal landed as an ordinary
+    // bid because the banner appeared between deal 1 and deal 4 of match 2).
+    maybeSuggestBackup();
+    if (ui.backupPrompt) {
+      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
+        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, ["Back up your game History to the cloud?"]),
+        el("button", { class:"link-btn disp", style:"flex:none; font-size:13px;", onClick:function(){ ui.backupPrompt = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set it up"]),
+        el("button", { class:"del", style:"flex:none;", "aria-label":"Dismiss", html:CLOSE_X_SVG, onClick:function(){ ui.backupPrompt = false; softRender(); } })
+      ]));
+    }
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
     } else {
@@ -4620,9 +4988,31 @@ window.SOMERSET_FB_CONFIG = {
   function seatPartner(seat) { return (seat + 2) % 4; }
   function seatOpponents(seat) { return seat % 2 === 0 ? [1, 3] : [0, 2]; }
 
+  // Union of this device's local gameHistory with any linked devices' synced
+  // history (see subscribeLinkedHistories), deduped on matchUid where present
+  // (shared-match records — see buildHistoryRecordForMatch) or id otherwise
+  // (casual records, which can only ever exist on the one device that played
+  // them). With no linked uids this degenerates to exactly gameHistory.slice(),
+  // so devices that never opt into cloud sync see no behavior change.
+  function mergedHistoryForStats() {
+    var all = gameHistory.slice();
+    linkedUids.forEach(function (uid) {
+      if (uid === authUid) return;
+      (linkedHistoryCache[uid] || []).forEach(function (r) { all.push(r); });
+    });
+    var seen = {}, out = [];
+    all.forEach(function (r) {
+      var key = r.matchUid || r.id;
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push(r);
+    });
+    return out;
+  }
+
   function computePlayerStats() {
     var byKey = {};
-    gameHistory.forEach(function (rec) {
+    mergedHistoryForStats().forEach(function (rec) {
       if (rec.winner == null || !rec.players) return;
       // Bid outcomes (moons, sets) are credited to the seat that actually placed the
       // bid. Deals recorded before bidder tracking existed have no bidderSeat, so
@@ -5872,7 +6262,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // Log a tournament result whose winner was picked by hand (no full in-app
   // game): no deals or score, just the matchup and who won.
-  function archiveManualWin(m, teamIdx) {
+  function archiveManualWin(m, teamIdx, am) {
     var A = tourney.teams[m.a], B = tourney.teams[m.b];
     var ap = A.players || [], bp = B.players || [];
     var rec = {
@@ -5887,6 +6277,7 @@ window.SOMERSET_FB_CONFIG = {
       deals: [],
       tournament: { format: tourney.format, teams: [A.name, B.name], manual: true, id: tourney.id, bestOf: tourney.bestOf }
     };
+    if (am && syncCode) rec.matchUid = matchUid(am);
     gameHistory.unshift(rec);
     saveHistory();
     return rec;
@@ -5903,12 +6294,12 @@ window.SOMERSET_FB_CONFIG = {
     var archived;
     if (complete) {
       var prevGame = game; game = m.game;   // archiveCurrentGame reads the global game pointer
-      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }, am);
       game = prevGame;
       m.completedGame = JSON.parse(JSON.stringify(m.game));   // keep the score on the bracket
       archived = gameHistory[0];
     } else {
-      archived = archiveManualWin(m, teamIdx);                // no full game — log a manual result
+      archived = archiveManualWin(m, teamIdx, am);            // no full game — log a manual result
     }
     if (m) m.game = null;
     routeMatchWinner(am, teamIdx);
@@ -5928,7 +6319,7 @@ window.SOMERSET_FB_CONFIG = {
     // The game itself was already archived to History as soon as it was won
     // (see recordDeal); this only covers the rare case that didn't happen yet.
     if (!m.game.archivedId) {
-      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf });
+      archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }, am);
     }
     var justArchived = gameHistory[0];
     releaseMyHandLock();
@@ -6701,6 +7092,8 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); return true; }
     if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
     if (ui.identityEditor) { ui.identityEditor = false; softRender(); return true; }
+    if (ui.linkDeviceSheet) { ui.linkDeviceSheet = null; softRender(); return true; }
+    if (ui.backupPrompt) { ui.backupPrompt = false; softRender(); return true; }
     if (ui.mergeSheet) {
       ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
       softRender();

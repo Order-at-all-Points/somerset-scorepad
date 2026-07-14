@@ -3,6 +3,23 @@ const config = require("../config");
 
 const APP_URL = `http://127.0.0.1:${config.serverPort}/index.html`;
 
+// Serializes new-device creation so every boot-time signInAnonymously() call
+// is spaced at least config.authThrottleMs apart, even when multiple workers
+// call createDevice() concurrently (local phase) or back-to-back (sync phase)
+// -- see config.js's authThrottleMs comment for why this exists. Chaining off
+// a single shared promise means each caller waits for the previous slot to be
+// claimed before computing its own wait, so concurrent callers still queue in
+// order rather than all computing the same "no wait needed yet" answer at once.
+let authGateChain = Promise.resolve(0);
+function waitForAuthSlot() {
+  authGateChain = authGateChain.then(async (prevSlotAt) => {
+    const wait = Math.max(0, prevSlotAt + config.authThrottleMs - Date.now());
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    return Date.now();
+  });
+  return authGateChain;
+}
+
 async function launchBrowser(browserName = "chromium") {
   const playwright = require("playwright");
   const launcher = playwright[browserName];
@@ -76,6 +93,7 @@ async function createDevice(browser, { label, scenarioLogger, severity = "high" 
     });
   }
 
+  await waitForAuthSlot();
   await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
   await page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible", timeout: config.actionTimeoutMs });
 
