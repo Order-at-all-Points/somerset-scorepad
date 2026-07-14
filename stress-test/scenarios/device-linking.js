@@ -8,6 +8,7 @@ const newGame = require("../lib/pageobjects/newGame");
 const linking = require("../lib/pageobjects/linking");
 const stats = require("../lib/pageobjects/stats");
 const storage = require("../lib/pageobjects/storage");
+const history = require("../lib/pageobjects/history");
 const simulator = require("../lib/simulator");
 const config = require("../config");
 
@@ -470,4 +471,215 @@ const unlinkStopsMerging = {
   },
 };
 
-module.exports = [invalidLinkCode, offlineLocalOnlyFallback, linkAndSyncHistory, sharedMatchNotDoubleCounted, unlinkStopsMerging];
+// Regression guard for SECURITY_REVIEW.md #10 (link codes were multi-use,
+// unrevocable, and immortal for their whole 30-minute window): commitLinkCode
+// now deletes the code the moment it's redeemed, so a second device that
+// somehow still has the code (shoulder-surfed, screenshotted, pasted into the
+// wrong chat) can no longer join with it.
+const linkCodeSingleUse = {
+  name: "device-linking/link-code-single-use",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("device-linking/link-code-single-use");
+    const deviceA = await browserLib.createDevice(browser, { label: "deviceA", scenarioLogger: logger });
+    const deviceB = await browserLib.createDevice(browser, { label: "deviceB", scenarioLogger: logger });
+    const deviceC = await browserLib.createDevice(browser, { label: "deviceC", scenarioLogger: logger });
+    try {
+      logger.step("Device A generates a code, Device B redeems it (consuming it)");
+      const code = await linking.linkDevices(deviceA, deviceB);
+      if (!code || code.length !== 6) {
+        await logger.record({
+          severity: "critical",
+          category: "correctness",
+          summary: `generateLinkCode produced an unexpected code: "${code}"`,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+        return;
+      }
+
+      logger.step("Device C tries to redeem the SAME code -- it should already be consumed and gone");
+      await linking.openDisplaySheet(deviceC.page);
+      await linking.openLinkDeviceSheet(deviceC.page);
+      await deviceC.page.waitForTimeout(1000);
+      await linking.redeemLinkCode(deviceC.page, code);
+      const err = await linking.linkErrorText(deviceC.page);
+      if (!err || !/no link code found/i.test(err)) {
+        await logger.record({
+          severity: "high",
+          category: "correctness",
+          summary: `A redeemed link code must be consumed and unredeemable a second time -- expected "No link code found.", got "${err}"`,
+          expected: "No link code found.",
+          actual: err,
+          page: deviceC.page,
+          contextLabel: "deviceC",
+        });
+      }
+      const personC = await storage.readKey(deviceC.page, storage.KEYS.personId);
+      if (personC.raw) {
+        await logger.record({
+          severity: "critical",
+          category: "correctness",
+          summary: `Device C must not have joined the group via a stale, already-redeemed code, but personId="${personC.raw}"`,
+          expected: null,
+          actual: personC.raw,
+          page: deviceC.page,
+          contextLabel: "deviceC",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { deviceA: deviceA.page, deviceB: deviceB.page, deviceC: deviceC.page },
+      });
+    } finally {
+      await browserLib.closeDevice(deviceA);
+      await browserLib.closeDevice(deviceB);
+      await browserLib.closeDevice(deviceC);
+    }
+  },
+};
+
+// Regression guard for SECURITY_REVIEW.md C4: deleting a shared match on one
+// device didn't stick -- the linked device's independently-archived copy of
+// the same matchUid resurrected it in merged Stats. Same host+guest shared-
+// match setup as sharedMatchNotDoubleCounted, but after confirming both sides
+// merge to 1, the host deletes its own copy and must drop to 0 -- without a
+// matchUid tombstone, mergedHistoryForStats would still find the guest's copy
+// in linkedHistoryCache and count it.
+const deletedSharedMatchStaysDeleted = {
+  name: "device-linking/deleted-shared-match-stays-deleted",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("device-linking/deleted-shared-match-stays-deleted");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      logger.step("Host: name seats, share this game");
+      await seats.nameAllSeats(host.page, ["DH1", "DH2", "DH3", "DH4"]);
+      await sync.shareFromGameOptions(host.page);
+      const joinCode = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "DH1");
+
+      logger.step(`Guest joins with ${joinCode} and identifies as DH3`);
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, joinCode);
+      const joinErr = await sync.joinErrorText(guest.page);
+      if (joinErr) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Guest failed to join with a fresh valid code: ${joinErr}`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      await guest.page.waitForTimeout(300);
+      if (await sync.whoSheet(guest.page).count()) {
+        await sync.chooseIdentity(guest.page, "DH3");
+      }
+
+      logger.step("Link host and guest as the same person");
+      await linking.linkDevices(host, guest);
+      const guestUid = (await storage.readKey(guest.page, storage.KEYS.authUid)).raw;
+      if (!(await linking.waitForLinkedUid(host.page, guestUid))) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Host's membership listener never registered Guest's uid (${guestUid}) within 15s of linking`,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+
+      logger.step("Host plays the game to completion; both sides should merge to 1 game played");
+      await host.page.waitForTimeout(config.syncSettleMs);
+      await simulator.playDealsToCompletion(host.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 7007,
+        logger,
+        contextLabel: "host",
+      });
+      await newGame.continueSharedGame(host.page);
+      await newGame.dismissPlayAgainOffer(host.page);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      await host.page.waitForTimeout(config.syncSettleMs);
+
+      const hostBefore = await stats.readGamesPlayed(host.page, "DH1");
+      if (hostBefore !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Pre-delete sanity: host's games-played for DH1 should be 1, got ${hostBefore}`,
+          expected: 1,
+          actual: hostBefore,
+          pages: { host: host.page, guest: guest.page },
+        });
+        return;
+      }
+
+      logger.step("Host deletes its own copy of the match from History");
+      await nav.goto(host.page, "History");
+      const recIds = await history.entryIds(host.page);
+      if (recIds.length !== 1) {
+        await logger.record({
+          severity: "high",
+          category: "correctness",
+          summary: `Host's History should show exactly 1 entry for the shared match before deleting, got ${recIds.length}`,
+          expected: 1,
+          actual: recIds.length,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+      await history.deleteEntry(host.page, recIds[0]);
+      await host.page.waitForTimeout(config.syncSettleMs);
+
+      logger.step("Host's games-played must drop to 0 -- the guest's linked copy must not resurrect it");
+      const hostAfter = await stats.readGamesPlayed(host.page, "DH1");
+      if (hostAfter !== 0) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `After deleting the shared match on host, host's games-played for DH1 should be 0 (the guest's independently-archived copy of the same matchUid must not resurrect it via mergedHistoryForStats), got ${hostAfter}`,
+          expected: 0,
+          actual: hostAfter,
+          pages: { host: host.page, guest: guest.page },
+        });
+      }
+
+      logger.step("Guest, who never deleted anything, should still see its own copy (documented: deletion doesn't propagate)");
+      const guestAfter = await stats.readGamesPlayed(guest.page, "DH3");
+      if (guestAfter !== 1) {
+        await logger.record({
+          severity: "medium",
+          category: "sync-divergence",
+          summary: `Guest's own games-played for DH3 should be unaffected by host's local delete, got ${guestAfter}`,
+          expected: 1,
+          actual: guestAfter,
+          pages: { host: host.page, guest: guest.page },
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+module.exports = [invalidLinkCode, offlineLocalOnlyFallback, linkAndSyncHistory, sharedMatchNotDoubleCounted, unlinkStopsMerging, linkCodeSingleUse, deletedSharedMatchStaysDeleted];

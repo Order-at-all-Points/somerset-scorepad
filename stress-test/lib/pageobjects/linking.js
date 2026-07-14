@@ -51,7 +51,15 @@ async function generateLinkCode(page) {
   return (await linkDeviceSheet(page).locator(".join-code").textContent()).trim();
 }
 
-/** From the link-device menu step, switch to the code-entry step and redeem `code`. */
+/**
+ * From the link-device menu step, switch to the code-entry step and redeem
+ * `code`. A valid code now takes two taps of "Link →": the first looks up
+ * the code and advances to a "join <ownerName>'s group?" confirmation
+ * (SECURITY_REVIEW.md #11b), the second commits the join. An invalid/expired
+ * code never advances past the first tap -- the sheet stays on the entry
+ * step showing an error instead -- so only tap again if the confirm step
+ * actually appeared.
+ */
 async function redeemLinkCode(page, code) {
   await linkDeviceSheet(page)
     .locator(".sheet-btn", { hasText: "Enter a code from another device" })
@@ -59,7 +67,12 @@ async function redeemLinkCode(page, code) {
   await page.waitForTimeout(60);
   await page.locator('input[aria-label="Link code"]').fill(code);
   await linkDeviceSheet(page).locator(".sheet-btn.primary", { hasText: "Link →" }).click({ timeout: config.actionTimeoutMs });
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
+  const confirmStep = linkDeviceSheet(page).locator("h3", { hasText: "Join This Group?" });
+  if (await confirmStep.count()) {
+    await linkDeviceSheet(page).locator(".sheet-btn.primary", { hasText: "Link →" }).click({ timeout: config.actionTimeoutMs });
+    await page.waitForTimeout(400);
+  }
 }
 
 async function linkErrorText(page) {
