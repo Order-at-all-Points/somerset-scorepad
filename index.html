@@ -1178,6 +1178,37 @@ window.SOMERSET_FB_CONFIG = {
       onError(err && err.code === "PERMISSION_DENIED" ? "No link code found." : "Couldn't connect. Check your internet connection.");
     });
   }
+  // Attach (or re-attach) the live listener on one linked device's own history,
+  // feeding linkedHistoryCache[uid] for mergedHistoryForStats(). Split out from
+  // subscribeLinkedHistories because a *cancelled* read has to be retried by hand
+  // — see the error callback below.
+  var LINKED_HISTORY_MAX_RETRIES = 8;
+  function attachLinkedHistoryListener(uid) {
+    fb.ref("users/" + uid + "/history").on("value", function (hsnap) {
+      linkedHistoryRetries[uid] = 0;   // a successful read refills the retry budget
+      var hv = hsnap.val() || {};
+      linkedHistoryCache[uid] = Object.keys(hv).map(function (id) { return hv[id]; });
+      if (!sheetOpen()) softRender();
+    }, function () {
+      // Read cancelled — almost always a *transient* PERMISSION_DENIED. Our
+      // users/<uid> read rule checks that uid's personOf reverse index points at
+      // our shared personId, but redeemLinkCode writes linkedUids BEFORE personOf
+      // (the rules force that order — personOf's .validate requires the linkedUids
+      // entry to already exist). Our membership listener fires on that FIRST write
+      // and triggers this attach, so we can race ahead of the personOf write and
+      // get denied for the sub-second until it lands. Firebase never retries a
+      // cancelled listen, so do it here — bounded, so a genuinely malformed
+      // membership (linkedUids with no matching personOf, e.g. a device that died
+      // mid-join) can't spin forever.
+      if (!(linkedUidSubs[uid] && linkedListPid && linkedUids.indexOf(uid) !== -1)) return;
+      var n = (linkedHistoryRetries[uid] || 0) + 1;
+      linkedHistoryRetries[uid] = n;
+      if (n > LINKED_HISTORY_MAX_RETRIES) return;
+      setTimeout(function () {
+        if (linkedUidSubs[uid] && linkedListPid && linkedUids.indexOf(uid) !== -1) attachLinkedHistoryListener(uid);
+      }, 1500);
+    });
+  }
   // Fan out from the people/<personId> membership list to each linked device's
   // own history, so mergedHistoryForStats() (see computePlayerStats) can read the
   // union across every device this person plays from. Listener bookkeeping
@@ -1193,6 +1224,7 @@ window.SOMERSET_FB_CONFIG = {
       Object.keys(linkedUidSubs).forEach(function (uid) { fb.ref("users/" + uid + "/history").off(); });
       linkedUidSubs = {};
       linkedHistoryCache = {};
+      linkedHistoryRetries = {};
     }
     linkedListPid = personId;
     fb.ref("people/" + personId + "/linkedUids").on("value", function (snap) {
@@ -1201,20 +1233,54 @@ window.SOMERSET_FB_CONFIG = {
       uids.forEach(function (uid) {
         if (uid === authUid || linkedUidSubs[uid]) return;   // own copy is already local gameHistory
         linkedUidSubs[uid] = true;
-        fb.ref("users/" + uid + "/history").on("value", function (hsnap) {
-          var hv = hsnap.val() || {};
-          linkedHistoryCache[uid] = Object.keys(hv).map(function (id) { return hv[id]; });
-          if (!sheetOpen()) softRender();
-        });
+        linkedHistoryRetries[uid] = 0;
+        attachLinkedHistoryListener(uid);
       });
       Object.keys(linkedUidSubs).forEach(function (uid) {
         if (uids.indexOf(uid) !== -1) return;
         fb.ref("users/" + uid + "/history").off();
         delete linkedUidSubs[uid];
         delete linkedHistoryCache[uid];
+        delete linkedHistoryRetries[uid];
       });
       if (!sheetOpen()) softRender();
     });
+  }
+  // Reverse of the link/enable flow: stop backing up and leave the person-group.
+  // gameHistory itself is deliberately NOT touched — this device keeps every game
+  // it recorded; it just stops syncing and merging. The cloud copy under
+  // users/<uid>/history is also left in place, so re-enabling backup later
+  // restores from it rather than starting empty.
+  //
+  // Ordering matters: detach every listener FIRST, so an in-flight snapshot can't
+  // re-seed linkedUids/caches or re-import history after we've cleared them. The
+  // two server removes (leave the group + drop the reverse index) are best-effort
+  // — the rules permit both (own-uid write on linkedUids; personOf's .validate
+  // allows deletion via !newData.exists()) — but if this device is offline they
+  // just fail silently, leaving one inert membership row behind; the local unlink
+  // still fully takes effect, which is what the user asked for.
+  function unlinkDevice() {
+    var pidAtUnlink = personId, uidAtUnlink = authUid;
+    if (fb) {
+      if (uidAtUnlink) fb.ref("users/" + uidAtUnlink + "/history").off();
+      if (linkedListPid) {
+        fb.ref("people/" + linkedListPid + "/linkedUids").off();
+        Object.keys(linkedUidSubs).forEach(function (uid) { fb.ref("users/" + uid + "/history").off(); });
+      }
+      if (pidAtUnlink && uidAtUnlink) {
+        fb.ref("people/" + pidAtUnlink + "/linkedUids/" + uidAtUnlink).remove().catch(function () {});
+        fb.ref("personOf/" + uidAtUnlink).remove().catch(function () {});
+      }
+    }
+    cloudSyncEnabled = false; saveCloudSyncEnabled(false);
+    personId = null; try { localStorage.removeItem(PERSON_ID_KEY); } catch (e) {}
+    linkedUids = []; saveLinkedUids([]);
+    linkedHistoryCache = {};
+    linkedUidSubs = {};
+    linkedHistoryRetries = {};
+    linkedListPid = null;
+    myHistorySubscribed = false;
+    lastSyncedHistoryIds = {};
   }
   function loadTourney() { try { var r = localStorage.getItem(TOURNEY_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
   function saveTourney() {
@@ -1778,6 +1844,7 @@ window.SOMERSET_FB_CONFIG = {
   var linkedHistoryCache = {};     // in-memory { uid: [rec,...] }, populated by subscribeLinkedHistories()
   var myHistorySubscribed = false; // subscribeMyHistory() idempotence (enableCloudSync may be re-entered on re-link)
   var linkedUidSubs = {};          // { uid: true } for each users/<uid>/history listener currently attached
+  var linkedHistoryRetries = {};   // { uid: n } re-attach budget after a cancelled read (personOf-propagation race)
   var linkedListPid = null;        // personId whose linkedUids list is subscribed; re-link triggers teardown
 
   var BACKUP_NUDGE_SEEN_KEY = "somerset:dev-backup-nudge-seen"; // one-shot, mirrors IDENTITY_NUDGE_SEEN_KEY
@@ -4024,14 +4091,38 @@ window.SOMERSET_FB_CONFIG = {
         } }, ["Link →"]));
         ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"menu" }; softRender(); } }, ["Back"]));
         setTimeout(function(){ try { ldInput.focus(); } catch(e){} }, 50);
-      } else {
+      } else if (lds.step === "unlink") {
         ldKids = [
+          el("h3", { class:"disp" }, ["Turn Off Backup?"]),
+          el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
+            ["This device will stop backing up and leave your linked devices. Its game History stays here on this device, and your other devices keep their own copies. You can turn backup on again anytime."]),
+          el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
+            unlinkDevice();
+            // Back to the Display sheet, whose entry now reads "Back up my
+            // History" again — a self-evident, no-undo-affordance confirmation
+            // that this device is no longer syncing.
+            ui.linkDeviceSheet = null;
+            ui.showThemeSheet = true;
+            render();
+          } }, ["Turn off backup"]),
+          el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"menu" }; softRender(); } }, ["Cancel"])
+        ];
+      } else {
+        ldKids = cloudSyncEnabled ? [
+          el("h3", { class:"disp" }, ["Cloud Backup"]),
+          el("p", { class:"sub disp" }, ["Backup is on for this device. Link another device to merge its History here too."]),
+          el("button", { class:"sheet-btn primary disp", onClick:function(){ generateLinkCode(); } }, ["Show a code to link another device"]),
+          el("button", { class:"sheet-btn disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Enter a code from another device"])
+        ] : [
           el("h3", { class:"disp" }, ["Back Up My History"]),
           el("p", { class:"sub disp" }, ["Sync this device's History to the cloud, and merge it with other devices you've played on."]),
           el("button", { class:"sheet-btn primary disp", onClick:function(){ generateLinkCode(); } }, ["Show a code to link this device"]),
           el("button", { class:"sheet-btn disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Enter a code from another device"])
         ];
         if (lds.error) ldKids.push(el("p", { class:"join-error disp" }, [lds.error]));
+        if (cloudSyncEnabled) {
+          ldKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ ui.linkDeviceSheet = { step:"unlink" }; softRender(); } }, ["Turn off backup & unlink"]));
+        }
         ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:ldClose }, ["Cancel"]));
       }
       var ldSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Link this device",

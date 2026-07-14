@@ -1,5 +1,24 @@
 "use strict";
 const config = require("../../config");
+const storage = require("./storage");
+
+/**
+ * Wait until `page`'s local linkedUids contains `uid` (or `attempts` run out,
+ * ~1s each). subscribeLinkedHistories writes linkedUids on every membership
+ * snapshot and only then attaches that peer's history listener, so this is the
+ * real precondition for "this device will merge that peer's games." Racing a
+ * peer's gameplay ahead of it is what made the cross-device merge checks flaky;
+ * in real use, seconds-to-minutes of human time cover this window. Returns true
+ * if the uid appeared, false on timeout.
+ */
+async function waitForLinkedUid(page, uid, attempts = 15) {
+  for (let i = 0; i < attempts; i++) {
+    const linked = (await storage.readKey(page, storage.KEYS.linkedUids)).value || [];
+    if (linked.indexOf(uid) !== -1) return true;
+    await page.waitForTimeout(1000);
+  }
+  return false;
+}
 
 /** Opens the Display sheet (gear/menu icon), the entry point for device linking. */
 async function openDisplaySheet(page) {
@@ -56,6 +75,28 @@ async function closeLinkDeviceSheet(page) {
 }
 
 /**
+ * Full unlink: from an already-backed-up device, open Display -> Cloud Backup
+ * menu, tap "Turn off backup & unlink", then confirm. Lands back on the open
+ * Display sheet (whose entry has reverted to "Back up my History"), which this
+ * closes so the overlay doesn't block later clicks.
+ */
+async function unlinkThisDevice(page) {
+  await openDisplaySheet(page);
+  await openLinkDeviceSheet(page);
+  await linkDeviceSheet(page)
+    .locator(".sheet-btn", { hasText: "Turn off backup & unlink" })
+    .click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(60);
+  await linkDeviceSheet(page)
+    .locator(".sheet-btn", { hasText: /^Turn off backup$/ })
+    .click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(config.syncSettleMs);
+  // Back on the Display sheet -- close it via Done.
+  await displaySheet(page).locator(".sheet-btn.ghost", { hasText: "Done" }).click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(60);
+}
+
+/**
  * Full happy-path handshake: device A opens the Display sheet, backs up its
  * History (generating a link code); device B redeems it. Returns the code.
  * Device A's "show code" sheet is left open by generateLinkCode() (there's no
@@ -87,5 +128,7 @@ module.exports = {
   redeemLinkCode,
   linkErrorText,
   closeLinkDeviceSheet,
+  unlinkThisDevice,
   linkDevices,
+  waitForLinkedUid,
 };

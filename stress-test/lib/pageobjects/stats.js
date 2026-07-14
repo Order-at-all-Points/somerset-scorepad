@@ -30,4 +30,22 @@ async function readGamesPlayed(page, name) {
   return gamesPlayed(page);
 }
 
-module.exports = { openStatsBoard, openPlayerDetail, gamesPlayed, readGamesPlayed };
+/**
+ * Re-read a player's games-played until it equals `expected` or `attempts` run
+ * out (~1s between tries). For cross-device merge assertions where the value is
+ * correct only once Firebase propagation lands -- a single fixed settle wait is
+ * flaky on cold RTDB connections (the first scenario in a process pays full
+ * connection-establishment latency). Returns the last value seen, so a caller
+ * that still doesn't match can report the real number.
+ */
+async function pollGamesPlayed(page, name, expected, attempts = 12) {
+  let last = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await readGamesPlayed(page, name);
+    if (last === expected) return last;
+    await page.waitForTimeout(1000);
+  }
+  return last;
+}
+
+module.exports = { openStatsBoard, openPlayerDetail, gamesPlayed, readGamesPlayed, pollGamesPlayed };

@@ -167,8 +167,7 @@ const linkAndSyncHistory = {
       }
 
       logger.step("Device B's Stats should reflect Device A's pre-link game once cloud sync propagates");
-      await deviceB.page.waitForTimeout(config.syncSettleMs);
-      const played = await stats.readGamesPlayed(deviceB.page, "A1");
+      const played = await stats.pollGamesPlayed(deviceB.page, "A1", 1);
       if (played !== 1) {
         await logger.record({
           severity: "high",
@@ -186,6 +185,21 @@ const linkAndSyncHistory = {
       // subscribed to linked histories (enableCloudSync now owns that wiring),
       // and no assertion looked at a B-only game from A's side.
       logger.step("Device B plays a post-link game; Device A (the code generator) must see it in Stats without a reload");
+      // Same precondition as unlink-stops-merging: wait for A's membership
+      // listener to register B before B plays, so A has a listener on B's
+      // history. (Passed incidentally before via the B-reads-A1 navigation
+      // above, but that grace isn't guaranteed under load -- make it explicit.)
+      const bUidPostLink = (await storage.readKey(deviceB.page, storage.KEYS.authUid)).raw;
+      if (!(await linking.waitForLinkedUid(deviceA.page, bUidPostLink))) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Device A's membership listener never registered Device B's uid (${bUidPostLink}) within 15s of linking`,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+        return;
+      }
       await nav.goto(deviceB.page, "Game");   // readGamesPlayed above left B on History/Stats
       await seats.nameAllSeats(deviceB.page, ["B1", "B2", "B3", "B4"]);
       await simulator.playDealsToCompletion(deviceB.page, {
@@ -195,8 +209,7 @@ const linkAndSyncHistory = {
         contextLabel: "deviceB",
       });
       await newGame.dismissPlayAgainOffer(deviceB.page);
-      await deviceA.page.waitForTimeout(config.syncSettleMs);
-      const playedOnA = await stats.readGamesPlayed(deviceA.page, "B1");
+      const playedOnA = await stats.pollGamesPlayed(deviceA.page, "B1", 1);
       if (playedOnA !== 1) {
         await logger.record({
           severity: "high",
@@ -320,4 +333,141 @@ const sharedMatchNotDoubleCounted = {
   },
 };
 
-module.exports = [invalidLinkCode, offlineLocalOnlyFallback, linkAndSyncHistory, sharedMatchNotDoubleCounted];
+// Regression guard for the unlink flow (unlinkDevice + Display-sheet UI,
+// SECURITY_REVIEW.md #11): after a device unlinks, it must (a) revert its own
+// local link state, (b) stop merging the formerly-linked device's games into
+// its Stats, and (c) keep its OWN History intact -- unlink is "leave the group,"
+// not "wipe my data."
+const unlinkStopsMerging = {
+  name: "device-linking/unlink-stops-merging",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("device-linking/unlink-stops-merging");
+    const deviceA = await browserLib.createDevice(browser, { label: "deviceA", scenarioLogger: logger });
+    const deviceB = await browserLib.createDevice(browser, { label: "deviceB", scenarioLogger: logger });
+    try {
+      logger.step("Device A plays a local game, then links Device B");
+      await seats.nameAllSeats(deviceA.page, ["UA1", "UA2", "UA3", "UA4"]);
+      await simulator.playDealsToCompletion(deviceA.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 6006,
+        logger,
+        contextLabel: "deviceA",
+      });
+      await newGame.dismissPlayAgainOffer(deviceA.page);
+      await linking.linkDevices(deviceA, deviceB);
+
+      // Synchronize on the real precondition before B plays: A's membership
+      // listener must have registered B, which is when A attaches B's history
+      // listener. Racing B's game ahead of this is what made the merge check
+      // flaky. Waits on actual state, not a fixed sleep.
+      const bUidForWait = (await storage.readKey(deviceB.page, storage.KEYS.authUid)).raw;
+      if (!(await linking.waitForLinkedUid(deviceA.page, bUidForWait))) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Device A's membership listener never registered Device B's uid (${bUidForWait}) within 15s of linking -- linkedUids fan-out did not propagate`,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+        return;
+      }
+
+      logger.step("Device B plays its own game; Device A should merge it in while linked");
+      await nav.goto(deviceB.page, "Game");
+      await seats.nameAllSeats(deviceB.page, ["UB1", "UB2", "UB3", "UB4"]);
+      await simulator.playDealsToCompletion(deviceB.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 6106,
+        logger,
+        contextLabel: "deviceB",
+      });
+      await newGame.dismissPlayAgainOffer(deviceB.page);
+      const mergedBefore = await stats.pollGamesPlayed(deviceA.page, "UB1", 1);
+      if (mergedBefore !== 1) {
+        // Diagnostic: did A's membership listener ever see B? linkedUids is
+        // written by subscribeLinkedHistories on every membership snapshot, so
+        // if it contains B's uid the listener fired and the gap is in the
+        // history-merge path; if not, it's membership-listener propagation.
+        const aLinked = (await storage.readKey(deviceA.page, storage.KEYS.linkedUids)).value || [];
+        const bUid = (await storage.readKey(deviceB.page, storage.KEYS.authUid)).raw;
+        const aUid = (await storage.readKey(deviceA.page, storage.KEYS.authUid)).raw;
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Pre-unlink sanity: Device A should see Device B's game (UB1) merged, got ${mergedBefore}. DIAG: A.linkedUids=${JSON.stringify(aLinked)} A.uid=${aUid} B.uid=${bUid} B-in-A.linkedUids=${aLinked.indexOf(bUid) !== -1}`,
+          expected: 1,
+          actual: mergedBefore,
+          pages: { deviceA: deviceA.page, deviceB: deviceB.page },
+        });
+        return;
+      }
+
+      logger.step("Device A unlinks; its link state must revert and B's game must drop out of A's Stats");
+      await linking.unlinkThisDevice(deviceA.page);
+
+      const cloudSync = await storage.readKey(deviceA.page, storage.KEYS.cloudSyncEnabled);
+      if (cloudSync.value) {
+        await logger.record({
+          severity: "high",
+          category: "correctness",
+          summary: "After unlink, cloudSyncEnabled should be cleared on Device A",
+          expected: null,
+          actual: cloudSync.value,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+      }
+      const personA = await storage.readKey(deviceA.page, storage.KEYS.personId);
+      if (personA.raw) {
+        await logger.record({
+          severity: "high",
+          category: "correctness",
+          summary: `After unlink, personId should be cleared on Device A, still "${personA.raw}"`,
+          expected: null,
+          actual: personA.raw,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+      }
+
+      // B's game must no longer merge in; A's own game must survive.
+      const mergedAfter = await stats.readGamesPlayed(deviceA.page, "UB1");
+      if (mergedAfter !== 0) {
+        await logger.record({
+          severity: "high",
+          category: "correctness",
+          summary: `After unlink, Device B's game (UB1) must NOT appear in Device A's Stats, got ${mergedAfter}`,
+          expected: 0,
+          actual: mergedAfter,
+          pages: { deviceA: deviceA.page, deviceB: deviceB.page },
+        });
+      }
+      const ownAfter = await stats.readGamesPlayed(deviceA.page, "UA1");
+      if (ownAfter !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "correctness",
+          summary: `Unlink must not touch Device A's own History -- expected 1 game played for UA1, got ${ownAfter}`,
+          expected: 1,
+          actual: ownAfter,
+          page: deviceA.page,
+          contextLabel: "deviceA",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { deviceA: deviceA.page, deviceB: deviceB.page },
+      });
+    } finally {
+      await browserLib.closeDevice(deviceA);
+      await browserLib.closeDevice(deviceB);
+    }
+  },
+};
+
+module.exports = [invalidLinkCode, offlineLocalOnlyFallback, linkAndSyncHistory, sharedMatchNotDoubleCounted, unlinkStopsMerging];
