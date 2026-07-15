@@ -702,6 +702,19 @@
   .stats-pair-value.bad { color:var(--red); }
   .stats-pair-sub { font-size:11px; color:var(--ink-soft); margin-top:1px; }
 
+  /* ---- Stats Sharing (People list + shared overall record) ---- */
+  .settings-row-state { font-size:15px; color:var(--ink-soft); }
+  .peer-list { max-height:42vh; overflow-y:auto; margin:2px 0 6px; }
+  .peer-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:10px 2px; border-bottom:1px solid var(--cream-shade); }
+  .peer-row:last-child { border-bottom:none; }
+  .peer-row.dim { opacity:.45; }
+  .peer-id { min-width:0; text-align:left; }
+  .peer-name { font-size:15px; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .peer-sub { font-size:11px; color:var(--ink-soft); margin-top:1px; }
+  .peer-follow-btn { background:none; border:none; padding:3px 0 0; font-size:12px;
+    color:var(--brass-text); cursor:pointer; text-decoration:underline dotted; text-align:left; }
+
   .merge-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 2px; border-bottom:1px solid var(--cream-shade); }
   .merge-row:last-of-type { border-bottom:none; margin-bottom:10px; }
   .merge-row-txt { font-size:14px; color:var(--ink); }
@@ -992,7 +1005,7 @@ window.SOMERSET_FB_CONFIG = {
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
-    linkDeviceSheet:null, backupPrompt:false
+    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false
   };
   // Restore an in-progress local series/offer that survived a reload (see
   // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
@@ -1033,6 +1046,7 @@ window.SOMERSET_FB_CONFIG = {
   function saveHistory() {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(gameHistory)); } catch (e) {}
     syncHistoryToCloud();
+    publishMyDigestSoon();   // stats-sharing digest tracks every history change (no-op unless sharing is on)
   }
   // Push any not-yet-synced History records to users/<authUid>/history and prune
   // ones deleted locally. Records are immutable once archived and single-writer
@@ -1073,6 +1087,7 @@ window.SOMERSET_FB_CONFIG = {
     subscribeMyHistory();
     if (personId) subscribeLinkedHistories();
     syncHistoryToCloud();
+    bootStatsSharing();   // resumes stats sharing if its master switch was left on
     // Only the moment backup actually flips on, not every re-entry into this
     // function (e.g. linking a second device onto an already-backed-up
     // device calls this too, but that's not new news about backup itself).
@@ -1389,6 +1404,12 @@ window.SOMERSET_FB_CONFIG = {
         fb.ref("personOf/" + uidAtUnlink).remove().catch(function () {});
       }
     }
+    // Stats sharing rides on cloud backup — detach its listeners too (autoShare
+    // and the local peer roster are kept, so re-enabling backup resumes where
+    // it left off; the digest and grants stay in the cloud, merely going stale).
+    Object.keys(digestSubs).forEach(function (pid) { if (fb) fb.ref("statsProfiles/" + pid + "/digest").off(); });
+    digestSubs = {}; digestCache = {}; digestRetries = {};
+    if (digestPublishTimer) { clearTimeout(digestPublishTimer); digestPublishTimer = null; }
     cloudSyncEnabled = false; saveCloudSyncEnabled(false);
     personId = null; try { localStorage.removeItem(PERSON_ID_KEY); } catch (e) {}
     linkedUids = []; saveLinkedUids([]);
@@ -1563,6 +1584,7 @@ window.SOMERSET_FB_CONFIG = {
     });
     nameAliases[fromKey] = { display: fromDisplay, canonical: intoDisplay };
     saveNameAliases();
+    publishMyDigestSoon();   // merges can re-route my own row (canonicalName(myDeviceName) may now differ)
   }
   var gameHistory = loadHistory();
   var tourney = loadTourney();
@@ -1624,6 +1646,7 @@ window.SOMERSET_FB_CONFIG = {
     myDeviceName = name;
     saveMyDeviceName(name);
     ui.whoSheet = false;
+    publishSessionClaim();   // stats sharing: announce name->profileId for this session (no-op unless sharing is on)
     syncMyHistoryFromTourney();
     softRender();
   }
@@ -1665,6 +1688,7 @@ window.SOMERSET_FB_CONFIG = {
     if (syncCode) { identifyAs(name); return; }
     myDeviceName = name;
     saveMyDeviceName(name);
+    publishMyDigestSoon();   // digest is keyed off this name — track the change
     softRender();
   }
   function clearMyDeviceIdentity() {
@@ -1797,6 +1821,7 @@ window.SOMERSET_FB_CONFIG = {
       if (!rec) return;
       gameHistory.unshift(rec);
       archivedMatches[uid] = true;
+      maybeHarvestPeers(rec);
       changed = true;
     });
     if (changed) { saveHistory(); saveArchivedMatches(); }
@@ -1984,6 +2009,305 @@ window.SOMERSET_FB_CONFIG = {
   function saveTombstones() { try { localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(historyTombstones)); } catch (e) {} }
   var historyTombstones = loadTombstones();
 
+  // ---- Stats Sharing (opt-in: follow the overall records of people you play with) ----
+  // One master switch (autoShare). While it's on, this device: (1) publishes a
+  // compact aggregate digest of its own record to statsProfiles/<myProfileId>
+  // — never raw history, so no third-party names/scores/dates ever leave the
+  // device (see FIREBASE_SETUP.md); (2) announces "roster name X = profileId Y"
+  // claims inside shared sessions (tournamentClaims/<code>, kept OUTSIDE the
+  // tournament blob so whole-object tourney writes can't clobber other devices'
+  // claims); (3) auto-follows anyone whose claim matches a player in a match
+  // this device archives, grants them read on our digest (allowed/<theirPid>),
+  // and subscribes to theirs. Every per-person grant can be cut off from the
+  // People list — the rules revoke the follower's live listener server-side.
+  // Peers/follows are deliberately per-device with a cloud restore copy (like
+  // historyTombstones, C4's local-by-design precedent) — the grants under
+  // statsProfiles/<pid>/allowed are the shared, enforcing state.
+  var PROFILE_ID_KEY = "somerset:dev-profile-id";
+  var AUTO_SHARE_KEY = "somerset:dev-auto-share";
+  var SHARE_PEERS_KEY = "somerset:dev-share-peers";
+  function loadMyProfileId() { try { return localStorage.getItem(PROFILE_ID_KEY); } catch (e) { return null; } }
+  function saveMyProfileId(id) { try { localStorage.setItem(PROFILE_ID_KEY, id); } catch (e) {} }
+  var myProfileId = loadMyProfileId();
+  function loadAutoShare() { try { return localStorage.getItem(AUTO_SHARE_KEY) === "1"; } catch (e) { return false; } }
+  function saveAutoShare(v) { try { localStorage.setItem(AUTO_SHARE_KEY, v ? "1" : "0"); } catch (e) {} }
+  var autoShare = loadAutoShare();
+  function loadSharePeers() { try { var r = localStorage.getItem(SHARE_PEERS_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
+  function saveSharePeersLocal() { try { localStorage.setItem(SHARE_PEERS_KEY, JSON.stringify(sharePeers)); } catch (e) {} }
+  var sharePeers = loadSharePeers();  // { profileId: { profileId, name, lastPlayed, follow, share, updatedAt } }
+  var digestCache = {};               // { profileId: { status:"ok"|"denied", data:<digest> } }
+  var digestSubs = {};                // { profileId: true } — statsProfiles/<pid>/digest listener attached
+  var digestRetries = {};
+  var DIGEST_MAX_RETRIES = 4;
+
+  function sharingReady() { return cloudSyncEnabled && !!authUid && (!!fb || initFb()); }
+  function statsSharingOn() { return autoShare && sharingReady(); }
+  // share defaults ON for a discovered peer while the master switch is on;
+  // an explicit share:false pin is the "ditch this rando" state.
+  function peerShared(peer) { return statsSharingOn() && peer.share !== false; }
+
+  // Mint (or recover) this person's public profile id. Restore order: local ->
+  // own users/<uid>/profileId -> any linked device's (their users/<uid> path is
+  // already readable cross-device) -> mint fresh. The cross-device adoption is
+  // what keeps one PERSON on one profile: without it a second linked device
+  // would mint a second profile and split this person's followers. Two devices
+  // engaging sharing simultaneously can still race two profiles into existence
+  // (rare: both must flip the toggle in the same instant); they converge on the
+  // sorted-uid winner at next boot, orphaning the loser's grants — re-toggling
+  // a People row re-grants.
+  function ensureStatsProfile(cb) {
+    if (myProfileId) { if (cb) cb(myProfileId); return; }
+    if (!sharingReady()) { if (cb) cb(null); return; }
+    var uids = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; })).sort();
+    Promise.all(uids.map(function (u) {
+      return fb.ref("users/" + u + "/profileId").once("value")
+        .then(function (s) { return s.val(); }).catch(function () { return null; });
+    })).then(function (found) {
+      var existing = found.filter(function (v) { return typeof v === "string" && v; })[0];
+      var adopt = function (pid) {
+        // profileOf is what the digest read rule identifies THIS uid by; the
+        // users/<uid>/profileId copy is only the restore/adoption breadcrumb.
+        return fb.ref("profileOf/" + authUid).set(pid)
+          .then(function () { return fb.ref("users/" + authUid + "/profileId").set(pid); })
+          .then(function () { myProfileId = pid; saveMyProfileId(pid); if (cb) cb(pid); });
+      };
+      if (existing) return adopt(existing);
+      var pid = "sp" + genCode() + genCode();   // 12 chars of the 32-char alphabet = 60 bits, crypto RNG
+      return fb.ref("statsProfiles/" + pid).set({ ownerUid: authUid, createdAt: firebase.database.ServerValue.TIMESTAMP })
+        .then(function () { return adopt(pid); });
+    }).catch(function () { if (cb) cb(null); });
+  }
+
+  // Recompute my own line from the same stats pipeline the UI uses and publish
+  // the aggregate. Debounced: archiving a tournament's worth of matches calls
+  // saveHistory() in bursts. The digest carries my display name so followers
+  // never need to read the profile root (whose allowed/ map would leak WHO ELSE
+  // I share with — they subscribe to the /digest child only).
+  var digestPublishTimer = null;
+  function publishMyDigestSoon() {
+    if (!statsSharingOn() || !myProfileId) return;
+    if (digestPublishTimer) clearTimeout(digestPublishTimer);
+    digestPublishTimer = setTimeout(publishMyDigestNow, 2000);
+  }
+  function publishMyDigestNow() {
+    digestPublishTimer = null;
+    if (!statsSharingOn() || !myProfileId || !myDeviceName) return;
+    var p = computePlayerStats()[statKey(canonicalName(myDeviceName))];
+    if (!p) return;
+    var digest = {
+      name: canonicalName(myDeviceName),
+      games: p.gamesPlayed, wins: p.wins, losses: p.losses,
+      ties: p.gamesPlayed - p.wins - p.losses,
+      moons: p.moonsShot, moonAttempts: p.moonAttempts, sets: p.timesSet,
+      championships: p.championships, longestStreak: p.longestStreak,
+      currentStreakType: p.currentStreak.type || null,
+      currentStreakCount: p.currentStreak.count || 0,
+      form: p.games.slice(-5).map(function (g) { return g.tie ? "T" : (g.won ? "W" : "L"); }).join(""),
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    };
+    fb.ref("statsProfiles/" + myProfileId + "/digest").set(digest).catch(function () {});
+  }
+
+  // Firebase keys forbid . # $ / [ ] — encodeURIComponent covers all but ".".
+  function claimKeyForName(name) { return encodeURIComponent(statKey(name)).replace(/\./g, "%2E"); }
+  // Announce "I am roster name X" for the live shared session so other sharing
+  // devices can discover this profile at archive time. Rules require the claimed
+  // profileId to be OURS (SECURITY_REVIEW-style proof of ownership), so the
+  // worst spoof a code-holder can pull is claiming the wrong NAME.
+  function publishSessionClaim() {
+    if (!syncCode || !statsSharingOn()) return;
+    ensureStatsProfile(function (pid) {
+      if (!pid || !syncCode) return;
+      var me = myNameForCurrentTourney();
+      if (!me) return;
+      fb.ref("tournamentClaims/" + syncCode + "/" + claimKeyForName(me)).set({ profileId: pid, name: me }).catch(function () {});
+    });
+  }
+
+  function grantShare(theirPid) {
+    if (!myProfileId || !sharingReady()) return;
+    fb.ref("statsProfiles/" + myProfileId + "/allowed/" + theirPid).set(true).catch(function () {});
+  }
+  function revokeShare(theirPid) {
+    if (!myProfileId || !sharingReady()) return;
+    fb.ref("statsProfiles/" + myProfileId + "/allowed/" + theirPid).remove().catch(function () {});
+  }
+
+  // Live listener on one followed person's digest — same shape as
+  // attachLinkedHistoryListener, and for the same reason: Firebase never
+  // retries a cancelled listen. A cancel here has two meanings though —
+  // "grant hasn't propagated yet" (their allowed/ write racing our attach,
+  // retry briefly) or "not/no-longer shared with us" (revocation is delivered
+  // as exactly this cancel; show the denied state and rest until the next
+  // explicit trigger: archive, follow toggle, or boot).
+  function attachDigestListener(pid) {
+    fb.ref("statsProfiles/" + pid + "/digest").on("value", function (snap) {
+      digestRetries[pid] = 0;
+      digestCache[pid] = { status: "ok", data: snap.val() };
+      if (!sheetOpen()) softRender();
+    }, function () {
+      if (!digestSubs[pid]) return;
+      digestCache[pid] = { status: "denied" };
+      if (!sheetOpen()) softRender();
+      var n = (digestRetries[pid] || 0) + 1;
+      digestRetries[pid] = n;
+      if (n > DIGEST_MAX_RETRIES) { digestSubs[pid] = false; return; }
+      setTimeout(function () {
+        var peer = sharePeers[pid];
+        if (digestSubs[pid] && peer && peer.follow && statsSharingOn()) attachDigestListener(pid);
+      }, 4000 * n);
+    });
+  }
+  function subscribeDigest(pid) {
+    if (digestSubs[pid] || !statsSharingOn()) return;
+    var peer = sharePeers[pid];
+    if (!peer || !peer.follow) return;
+    digestSubs[pid] = true;
+    digestRetries[pid] = 0;
+    attachDigestListener(pid);
+  }
+  function unsubscribeDigest(pid) {
+    if (fb) fb.ref("statsProfiles/" + pid + "/digest").off();
+    delete digestSubs[pid];
+    delete digestCache[pid];
+    delete digestRetries[pid];
+  }
+
+  // Peers are backed up under users/<uid>/sharePeers purely as a restore copy
+  // (newer-updatedAt-wins merge at boot) — the enforcing state is the allowed/
+  // map under my profile, which any of this person's devices may write directly.
+  function syncPeersToCloud() {
+    if (!sharingReady()) return;
+    fb.ref("users/" + authUid + "/sharePeers").set(sharePeers).catch(function () {});
+  }
+  function restorePeersFromCloud(then) {
+    if (!sharingReady()) { if (then) then(); return; }
+    fb.ref("users/" + authUid + "/sharePeers").once("value").then(function (snap) {
+      var cloud = snap.val() || {};
+      var changed = false;
+      Object.keys(cloud).forEach(function (pid) {
+        var c = cloud[pid], local = sharePeers[pid];
+        if (!c || !c.profileId) return;
+        if (!local || (c.updatedAt || 0) > (local.updatedAt || 0)) { sharePeers[pid] = c; changed = true; }
+      });
+      if (changed) saveSharePeersLocal();
+      if (then) then();
+    }).catch(function () { if (then) then(); });
+  }
+
+  // Archive-time discovery: match the archived record's roster against the
+  // session's claims and auto-follow/grant every claimed player who isn't me.
+  // A once() read instead of a claims listener — claims are only ever consumed
+  // here, so there's no lifecycle to manage across join/leave/reload.
+  function maybeHarvestPeers(rec) {
+    if (!syncCode || !rec || !rec.matchUid || !statsSharingOn()) return;
+    var me = myNameForCurrentTourney() || myDeviceName;
+    var meKey = me ? statKey(canonicalName(me)) : null;
+    var others = (rec.players || []).map(function (n) { return (n || "").trim(); })
+      .filter(function (n) { return n && statKey(canonicalName(n)) !== meKey; });
+    if (!others.length) return;
+    fb.ref("tournamentClaims/" + syncCode).once("value").then(function (snap) {
+      var claims = snap.val() || {};
+      var byName = {};
+      Object.keys(claims).forEach(function (k) {
+        var c = claims[k];
+        if (c && c.profileId && c.name) byName[statKey(c.name)] = c;
+      });
+      var changed = false;
+      others.forEach(function (nm) {
+        var c = byName[statKey(nm)];
+        if (!c || c.profileId === myProfileId) return;
+        var peer = sharePeers[c.profileId];
+        if (!peer) {
+          peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+        } else {
+          peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now();
+        }
+        changed = true;
+        if (peerShared(peer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
+        if (peer.follow) subscribeDigest(c.profileId);
+      });
+      if (changed) {
+        saveSharePeersLocal(); syncPeersToCloud();
+        publishMyDigestSoon();
+        if (!sheetOpen()) softRender();
+      }
+    }).catch(function () {});
+  }
+
+  function setPeerShare(pid, v) {
+    var peer = sharePeers[pid];
+    if (!peer) return;
+    peer.share = !!v; peer.updatedAt = Date.now();
+    saveSharePeersLocal(); syncPeersToCloud();
+    if (v) ensureStatsProfile(function (mine) { if (mine) { grantShare(pid); publishMyDigestSoon(); } });
+    else revokeShare(pid);
+  }
+  function setPeerFollow(pid, v) {
+    var peer = sharePeers[pid];
+    if (!peer) return;
+    peer.follow = !!v; peer.updatedAt = Date.now();
+    saveSharePeersLocal(); syncPeersToCloud();
+    if (v) subscribeDigest(pid);
+    else unsubscribeDigest(pid);
+  }
+  // Master switch. Off is a full retreat: revoke every grant (pinned or not),
+  // detach every follow — "off" must mean nothing is shared OR read, not
+  // "shared with a frozen list."
+  function setStatsSharing(v) {
+    autoShare = !!v; saveAutoShare(autoShare);
+    if (v) {
+      ensureStatsProfile(function (mine) {
+        if (!mine) {
+          autoShare = false; saveAutoShare(false);
+          showInfoToast("Couldn't connect.");
+          softRender();
+          return;
+        }
+        publishSessionClaim();
+        publishMyDigestSoon();
+        Object.keys(sharePeers).forEach(function (pid) {
+          var peer = sharePeers[pid];
+          if (peer.share !== false) grantShare(pid);
+          if (peer.follow) subscribeDigest(pid);
+        });
+        softRender();
+      });
+    } else {
+      Object.keys(sharePeers).forEach(function (pid) {
+        revokeShare(pid);
+        unsubscribeDigest(pid);
+      });
+    }
+    softRender();
+  }
+  // Boot re-attach (mirrors the cloud-sync boot path below): restore the peer
+  // roster, then re-establish claims/digest/follow listeners.
+  function bootStatsSharing() {
+    if (!statsSharingOn()) return;
+    restorePeersFromCloud(function () {
+      ensureStatsProfile(function (mine) {
+        if (!mine) return;
+        publishSessionClaim();
+        publishMyDigestSoon();
+        Object.keys(sharePeers).forEach(function (pid) {
+          if (sharePeers[pid].follow) subscribeDigest(pid);
+        });
+        if (!sheetOpen()) softRender();
+      });
+    });
+  }
+  // For the Stats detail page: the followed peer (if any) whose claimed name
+  // resolves to the same stats row as `displayName`, alias-aware on both sides.
+  function peerForPlayerName(displayName) {
+    var key = statKey(canonicalName(displayName || ""));
+    var hit = null;
+    Object.keys(sharePeers).forEach(function (pid) {
+      if (statKey(canonicalName(sharePeers[pid].name || "")) === key) hit = sharePeers[pid];
+    });
+    return hit;
+  }
+
   // Boot-time re-attach for devices that already opted in. Runs inside initAuth's
   // callback — i.e. only once Firebase has delivered the REAL uid — never against
   // a cached one (see the authUid comment above for why that matters). Cost: on a
@@ -1994,6 +2318,7 @@ window.SOMERSET_FB_CONFIG = {
     if (cloudSyncEnabled && authUid && initFb()) {
       subscribeMyHistory();
       if (personId) subscribeLinkedHistories();
+      bootStatsSharing();
     }
   });
 
@@ -3225,7 +3550,7 @@ window.SOMERSET_FB_CONFIG = {
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
-           ui.linkDeviceSheet != null || ui.backupPrompt;
+           ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -3862,6 +4187,11 @@ window.SOMERSET_FB_CONFIG = {
               else { turnOnBackup(); }
             } }, [ el("span", { class:"ios-toggle-knob" }, []) ])
         ]),
+        el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Stats sharing",
+          onClick:function(){ ui.showThemeSheet = false; ui.sharingSheet = true; render(); } }, [
+          el("span", { class:"settings-row-label disp" }, ["Stats Sharing"]),
+          el("span", { class:"settings-row-state disp" }, [statsSharingOn() ? "On" : "Off"])
+        ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
@@ -3897,6 +4227,64 @@ window.SOMERSET_FB_CONFIG = {
         onClick:function(e){ e.stopPropagation(); } }, idKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.identityEditor = false; softRender(); } }, [idSheet]));
       setTimeout(function(){ try { idInput.focus(); idInput.select(); } catch (e) {} }, 30);
+      return;
+    }
+    if (ui.sharingSheet) {
+      var closeSharing = function(){ ui.sharingSheet = false; softRender(); };
+      var shKids = [ el("h3", { class:"disp", style:"margin-bottom:6px;" }, ["Stats Sharing"]) ];
+      if (!cloudSyncEnabled) {
+        shKids.push(el("p", { class:"sub disp" },
+          ["Follow the overall records of people you play shared games with — and let them follow yours. Only career totals are ever shared, never individual games. Needs Cloud Backup to be on."]));
+        shKids.push(el("button", { class:"sheet-btn primary disp",
+          onClick:function(){ ui.sharingSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set up Cloud Backup"]));
+      } else {
+        shKids.push(el("p", { class:"sub disp" },
+          ["While on, people you play shared games with can see your overall record (wins, moons, streaks — never individual games), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
+        shKids.push(el("div", { class:"settings-row disp" }, [
+          el("span", { class:"settings-row-label disp" }, ["Share with people I play"]),
+          el("span", { class:"ios-toggle disp" + (autoShare ? " on" : ""), role:"switch",
+            "aria-checked": autoShare ? "true" : "false", "aria-label":"Share stats with people I play",
+            onClick:function(e){ e.stopPropagation(); setStatsSharing(!autoShare); } },
+            [ el("span", { class:"ios-toggle-knob" }, []) ])
+        ]));
+        var peerIds = Object.keys(sharePeers).sort(function (a, b) { return (sharePeers[b].lastPlayed || 0) - (sharePeers[a].lastPlayed || 0); });
+        if (!peerIds.length) {
+          shKids.push(el("p", { class:"sub disp", style:"padding-top:4px;" },
+            ["People you play shared games with will show up here automatically" + (autoShare ? "." : " once sharing is on.")]));
+        } else {
+          shKids.push(el("div", { class:"peer-list" }, peerIds.map(function (pid) {
+            var peer = sharePeers[pid];
+            var shared = peerShared(peer);
+            var lastTxt = peer.lastPlayed ? ("Last played " + shortDate(new Date(peer.lastPlayed).toISOString())) : null;
+            return el("div", { class:"peer-row" + (autoShare ? "" : " dim") }, [
+              el("div", { class:"peer-id" }, [
+                el("div", { class:"peer-name disp" }, [peer.name || "?"]),
+                lastTxt ? el("div", { class:"peer-sub disp" }, [lastTxt]) : null,
+                el("button", { class:"peer-follow-btn disp",
+                  "aria-label": (peer.follow ? "Stop following " : "Follow ") + (peer.name || "this player"),
+                  onClick:function(){
+                    if (!autoShare) { showInfoToast("Turn sharing on first"); return; }
+                    setPeerFollow(pid, !peer.follow); softRender();
+                  } }, [peer.follow ? "Following — tap to unfollow" : "Not following — tap to follow"])
+              ].filter(function (x) { return x; })),
+              el("span", { class:"ios-toggle disp" + (shared ? " on" : ""), role:"switch",
+                "aria-checked": shared ? "true" : "false",
+                "aria-label":"Share my stats with " + (peer.name || "this player"),
+                onClick:function(e){
+                  e.stopPropagation();
+                  if (!autoShare) { showInfoToast("Turn sharing on first"); return; }
+                  setPeerShare(pid, !(peer.share !== false)); softRender();
+                } }, [ el("span", { class:"ios-toggle-knob" }, []) ])
+            ]);
+          })));
+          shKids.push(el("p", { class:"sub disp", style:"padding-top:2px;" },
+            ["The toggle controls whether that person can see YOUR stats. Turning one off cuts them off immediately."]));
+        }
+      }
+      shKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeSharing }, ["Done"]));
+      var shSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Stats sharing",
+        onClick:function(e){ e.stopPropagation(); } }, shKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:closeSharing }, [shSheet]));
       return;
     }
     if (ui.gameDetailRecId != null) {
@@ -4869,6 +5257,7 @@ window.SOMERSET_FB_CONFIG = {
     };
     if (am && syncCode) rec.matchUid = matchUid(am);
     gameHistory.unshift(rec);
+    maybeHarvestPeers(rec);
     saveHistory();
     return id;
   }
@@ -5632,6 +6021,64 @@ window.SOMERSET_FB_CONFIG = {
         ["🏆 " + p.championships + " championship" + (p.championships === 1 ? "" : "s") +
          " from " + p.tournamentsPlayed + " tournament" + (p.tournamentsPlayed === 1 ? "" : "s")]) : null
     ]));
+
+    // Stats Sharing: a followed peer's self-published overall record, live from
+    // their own device. Shown as its own clearly-labeled section rather than
+    // merged into the local numbers — the rest of this page counts only games
+    // in YOUR history, and folding the two together would double-count every
+    // shared match (each side archives its own copy).
+    var followedPeer = peerForPlayerName(p.name);
+    if (followedPeer && statsSharingOn() && followedPeer.follow) {
+      var fpid = followedPeer.profileId;
+      var dc = digestCache[fpid];
+      var overallExplain = "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
+      var overallKids = [
+        el("p", { class:"stats-section-title disp", role:"button", tabindex:"0",
+          "aria-label":"Overall record, shared live: " + overallExplain,
+          onClick:function(){ ui.info = overallExplain; render(); } }, ["Overall record — shared live"])
+      ];
+      if (dc && dc.status === "ok" && dc.data) {
+        var d = dc.data;
+        var overallRows = [
+          statsPairRow("Record", (d.wins || 0) + "–" + (d.losses || 0),
+            (d.games || 0) + " game" + (d.games === 1 ? "" : "s") + " everywhere"),
+          statsPairRow("Moons shot", String(d.moons || 0),
+            d.moonAttempts ? (d.moonAttempts + " attempt" + (d.moonAttempts === 1 ? "" : "s")) : null),
+          statsPairRow("Times set", String(d.sets || 0)),
+          statsPairRow("Longest streak", String(d.longestStreak || 0),
+            currentStreakText({ type: d.currentStreakType, count: d.currentStreakCount }) === "—"
+              ? null : ("current: " + currentStreakText({ type: d.currentStreakType, count: d.currentStreakCount })))
+        ];
+        if (d.championships) overallRows.push(statsPairRow("Championships", String(d.championships)));
+        overallKids.push(el("div", { class:"stats-pair-list" }, overallRows));
+        if (d.form) {
+          overallKids.push(el("div", { class:"stats-form-strip", style:"padding-top:8px;" },
+            d.form.split("").map(function (ch) {
+              return el("div", { class:"stats-form-pill " + (ch === "T" ? "t" : (ch === "W" ? "w" : "l")) }, [ch]);
+            })));
+        }
+        if (d.updatedAt) {
+          overallKids.push(el("p", { class:"peer-sub disp" },
+            ["Updated " + shortDate(new Date(d.updatedAt).toISOString()) + (d.name ? (" · shared as " + d.name) : "")]));
+        }
+      } else if (dc && dc.status === "denied") {
+        overallKids.push(el("p", { class:"peer-sub disp" }, [p.name + " isn't sharing their stats with you right now."]));
+      } else if (dc && dc.status === "ok") {
+        overallKids.push(el("p", { class:"peer-sub disp" }, [p.name + " hasn't published any stats yet."]));
+      } else {
+        overallKids.push(el("p", { class:"peer-sub disp" }, ["Connecting…"]));
+      }
+      overallKids.push(el("button", { class:"peer-follow-btn disp",
+        onClick:function(){ setPeerFollow(fpid, false); softRender(); } }, ["Unfollow " + p.name]));
+      card.appendChild(el("div", { class:"stats-section" }, overallKids));
+    } else if (followedPeer && statsSharingOn() && !followedPeer.follow) {
+      card.appendChild(el("div", { class:"stats-section" }, [
+        el("p", { class:"stats-section-title disp" }, ["Overall record"]),
+        el("p", { class:"peer-sub disp" }, ["You unfollowed " + p.name + " — their live record is hidden."]),
+        el("button", { class:"peer-follow-btn disp",
+          onClick:function(){ setPeerFollow(followedPeer.profileId, true); softRender(); } }, ["Follow again"])
+      ]));
+    }
 
     card.appendChild(el("div", { class:"stats-tile-grid" }, [
       statTile(p.gamesPlayed, "Games played",
@@ -6572,6 +7019,7 @@ window.SOMERSET_FB_CONFIG = {
     };
     if (am && syncCode) rec.matchUid = matchUid(am);
     gameHistory.unshift(rec);
+    maybeHarvestPeers(rec);
     saveHistory();
     return rec;
   }

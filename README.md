@@ -138,6 +138,15 @@ Tournaments can be **synced live across phones** via Firebase Realtime Database:
 - The name book stays **local** to each device.
 - **"Which player are you?"** — after starting or joining a synced tournament, tag yourself with your name from the roster (or set it later via **Playing as → Change** in the sync bar). Every match you're in then lands in *your own* History automatically as it's completed — even ones a teammate enters the score for — with no duplicate entries if you also played/recorded it yourself.
 
+### Stats Sharing (follow people you play with)
+
+Opt-in, via **☰ → Stats Sharing** (requires Cloud Backup):
+
+- While on, anyone you play a **shared game** with is followed automatically after the first match: their **overall record** — wins, moons, sets, streaks, recent form, career totals from *every* game they record anywhere — appears as a live **"Overall record — shared live"** section on their Stats page on your device, and stays current as they play.
+- Sharing is **aggregate-only by design**: your followers see career totals, never individual games, scores, dates, or the names of other people you play with.
+- It's **mutual but independently controlled**: the same first match shares your record with them, and the **People list** in the Stats Sharing sheet has a per-person toggle — flip someone off and their access is revoked immediately (enforced by Firebase security rules, not just hidden in the UI). Unfollow anyone from the same list or from their Stats page.
+- Your local Stats table is untouched — it still counts only games in your own History; the shared record is shown alongside, clearly labeled, so nothing double-counts.
+
 ---
 
 ## Architecture
