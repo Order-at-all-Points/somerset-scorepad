@@ -4259,7 +4259,7 @@ window.SOMERSET_FB_CONFIG = {
               onClick:function(){ saveThemePref(opt[0]); applyTheme(); softRender(); } }, [opt[1]]);
           })),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } },
-          [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Set your name" ]),
+          [ myDeviceName ? ("Playing as: " + myDeviceName) : "Set your name" ]),
         el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Manage cloud backup",
           onClick:function(){ ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, [
           el("span", { class:"settings-row-label disp" }, ["Cloud Backup"]),
@@ -4622,7 +4622,7 @@ window.SOMERSET_FB_CONFIG = {
         } }, ["Share this game"]));
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
-          [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Playing as…" ]));
+          [ myDeviceName ? ("Playing as: " + myDeviceName) : "Playing as…" ]));
       } else if (linked) {
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
           ui.gameOptionsOpen = false;
@@ -4846,7 +4846,7 @@ window.SOMERSET_FB_CONFIG = {
       }
       var shMeNow = myNameForCurrentTourney();
       shKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.shareSheetOpen = false; ui.whoSheet = true; render(); } },
-        [ shMeNow ? ("Playing as: " + shMeNow + " · Change") : "Who am I playing as?" ]));
+        [ shMeNow ? ("Playing as: " + shMeNow) : "Who am I playing as?" ]));
       shKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeShareSheet }, ["Done"]));
       var shSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Share",
         onClick:function(e){ e.stopPropagation(); } }, shKids);
