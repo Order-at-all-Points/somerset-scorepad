@@ -2142,6 +2142,7 @@ window.SOMERSET_FB_CONFIG = {
         var out = {};
         var bw = pick(p.bestWin); if (bw) out.bestWin = bw;
         var nb = pick(p.nailbiter); if (nb) out.nailbiter = nb;
+        var cb = pick(p.comebackWin); if (cb) out.comebackWin = cb;
         var lg = pick(p.longestGame); if (lg) out.longestGame = lg;
         var sg = pick(p.shortestGame); if (sg) out.shortestGame = sg;
         return out;
@@ -3312,6 +3313,20 @@ window.SOMERSET_FB_CONFIG = {
       s[0] += delta[0]; s[1] += delta[1];
     });
     return s;
+  }
+  // Biggest points deficit the eventual winner ever faced mid-game (0 if they
+  // never trailed) -- walks the same running-score threading dealDelta uses
+  // for display, just tracking the gap's worst point instead of the final one.
+  function gameComebackDeficit(rec) {
+    if (rec.winner !== 0 && rec.winner !== 1) return 0;
+    var s = [0, 0], maxDeficit = 0;
+    (rec.deals || []).forEach(function (d) {
+      var delta = dealDelta(d, s);
+      s[0] += delta[0]; s[1] += delta[1];
+      var deficit = s[1 - rec.winner] - s[rec.winner];
+      if (deficit > maxDeficit) maxDeficit = deficit;
+    });
+    return maxDeficit;
   }
   // A game can't end in a tie: if both teams clear the target on the same hand
   // with equal scores, the bidding team on that hand wins it (they took the
@@ -5764,6 +5779,7 @@ window.SOMERSET_FB_CONFIG = {
         if (isDealSet(d)) creditSeats.forEach(function (s) { setsBySeat[s]++; });
         creditSeats.forEach(function (s) { bidsBySeat[s]++; bidPtsBySeat[s] += d.bid; });
       });
+      var comebackDeficit = gameComebackDeficit(rec);
       var format = rec.tournament ? rec.tournament.format : "casual";
       var tournamentId = rec.tournament ? rec.tournament.id : null;
       var dealsCount = (rec.deals || []).length;
@@ -5784,7 +5800,8 @@ window.SOMERSET_FB_CONFIG = {
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
           bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
           partnerName: partnerName, opponentNames: opponentNames,
-          format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin
+          format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin,
+          comebackDeficit: comebackDeficit
         });
         [partnerName].forEach(function (nm2) {
           var pk = statKey(nm2);
@@ -5824,7 +5841,7 @@ window.SOMERSET_FB_CONFIG = {
   function finalizePlayerStats(p) {
     p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0, longestLoss = 0, lossRun = 0;
-    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null, nailbiter = null;
+    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null, nailbiter = null, comebackWin = null;
     var totalBids = 0, totalBidPoints = 0;
     var byFormat = {};
     p.games.forEach(function (g) {
@@ -5845,6 +5862,9 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (!g.tie && g.margin != null && (!nailbiter || Math.abs(g.margin) < Math.abs(nailbiter.margin))) {
         nailbiter = { margin: g.margin, won: g.won, team: g.team, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
+      }
+      if (g.won && g.comebackDeficit && (!comebackWin || g.comebackDeficit > comebackWin.deficit)) {
+        comebackWin = { deficit: g.comebackDeficit, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
       if (g.dealsCount) {
         if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
@@ -5869,6 +5889,7 @@ window.SOMERSET_FB_CONFIG = {
     p.tournamentsPlayed = Object.keys(tournamentIds).length;
     p.bestWin = bestWin;
     p.nailbiter = nailbiter;
+    p.comebackWin = comebackWin;
     p.longestGame = longestGame;
     p.shortestGame = (shortestGame && shortestGame.dealsCount !== (longestGame && longestGame.dealsCount)) ? shortestGame : null;
     p.bestPartner = bestOrWorstPairing(p.partners, true);
@@ -6158,6 +6179,10 @@ window.SOMERSET_FB_CONFIG = {
           var nbMargin = nbT[nbTeam] - nbT[1 - nbTeam];
           hlRows.push(sharedGameRow("Nailbiter", dhl.nailbiter, (nbMargin > 0 ? "+" : "") + nbMargin));
         }
+        if (dhl.comebackWin && dhl.comebackWin.deals) {
+          var cbDeficit = gameComebackDeficit(normalizeSharedRec(dhl.comebackWin));
+          hlRows.push(sharedGameRow("Comeback win", dhl.comebackWin, "Down " + cbDeficit));
+        }
         if (dhl.longestGame && dhl.longestGame.deals) {
           var lgN = fbObjToArr(dhl.longestGame.deals).length;
           hlRows.push(sharedGameRow("Longest game", dhl.longestGame, lgN + " hand" + (lgN === 1 ? "" : "s")));
@@ -6280,7 +6305,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
-    if (p.bestWin || p.longestGame || p.nailbiter) {
+    if (p.bestWin || p.longestGame || p.nailbiter || p.comebackWin) {
       var hlRows = [];
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
@@ -6291,6 +6316,11 @@ window.SOMERSET_FB_CONFIG = {
         hlRows.push(statsPairRow("Nailbiter", (p.nailbiter.margin > 0 ? "+" : "") + p.nailbiter.margin,
           (p.nailbiter.won ? "Beat " : "Lost to ") + p.nailbiter.opponentNames.join(" & ") + " · " + dateHeading(p.nailbiter.date), null,
           function(){ ui.gameDetailRecId = p.nailbiter.recId; render(); }));
+      }
+      if (p.comebackWin) {
+        hlRows.push(statsPairRow("Comeback win", "Down " + p.comebackWin.deficit,
+          "vs " + p.comebackWin.opponentNames.join(" & ") + " · " + dateHeading(p.comebackWin.date), null,
+          function(){ ui.gameDetailRecId = p.comebackWin.recId; render(); }));
       }
       if (p.longestGame) {
         hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
