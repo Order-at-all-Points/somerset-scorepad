@@ -1002,7 +1002,7 @@ window.SOMERSET_FB_CONFIG = {
   var ui = {
     showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
-    seatMenu:null, seatMenuMode:"menu", info:null, entryStep:1,
+    seatMenu:null, seatMenuMode:"menu", seatMenuError:null, info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
     activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
@@ -1010,7 +1010,8 @@ window.SOMERSET_FB_CONFIG = {
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
-    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false, gameDetailShared:null
+    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false, gameDetailShared:null,
+    ambiguousClaims:[]
   };
   // Restore an in-progress local series/offer that survived a reload (see
   // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
@@ -1600,10 +1601,30 @@ window.SOMERSET_FB_CONFIG = {
     saveNameAliases();
     publishMyDigestSoon();   // merges can re-route my own row (canonicalName(myDeviceName) may now differ)
   }
+  // Per-device "split" rules — the inverse of nameAliases: two different real
+  // people who happen to share a name got conflated into one Stats row because
+  // statKey() is purely textual. Scoped to SPECIFIC games (unlike aliases,
+  // which apply to every occurrence of the text) so the same raw name can
+  // resolve to two different people depending on which game it came from.
+  // { [statKey(rawName)]: [ { recIds: {recId:true,...}, displayAs } ] }
+  // Never touches gameHistory/rec.players — resolved only at stats-read time,
+  // same non-destructive posture as mergeNames above.
+  var NAME_SPLITS_KEY = "somerset:dev-name-splits";
+  function loadNameSplits() { try { var r = localStorage.getItem(NAME_SPLITS_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
+  function saveNameSplits() { try { localStorage.setItem(NAME_SPLITS_KEY, JSON.stringify(nameSplits)); } catch (e) {} }
+  function splitName(rec, rawName) {
+    var rules = nameSplits[statKey(rawName)];
+    if (!rules) return rawName;
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i].recIds[rec.id]) return rules[i].displayAs;
+    }
+    return rawName;
+  }
   var gameHistory = loadHistory();
   var tourney = loadTourney();
   var nameBook = loadNames();
   var nameAliases = loadNameAliases();
+  var nameSplits = loadNameSplits();
 
   // ---- "Which player am I?" identity, for auto-saving tournament games to my History
   // (and, once known, for the local Game tab's "We/They" viewer perspective too) ----
@@ -2275,12 +2296,25 @@ window.SOMERSET_FB_CONFIG = {
         var c = claims[k];
         if (c && c.profileId && c.name) byName[statKey(c.name)] = c;
       });
-      var changed = false;
+      var changed = false, ambiguityAdded = false;
       others.forEach(function (nm) {
         var c = byName[statKey(nm)];
         if (!c || c.profileId === myProfileId) return;
         var peer = sharePeers[c.profileId];
         if (!peer) {
+          // A different profileId already claims this same name — could be two
+          // real people who happen to share it, or the accepted wrong-name-claim
+          // risk (see [[firebase-sync-open-issues]]). Either way, don't silently
+          // auto-follow a second identity under one name; queue it for the user
+          // to resolve in the Sharing sheet instead.
+          var conflictPid = Object.keys(sharePeers).filter(function (pid2) {
+            return pid2 !== c.profileId && statKey(canonicalName(sharePeers[pid2].name || "")) === statKey(nm);
+          })[0];
+          if (conflictPid) {
+            var already = ui.ambiguousClaims.some(function (a) { return a.claim.profileId === c.profileId; });
+            if (!already) { ui.ambiguousClaims.push({ name: c.name, existingPid: conflictPid, claim: { profileId: c.profileId, name: c.name } }); ambiguityAdded = true; }
+            return;
+          }
           peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
         } else {
           peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now();
@@ -2292,8 +2326,8 @@ window.SOMERSET_FB_CONFIG = {
       if (changed) {
         saveSharePeersLocal(); syncPeersToCloud();
         publishMyDigestSoon();
-        if (!sheetOpen()) softRender();
       }
+      if ((changed || ambiguityAdded) && !sheetOpen()) softRender();
     }).catch(function () {});
   }
 
@@ -4160,7 +4194,7 @@ window.SOMERSET_FB_CONFIG = {
     els.forEach(function (e) { e.style.minHeight = h + "px"; });
   }
 
-  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; softRender(); }
+  function closeSeatMenu() { ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; ui.seatMenuError = null; softRender(); }
 
   // Tournament match team names are always "PlayerA & PlayerB", derived live from
   // the seats — never hand-typed (unlike the solo game's freely-editable "We"/"They").
@@ -4345,6 +4379,26 @@ window.SOMERSET_FB_CONFIG = {
           ]));
           shKids.push(el("p", { class:"sub disp", style:"padding-top:0;" },
             ["Off: your shared highlight games hide who played (scores and hands still show). On: they name the full table — worth asking your group first, since those people don't pick your followers."]));
+        }
+        if (ui.ambiguousClaims.length) {
+          ui.ambiguousClaims.forEach(function (amb, ai) {
+            var existingName = (sharePeers[amb.existingPid] && sharePeers[amb.existingPid].name) || amb.name;
+            shKids.push(el("div", { class:"peer-row", style:"flex-direction:column; align-items:flex-start; gap:6px;" }, [
+              el("span", { class:"disp" }, ["“" + amb.name + "” matches someone you already follow (" + existingName + ") — same person?"]),
+              el("div", { style:"display:flex; gap:8px;" }, [
+                el("button", { class:"chip disp", onClick:function () { ui.ambiguousClaims.splice(ai, 1); softRender(); } }, ["Same person"]),
+                el("button", { class:"chip disp", onClick:function () {
+                  var c = amb.claim;
+                  var newPeer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+                  ui.ambiguousClaims.splice(ai, 1);
+                  saveSharePeersLocal(); syncPeersToCloud();
+                  if (peerShared(newPeer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
+                  subscribeDigest(c.profileId);
+                  softRender();
+                } }, ["Different person — follow separately"])
+              ])
+            ]));
+          });
         }
         var peerIds = Object.keys(sharePeers).sort(function (a, b) { return (sharePeers[b].lastPlayed || 0) - (sharePeers[a].lastPlayed || 0); });
         if (!peerIds.length) {
@@ -4546,7 +4600,13 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.shareNamesSetup) {
       var sns = ui.shareNamesSetup;
       var snsAllNamed = function () { return sns.players.every(function (p) { return p && p.trim(); }); };
-      var snsInputs = [], snsBtn;
+      var snsValid = function () { return snsAllNamed() && !rosterHasDuplicateNames(sns.players); };
+      var snsInputs = [], snsBtn, snsMsgEl;
+      var snsUpdate = function () {
+        var dup = snsAllNamed() && rosterHasDuplicateNames(sns.players);
+        if (snsMsgEl) snsMsgEl.textContent = dup ? "Two players have the same name — add a nickname or initial to tell them apart." : "";
+        snsBtn.disabled = !snsValid();
+      };
       var snsKids = [
         el("h3", { class:"disp" }, ["Who's playing?"]),
         el("p", { class:"sub disp" }, ["Enter everyone's name before sharing — it's how each device knows which seat is you, so the table can show your view."])
@@ -4556,13 +4616,15 @@ window.SOMERSET_FB_CONFIG = {
         var input = el("input", {
           class:"tinput disp", value:nm, placeholder:"Player " + (i + 1), "aria-label":"Player " + (i + 1) + " name",
           autocomplete:"off", autocapitalize:"words", enterkeyhint:(i < 3 ? "next" : "done"),
-          onInput:function (e) { sns.players[i] = e.target.value; snsBtn.disabled = !snsAllNamed(); },
+          onInput:function (e) { sns.players[i] = e.target.value; snsUpdate(); },
           onKeydown:function (e) { if (e.key === "Enter") { e.preventDefault(); if (snsInputs[i + 1]) snsInputs[i + 1].focus(); else input.blur(); } }
         });
         snsInputs.push(input);
         snsWrap.appendChild(el("div", { class:"trow" }, [ el("span", { class:"tnum mono" }, [String(i + 1)]), input ]));
       });
       snsKids.push(snsWrap);
+      snsMsgEl = el("p", { class:"sub disp", style:"color:var(--red); margin-top:-8px;" }, [""]);
+      snsKids.push(snsMsgEl);
       if (nameBook.length) {
         var snsEntered = sns.players.map(function (p) { return (p || "").trim().toLowerCase(); });
         var snsAvail = nameBook.filter(function (nm) { return snsEntered.indexOf(nm.toLowerCase()) === -1; });
@@ -4580,14 +4642,14 @@ window.SOMERSET_FB_CONFIG = {
         }
       }
       snsBtn = el("button", { class:"sheet-btn primary disp", onClick:function () {
-        if (!snsAllNamed()) return;
+        if (!snsValid()) return;
         soloGame.players = sns.players.map(function (p) { return p.trim(); });
         rememberNames(soloGame.players);
         ui.shareNamesSetup = null;
         startGameShare();
       } }, ["Share →"]);
-      snsBtn.disabled = !snsAllNamed();
       snsKids.push(snsBtn);
+      snsUpdate();
       snsKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function () { ui.shareNamesSetup = null; softRender(); } }, ["Cancel"]));
       var snsSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Who's playing",
         onClick:function (e) { e.stopPropagation(); } }, snsKids);
@@ -4885,6 +4947,56 @@ window.SOMERSET_FB_CONFIG = {
           mKids.push(el("p", { class:"sub disp" }, ["No other players yet. Play a game with someone else first."]));
         }
         mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:2 }; softRender(); } }, ["‹ Back"]));
+      } else if (ui.mergeSheet.step === "splitPick") {
+        mKids = [
+          el("h3", { class:"disp" }, ["Split which name?"]),
+          el("p", { class:"sub disp" }, ["Pick a name that's really two different people, then choose which of their games belong to the other one."])
+        ];
+        mPlayers.forEach(function (nm) {
+          mKids.push(el("button", { class:"sheet-btn disp",
+            onClick:function(){ ui.mergeSheet = { step:"splitGames", from:nm, selected:{} }; softRender(); } }, [nm]));
+        });
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:1 }; softRender(); } }, ["‹ Back"]));
+      } else if (ui.mergeSheet.step === "splitGames") {
+        var spFrom = ui.mergeSheet.from, spKey = statKey(spFrom);
+        var spGames = (mStats[spKey] && mStats[spKey].games) || [];
+        var spSelected = ui.mergeSheet.selected;
+        mKids = [
+          el("h3", { class:"disp" }, ["Which of “" + spFrom + "”’s games are someone else?"]),
+          el("p", { class:"sub disp" }, ["Select the games that belong to a different person, then give them a new name below."])
+        ];
+        if (!spGames.length) {
+          mKids.push(el("p", { class:"sub disp" }, ["No games found."]));
+        } else {
+          spGames.slice().reverse().forEach(function (g) {
+            var checked = !!spSelected[g.recId];
+            var label = (g.date ? new Date(g.date).toLocaleDateString() : "") +
+              " · with " + g.partnerName + " vs " + g.opponentNames.join(" & ") +
+              (g.tie ? " (tie)" : g.won ? " (win)" : " (loss)");
+            mKids.push(el("button", { class:"sheet-btn disp" + (checked ? " primary" : ""),
+              onClick:function(){
+                if (spSelected[g.recId]) delete spSelected[g.recId]; else spSelected[g.recId] = true;
+                softRender();
+              } }, [ (checked ? "✓ " : "") + label ]));
+          });
+          var spCount = Object.keys(spSelected).length;
+          var spInput = el("input", { class:"sheet-input disp", type:"text", placeholder:"New name for those games", maxlength:24, "aria-label":"New name" });
+          mKids.push(spInput);
+          var spBtn = el("button", { class:"sheet-btn primary disp", onClick:function(){
+            var newNm = (spInput.value || "").trim();
+            var ids = Object.keys(spSelected);
+            if (!newNm || !ids.length || statKey(newNm) === spKey) return;
+            (nameSplits[spKey] || (nameSplits[spKey] = [])).push({ recIds: spSelected, displayAs: newNm });
+            saveNameSplits();
+            rememberNames([newNm]);
+            publishMyDigestSoon();   // a split can re-route my own row if myDeviceName is the name being split
+            ui.mergeSheet = { step:1 };
+            softRender();
+          } }, [ "Split " + spCount + " game" + (spCount === 1 ? "" : "s") + "…" ]);
+          spBtn.disabled = !spCount;
+          mKids.push(spBtn);
+        }
+        mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.mergeSheet = { step:"splitPick" }; softRender(); } }, ["‹ Back"]));
       } else {
         var groups = {};
         Object.keys(nameAliases).forEach(function (k) {
@@ -4893,7 +5005,7 @@ window.SOMERSET_FB_CONFIG = {
         });
         mKids = [
           el("h3", { class:"disp" }, ["Merge names"]),
-          el("p", { class:"sub disp" }, ["Combine different spellings of the same player so their stats count as one."])
+          el("p", { class:"sub disp" }, ["Combine different spellings of the same player so their stats count as one, or split one name into two different people."])
         ];
         Object.keys(groups).forEach(function (ck) {
           groups[ck].variants.forEach(function (v) {
@@ -4904,7 +5016,18 @@ window.SOMERSET_FB_CONFIG = {
             ]));
           });
         });
+        Object.keys(nameSplits).forEach(function (k) {
+          nameSplits[k].forEach(function (rule, ri) {
+            var n = Object.keys(rule.recIds).length;
+            mKids.push(el("div", { class:"merge-row" }, [
+              el("span", { class:"merge-row-txt disp" }, [n + " game" + (n === 1 ? "" : "s") + " re-labeled " + rule.displayAs]),
+              el("button", { class:"merge-undo", "aria-label":"Undo split",
+                onClick:function(){ nameSplits[k].splice(ri, 1); if (!nameSplits[k].length) delete nameSplits[k]; saveNameSplits(); softRender(); } }, ["×"])
+            ]));
+          });
+        });
         mKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ ui.mergeSheet = { step:2 }; softRender(); } }, ["Merge two names…"]));
+        mKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.mergeSheet = { step:"splitPick" }; softRender(); } }, ["Split a name…"]));
         mKids.push(el("button", { class:"sheet-btn ghost disp", onClick:closeMergeSheet }, ["Done"]));
       }
       var mSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Merge names",
@@ -4916,7 +5039,16 @@ window.SOMERSET_FB_CONFIG = {
     var i = ui.seatMenu, isDealer = (dealerSeat() === i), sheetKids;
 
     if (ui.seatMenuMode === "edit") {
-      var saveName = function(nm){ nm = (nm || "").trim(); game.players[i] = nm; rememberNames([nm]); syncMatchTeamNames(); maybeSuggestIdentity(nm); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; persist(); };
+      var saveName = function(nm){
+        nm = (nm || "").trim();
+        var trial = game.players.map(function (p, pi) { return pi === i ? nm : p; });
+        if (nm && rosterHasDuplicateNames(trial)) {
+          ui.seatMenuError = "Someone else at this table is already named “" + nm + "” — add a last initial or nickname to tell them apart.";
+          softRender();
+          return;
+        }
+        game.players[i] = nm; rememberNames([nm]); syncMatchTeamNames(); maybeSuggestIdentity(nm); ui.seatMenu = null; ui.seatMenuMode = "menu"; ui.editNames = false; ui.seatMenuError = null; persist();
+      };
       var input = el("input", { class:"sheet-input disp", type:"text", value:game.players[i] || "",
         placeholder:"Player name", maxlength:24, "aria-label":"Player name",
         onKeydown:function(e){ if (e.key === "Enter") { saveName(input.value); } } });
@@ -4924,6 +5056,9 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Edit name"]),
         input
       ];
+      if (ui.seatMenuError) {
+        sheetKids.push(el("p", { class:"sub disp", style:"color:var(--red);" }, [ui.seatMenuError]));
+      }
       if (nameBook.length) {
         var used = game.players.map(function (p) { return (p || "").trim().toLowerCase(); });
         var avail = nameBook.filter(function (nm) { return used.indexOf(nm.toLowerCase()) === -1; });
@@ -4948,7 +5083,7 @@ window.SOMERSET_FB_CONFIG = {
         sheetKids.push(qa);
       }
       sheetKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){ saveName(input.value); } }, ["Save"]));
-      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; softRender(); } }, ["Cancel"]));
+      sheetKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.seatMenuMode = "menu"; ui.editNames = false; ui.seatMenuError = null; softRender(); } }, ["Cancel"]));
       if (!ui.editNames) setTimeout(function(){ try { input.focus(); input.select(); } catch (e) {} }, 30);
     } else if (ui.seatMenuMode === "swap") {
       sheetKids = [
@@ -4964,7 +5099,7 @@ window.SOMERSET_FB_CONFIG = {
       sheetKids = [
         el("h3", { class:"disp" }, [seatName(i)]),
         el("p", { class:"sub disp" }, [teamLabel(i % 2) + (isDealer ? " · currently dealing" : " · seat " + (i + 1))]),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; softRender(); } }, ["Edit name"]),
+        el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "edit"; ui.editNames = false; ui.seatMenuError = null; softRender(); } }, ["Edit name"]),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.seatMenuMode = "swap"; softRender(); } }, ["Swap seats"]),
         el("button", { class:"sheet-btn primary disp", disabled:isDealer, onClick:function(){ chooseDealerFromMenu(i); } },
           [ isDealer ? "Already dealing" : "Set as dealer" ]),
@@ -5756,6 +5891,19 @@ window.SOMERSET_FB_CONFIG = {
   // by trimmed, case-folded name, the same normalization dedupeNames() already
   // uses for the per-device name book, so "Dan" and "dan " count as one player.
   function statKey(name) { return (name || "").trim().toLowerCase(); }
+  // Two seats at the same table can never resolve to the same person (breaks
+  // mySeatIndex/identifyAs/bid-crediting, which all match "who" by this same
+  // key) — used to gate roster-entry screens against duplicate names.
+  function rosterHasDuplicateNames(players) {
+    var seen = {};
+    for (var i = 0; i < players.length; i++) {
+      var k = statKey(players[i]);
+      if (!k) continue;
+      if (seen[k]) return true;
+      seen[k] = true;
+    }
+    return false;
+  }
 
   // Partner/opponent are tracked by seat parity: seats 0/2 are one team, 1/3 the
   // other, and within a team the other seat is your partner while both seats of
@@ -5816,12 +5964,16 @@ window.SOMERSET_FB_CONFIG = {
       rec.players.forEach(function (raw, seat) {
         var nm = (raw || "").trim();
         if (!nm) return;
-        var resolved = canonicalName(nm);
+        var resolved = canonicalName(splitName(rec, nm));
         var key = statKey(resolved), team = seat % 2;
         var p = byKey[key] || (byKey[key] = { name: resolved, games: [], partners: {}, opponents: {} });
-        var partnerName = canonicalName((rec.players[seatPartner(seat)] || "").trim() || "?");
+        var partnerRaw = (rec.players[seatPartner(seat)] || "").trim();
+        var partnerName = partnerRaw ? canonicalName(splitName(rec, partnerRaw)) : "?";
         var oppSeats = seatOpponents(seat);
-        var opponentNames = oppSeats.map(function (s) { return canonicalName((rec.players[s] || "").trim() || "?"); });
+        var opponentNames = oppSeats.map(function (s) {
+          var oppRaw = (rec.players[s] || "").trim();
+          return oppRaw ? canonicalName(splitName(rec, oppRaw)) : "?";
+        });
         var won = rec.winner === team, tie = rec.winner === "tie";
         var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
@@ -7377,10 +7529,13 @@ window.SOMERSET_FB_CONFIG = {
       var count = s.players.length;
       var allNamed = count > 0 && s.players.every(function (p) { return p && p.trim(); });
       var validCount = count >= 6 && count % 2 === 0;
-      var ok = validCount && allNamed;
+      var dup = allNamed && rosterHasDuplicateNames(s.players);
+      var ok = validCount && allNamed && !dup;
       var tms = count / 2;
       msgEl.textContent = !validCount ? ("Need an even number of players, at least 6 (currently " + count + ")")
-        : (!allNamed ? "" : (count + " players · " + tms + " teams" + (tms % 2 === 1 ? " · one bye" : "")));
+        : !allNamed ? ""
+        : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
+        : (count + " players · " + tms + " teams" + (tms % 2 === 1 ? " · one bye" : ""));
       msgEl.className = "tvalid disp" + (ok ? " ok" : "");
       if (drawBtn) drawBtn.disabled = !ok;
       return ok;
@@ -7480,15 +7635,18 @@ window.SOMERSET_FB_CONFIG = {
     ]));
 
     function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
+    function noDupNames() { return !rosterHasDuplicateNames(s.players); }
     function mkTeam(a, b) { return { id: "t" + Math.random().toString(36).slice(2, 7), name: a + " & " + b, players: [a, b] }; }
     function invalidateTeams() { s.teams = null; s.partner = null; }
 
     var startBtn, msgEl, drawBtn = null, partnerBtns = [], partnerLabelEl = null;
     function recompute() {
       var filled = namesFilled();
-      var ok = filled && !!s.teams;
+      var dup = filled && !noDupNames();
+      var ok = filled && !dup && !!s.teams;
       if (msgEl) {
         msgEl.textContent = !filled ? "Enter all 4 player names"
+          : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
           : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
           : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
         msgEl.className = "tvalid disp" + (ok ? " ok" : "");
@@ -7496,9 +7654,9 @@ window.SOMERSET_FB_CONFIG = {
       if (startBtn) startBtn.disabled = !ok;
       // The Teams controls are always in the DOM; keep their enabled state and
       // labels in sync as names are typed, without a focus-stealing re-render.
-      if (drawBtn) drawBtn.disabled = !filled;
+      if (drawBtn) drawBtn.disabled = !filled || dup;
       partnerBtns.forEach(function(b){
-        b.disabled = !filled;
+        b.disabled = !filled || dup;
         var v = s.players[b._pi] && s.players[b._pi].trim();
         b.textContent = v || ("Player " + (b._pi + 1));
       });
@@ -7569,10 +7727,10 @@ window.SOMERSET_FB_CONFIG = {
     var filledNow = namesFilled();
     if (s.mode === "random") {
       drawBtn = el("button", { class:"btn btn-add disp", onClick:function(){
-        if (!namesFilled()) return;
+        if (!namesFilled() || !noDupNames()) return;
         s.teams = drawTeams(s.players.map(function(p){ return p.trim(); })); softRender();
       } }, [ s.teams ? "Re-draw teams" : "Draw teams" ]);
-      drawBtn.disabled = !filledNow;
+      drawBtn.disabled = !filledNow || !noDupNames();
       card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [ drawBtn ]));
     } else {
       partnerLabelEl = el("span", { class:"label disp", style:"display:block; margin:4px 0 6px;" },
@@ -7581,7 +7739,7 @@ window.SOMERSET_FB_CONFIG = {
         partnerLabelEl,
         el("div", { class:"chips" }, [1, 2, 3].map(function(pi){
           var b = el("button", { class:"chip disp" + (s.partner === pi ? " on" : ""), onClick:function(){
-            if (!namesFilled()) return;
+            if (!namesFilled() || !noDupNames()) return;
             var nm = s.players.map(function(p){ return p.trim(); });
             s.partner = pi;
             var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
@@ -7589,7 +7747,7 @@ window.SOMERSET_FB_CONFIG = {
             softRender();
           } }, [ names[pi] || ("Player " + (pi + 1)) ]);
           b._pi = pi;
-          b.disabled = !filledNow;
+          b.disabled = !filledNow || !noDupNames();
           partnerBtns.push(b);
           return b;
         }))
@@ -8032,7 +8190,11 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.linkDeviceSheet) { closeLinkDeviceSheet(); softRender(); return true; }
     if (ui.backupPrompt) { ui.backupPrompt = false; softRender(); return true; }
     if (ui.mergeSheet) {
-      ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 } : (ui.mergeSheet.step === 2) ? { step:1 } : null;
+      ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 }
+        : (ui.mergeSheet.step === 2) ? { step:1 }
+        : (ui.mergeSheet.step === "splitGames") ? { step:"splitPick" }
+        : (ui.mergeSheet.step === "splitPick") ? { step:1 }
+        : null;
       softRender();
       return true;
     }
