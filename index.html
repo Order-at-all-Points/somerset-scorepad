@@ -703,12 +703,12 @@
   .stats-pair-sub { font-size:11px; color:var(--ink-soft); margin-top:1px; }
 
   /* ---- Stats Sharing (People list + shared overall record) ---- */
-  /* Left-aligned within the same box width as .ios-toggle so "On"/"Off"
-     starts at the same x as the Cloud Backup row's toggle above it --
-     both rows end at the same right edge (flex space-between), so without
-     this the toggle's fixed 51px width makes it start further left than
-     the narrower text does. */
-  .settings-row-state { font-size:15px; color:var(--ink-soft); display:inline-block; min-width:51px; text-align:left; }
+  /* Centered within the same box width as .ios-toggle so "On"/"Off" sits
+     under the Cloud Backup row's toggle above it -- both rows end at the
+     same right edge (flex space-between), so without this the toggle's
+     fixed 51px width makes it start further left than the narrower text
+     does, throwing off the column. */
+  .settings-row-state { font-size:15px; color:var(--ink-soft); display:inline-block; min-width:51px; text-align:center; }
   .peer-list { max-height:42vh; overflow-y:auto; margin:2px 0 6px; }
   .peer-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding:10px 2px; border-bottom:1px solid var(--cream-shade); }
