@@ -2129,6 +2129,9 @@ window.SOMERSET_FB_CONFIG = {
           if (!r) return null;
           var c = JSON.parse(JSON.stringify(r));
           delete c.matchUid;
+          // Nailbiter can be a loss, so the raw record's own winner field can't
+          // tell a follower which side was the owner's — stamp it explicitly.
+          if (h.team != null) c.myTeam = h.team;
           if (!shareGameNames) {
             c.players = ["", "", "", ""];
             c.teams = ["Team 1", "Team 2"];
@@ -2138,6 +2141,7 @@ window.SOMERSET_FB_CONFIG = {
         };
         var out = {};
         var bw = pick(p.bestWin); if (bw) out.bestWin = bw;
+        var nb = pick(p.nailbiter); if (nb) out.nailbiter = nb;
         var lg = pick(p.longestGame); if (lg) out.longestGame = lg;
         var sg = pick(p.shortestGame); if (sg) out.shortestGame = sg;
         return out;
@@ -5820,7 +5824,7 @@ window.SOMERSET_FB_CONFIG = {
   function finalizePlayerStats(p) {
     p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0, longestLoss = 0, lossRun = 0;
-    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null;
+    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null, nailbiter = null;
     var totalBids = 0, totalBidPoints = 0;
     var byFormat = {};
     p.games.forEach(function (g) {
@@ -5838,6 +5842,9 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (g.won && g.margin != null && (!bestWin || g.margin > bestWin.margin)) {
         bestWin = { margin: g.margin, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
+      }
+      if (!g.tie && g.margin != null && (!nailbiter || Math.abs(g.margin) < Math.abs(nailbiter.margin))) {
+        nailbiter = { margin: g.margin, won: g.won, team: g.team, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
       if (g.dealsCount) {
         if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
@@ -5861,6 +5868,7 @@ window.SOMERSET_FB_CONFIG = {
     p.championships = champs;
     p.tournamentsPlayed = Object.keys(tournamentIds).length;
     p.bestWin = bestWin;
+    p.nailbiter = nailbiter;
     p.longestGame = longestGame;
     p.shortestGame = (shortestGame && shortestGame.dealsCount !== (longestGame && longestGame.dealsCount)) ? shortestGame : null;
     p.bestPartner = bestOrWorstPairing(p.partners, true);
@@ -6144,6 +6152,12 @@ window.SOMERSET_FB_CONFIG = {
           var bwWinner = dhl.bestWin.winner === 1 ? 1 : 0;
           hlRows.push(sharedGameRow("Biggest win", dhl.bestWin, "+" + (bwT[bwWinner] - bwT[1 - bwWinner])));
         }
+        if (dhl.nailbiter && dhl.nailbiter.totals) {
+          var nbT = fbObjToArr(dhl.nailbiter.totals);
+          var nbTeam = dhl.nailbiter.myTeam === 1 ? 1 : 0;
+          var nbMargin = nbT[nbTeam] - nbT[1 - nbTeam];
+          hlRows.push(sharedGameRow("Nailbiter", dhl.nailbiter, (nbMargin > 0 ? "+" : "") + nbMargin));
+        }
         if (dhl.longestGame && dhl.longestGame.deals) {
           var lgN = fbObjToArr(dhl.longestGame.deals).length;
           hlRows.push(sharedGameRow("Longest game", dhl.longestGame, lgN + " hand" + (lgN === 1 ? "" : "s")));
@@ -6266,12 +6280,17 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
-    if (p.bestWin || p.longestGame) {
+    if (p.bestWin || p.longestGame || p.nailbiter) {
       var hlRows = [];
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
           "vs " + p.bestWin.opponentNames.join(" & ") + " · " + dateHeading(p.bestWin.date), null,
           function(){ ui.gameDetailRecId = p.bestWin.recId; render(); }));
+      }
+      if (p.nailbiter) {
+        hlRows.push(statsPairRow("Nailbiter", (p.nailbiter.margin > 0 ? "+" : "") + p.nailbiter.margin,
+          (p.nailbiter.won ? "Beat " : "Lost to ") + p.nailbiter.opponentNames.join(" & ") + " · " + dateHeading(p.nailbiter.date), null,
+          function(){ ui.gameDetailRecId = p.nailbiter.recId; render(); }));
       }
       if (p.longestGame) {
         hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
