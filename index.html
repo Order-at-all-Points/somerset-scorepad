@@ -1113,10 +1113,19 @@ window.SOMERSET_FB_CONFIG = {
       return;
     }
     enableCloudSync();
-    // Re-render the same menu step in place -- cloudSyncEnabled is now true,
-    // so it immediately shows the "Backup is on" state instead of the "Turn
-    // on backup" button the user just tapped, without closing the sheet.
-    if (ui.linkDeviceSheet) { ui.linkDeviceSheet = { step: "menu" }; }
+    // Reached from Stats Sharing's "Set up Cloud Backup" button: that's what
+    // the user actually came here to finish, so jump straight back to it
+    // instead of parking on the Link Device menu -- otherwise backup turns on
+    // and the user is left stranded a sheet away from the toggle they wanted.
+    if (ui.linkDeviceSheet && ui.linkDeviceSheet.returnTo === "sharing") {
+      ui.linkDeviceSheet = null;
+      ui.sharingSheet = true;
+    } else if (ui.linkDeviceSheet) {
+      // Re-render the same menu step in place -- cloudSyncEnabled is now true,
+      // so it immediately shows the "Backup is on" state instead of the "Turn
+      // on backup" button the user just tapped, without closing the sheet.
+      ui.linkDeviceSheet = { step: "menu" };
+    }
     render();
   }
   // Seeded from the first snapshot so opting into cloud sync back-fills existing
@@ -4310,7 +4319,7 @@ window.SOMERSET_FB_CONFIG = {
         shKids.push(el("p", { class:"sub disp" },
           ["Follow the records and highlight games of people you play shared games with — and let them follow yours. Names of other players are shared only if you opt in. Needs Cloud Backup to be on."]));
         shKids.push(el("button", { class:"sheet-btn primary disp",
-          onClick:function(){ ui.sharingSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set up Cloud Backup"]));
+          onClick:function(){ ui.sharingSheet = false; ui.linkDeviceSheet = { step:"menu", returnTo:"sharing" }; render(); } }, ["Set up Cloud Backup"]));
       } else {
         shKids.push(el("p", { class:"sub disp" },
           ["While on, people you play shared games with can see your overall record and a few highlight games (who else you played with stays private unless you say so below), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
