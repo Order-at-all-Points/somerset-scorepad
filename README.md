@@ -142,8 +142,9 @@ Tournaments can be **synced live across phones** via Firebase Realtime Database:
 
 Opt-in, via **☰ → Stats Sharing** (requires Cloud Backup):
 
-- While on, anyone you play a **shared game** with is followed automatically after the first match: their **overall record** — wins, moons, sets, streaks, recent form, career totals from *every* game they record anywhere — appears as a live **"Overall record — shared live"** section on their Stats page on your device, along with **their recent games** (result, score, hands, date), and stays current as they play.
-- **Third-party names stay private by default**: the recent-games feed shows results and scores only. A separate **"Include names in shared games"** toggle adds who-played-with-whom for groups where everyone knows everyone — off, because the people in your games don't pick your followers. Hand-by-hand logs are never shared either way.
+- While on, anyone you play a **shared game** with is followed automatically after the first match: their **overall record** — wins, moons, sets, streaks, recent form, career totals from *every* game they record anywhere — appears as a live **"Overall record — shared live"** section on their Stats page on your device, and stays current as they play.
+- Their **highlight games** (biggest win, longest game, shortest game) are shared as full records and open **hand-by-hand** with a tap — the same interaction the local Stats page's Highlights rows have.
+- **Third-party names stay private by default**: shared highlight games arrive with the roster stripped (hands and scores still show, seats read "Seat 1…4"). A separate **"Include names in shared games"** toggle shares the full table for groups where everyone knows everyone — off, because the people in your games don't pick your followers.
 - It's **mutual but independently controlled**: the same first match shares your record with them, and the **People list** in the Stats Sharing sheet has a per-person toggle — flip someone off and their access is revoked immediately (enforced by Firebase security rules, not just hidden in the UI). Unfollow anyone from the same list or from their Stats page.
 - Your local Stats table is untouched — it still counts only games in your own History; the shared record is shown alongside, clearly labeled, so nothing double-counts.
 

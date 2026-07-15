@@ -1005,7 +1005,7 @@ window.SOMERSET_FB_CONFIG = {
     series:null, offerSeries:null, seriesResult:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
-    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false
+    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false, gameDetailShared:null
   };
   // Restore an in-progress local series/offer that survived a reload (see
   // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
@@ -2114,23 +2114,34 @@ window.SOMERSET_FB_CONFIG = {
       currentStreakType: p.currentStreak.type || null,
       currentStreakCount: p.currentStreak.count || 0,
       form: p.games.slice(-5).map(function (g) { return g.tie ? "T" : (g.won ? "W" : "L"); }).join(""),
-      // Individual games, newest first, capped. Result/score/hands/date always;
-      // the other players' NAMES ride along only when shareGameNames is on —
-      // they're third parties who never consented to this viewer, so the
-      // conservative shape is the default. Manual bracket wins have no totals,
-      // so my/opp are simply omitted there (Firebase drops nulls anyway).
-      recentGames: p.games.slice(-20).reverse().map(function (g) {
-        var row = { date: g.date, result: g.tie ? "T" : (g.won ? "W" : "L"), format: g.format };
-        if (g.dealsCount) row.hands = g.dealsCount;
-        if (g.myPts != null && g.oppPts != null) { row.my = g.myPts; row.opp = g.oppPts; }
-        if (g.champion) row.champ = true;
-        if (shareGameNames) {
-          if (g.partnerName && g.partnerName !== "?") row.partner = g.partnerName;
-          var opps = (g.opponentNames || []).filter(function (n) { return n && n !== "?"; });
-          if (opps.length) row.opponents = opps;
-        }
-        return row;
-      }),
+      // A few select FULL games — the same highlights the local Stats page
+      // links to — so a follower can open them hand-by-hand exactly like a
+      // local record. Sanitized before leaving the device: matchUid (internal
+      // dedup key) is dropped, and without the names opt-in the roster and
+      // team labels are stripped so third parties stay anonymous while the
+      // deals still render (unnamed seats are already a legal record shape
+      // locally — hand rows fall back to "Seat N").
+      highlights: (function () {
+        var byId = {};
+        mergedHistoryForStats().forEach(function (r) { byId[r.id] = r; });
+        var pick = function (h) {
+          var r = h && byId[h.recId];
+          if (!r) return null;
+          var c = JSON.parse(JSON.stringify(r));
+          delete c.matchUid;
+          if (!shareGameNames) {
+            c.players = ["", "", "", ""];
+            c.teams = ["Team 1", "Team 2"];
+            if (c.tournament && c.tournament.teams) c.tournament.teams = ["Team 1", "Team 2"];
+          }
+          return c;
+        };
+        var out = {};
+        var bw = pick(p.bestWin); if (bw) out.bestWin = bw;
+        var lg = pick(p.longestGame); if (lg) out.longestGame = lg;
+        var sg = pick(p.shortestGame); if (sg) out.shortestGame = sg;
+        return out;
+      })(),
       updatedAt: firebase.database.ServerValue.TIMESTAMP
     };
     fb.ref("statsProfiles/" + myProfileId + "/digest").set(digest).catch(function () {});
@@ -3576,7 +3587,7 @@ window.SOMERSET_FB_CONFIG = {
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
-           ui.mergeSheet != null || ui.gameDetailRecId != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
+           ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
            ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
   }
@@ -4262,12 +4273,12 @@ window.SOMERSET_FB_CONFIG = {
       var shKids = [ el("h3", { class:"disp", style:"margin-bottom:6px;" }, ["Stats Sharing"]) ];
       if (!cloudSyncEnabled) {
         shKids.push(el("p", { class:"sub disp" },
-          ["Follow the records and recent games of people you play shared games with — and let them follow yours. Results and scores only; names of other players are shared only if you opt in. Needs Cloud Backup to be on."]));
+          ["Follow the records and highlight games of people you play shared games with — and let them follow yours. Names of other players are shared only if you opt in. Needs Cloud Backup to be on."]));
         shKids.push(el("button", { class:"sheet-btn primary disp",
           onClick:function(){ ui.sharingSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set up Cloud Backup"]));
       } else {
         shKids.push(el("p", { class:"sub disp" },
-          ["While on, people you play shared games with can see your overall record and recent games (results and scores — who else you played with stays private unless you say so below), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
+          ["While on, people you play shared games with can see your overall record and a few highlight games (who else you played with stays private unless you say so below), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
         shKids.push(el("div", { class:"settings-row disp" }, [
           el("span", { class:"settings-row-label disp" }, ["Share with people I play"]),
           el("span", { class:"ios-toggle disp" + (autoShare ? " on" : ""), role:"switch",
@@ -4284,7 +4295,7 @@ window.SOMERSET_FB_CONFIG = {
               [ el("span", { class:"ios-toggle-knob" }, []) ])
           ]));
           shKids.push(el("p", { class:"sub disp", style:"padding-top:0;" },
-            ["Off: your shared games show only results and scores. On: they also name who you played with — worth asking your group first, since those people don't pick your followers."]));
+            ["Off: your shared highlight games hide who played (scores and hands still show). On: they name the full table — worth asking your group first, since those people don't pick your followers."]));
         }
         var peerIds = Object.keys(sharePeers).sort(function (a, b) { return (sharePeers[b].lastPlayed || 0) - (sharePeers[a].lastPlayed || 0); });
         if (!peerIds.length) {
@@ -4326,8 +4337,12 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:closeSharing }, [shSheet]));
       return;
     }
-    if (ui.gameDetailRecId != null) {
-      var gdRec = gameHistory.find(function (r) { return r.id === ui.gameDetailRecId; });
+    if (ui.gameDetailRecId != null || ui.gameDetailShared) {
+      // ui.gameDetailShared is a full record handed over directly — a followed
+      // player's shared highlight game, which exists in NO local history to
+      // look up by id. Read-only by definition (nothing local to delete).
+      var gdShared = ui.gameDetailShared || null;
+      var gdRec = gdShared || gameHistory.find(function (r) { return r.id === ui.gameDetailRecId; });
       // Stats highlights (Biggest win / Longest game / …) are computed over the
       // MERGED history, so their recId can belong to a linked device's record
       // that only exists in linkedHistoryCache — without this fallback the
@@ -4335,9 +4350,9 @@ window.SOMERSET_FB_CONFIG = {
       // first: ids are only unique per device, and on a collision the local
       // record is the one History itself shows.
       if (!gdRec) gdRec = mergedHistoryForStats().find(function (r) { return r.id === ui.gameDetailRecId; });
-      if (!gdRec) { ui.gameDetailRecId = null; }
+      if (!gdRec) { ui.gameDetailRecId = null; ui.gameDetailShared = null; }
       else {
-        var closeGameDetail = function(){ ui.gameDetailRecId = null; softRender(); };
+        var closeGameDetail = function(){ ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); };
         var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
         var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
         var gdWinTxt = historyWinnerText(gdRec);
@@ -4356,7 +4371,7 @@ window.SOMERSET_FB_CONFIG = {
             el("div", { class:"hist-score" }, [ gdScoreRow(0), gdScoreRow(1) ]),
             el("span", { class:"hist-win disp" }, [ (gdIsChamp ? "🏆 " : "") + gdWinTxt ])
           ]),
-          renderHistoryDetail(gdRec, closeGameDetail),
+          renderHistoryDetail(gdRec, closeGameDetail, !!gdShared),
           el("button", { class:"sheet-btn ghost disp", onClick:closeGameDetail }, ["Close"])
         ]);
         modalRoot.appendChild(el("div", { class:"overlay", onClick:closeGameDetail }, [gdSheet]));
@@ -5761,7 +5776,6 @@ window.SOMERSET_FB_CONFIG = {
         var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
           recId: rec.id, date: rec.date, team: team, won: won, tie: tie,
-          myPts: rec.totals ? rec.totals[team] : null, oppPts: rec.totals ? rec.totals[1 - team] : null,
           champion: !!(rec.tournament && rec.tournament.championship && won),
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
           bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
@@ -6104,21 +6118,43 @@ window.SOMERSET_FB_CONFIG = {
               return el("div", { class:"stats-form-pill " + (ch === "T" ? "t" : (ch === "W" ? "w" : "l")) }, [ch]);
             })));
         }
-        var rgames = fbObjToArr(d.recentGames || []).filter(Boolean);
-        if (rgames.length) {
-          overallKids.push(el("p", { class:"stats-section-title disp", style:"margin-top:14px;" }, ["Their recent games"]));
-          overallKids.push(el("div", { class:"stats-pair-list" }, rgames.slice(0, 10).map(function (rg) {
-            var label = (rg.champ ? "🏆 " : "") + (rg.result === "T" ? "Tie" : (rg.result === "W" ? "Win" : "Loss"));
-            var score = (rg.my != null && rg.opp != null) ? (rg.my + "–" + rg.opp)
-              : (rg.hands ? (rg.hands + " hand" + (rg.hands === 1 ? "" : "s")) : "—");
-            var who = null;
-            if (rg.partner || rg.opponents) {
-              var opps = fbObjToArr(rg.opponents || []).filter(Boolean);
-              who = (rg.partner ? "w/ " + rg.partner : "") + (opps.length ? (rg.partner ? " " : "") + "vs " + opps.join(" & ") : "");
-            }
-            var sub = [who, shortDate(rg.date)].filter(Boolean).join(" · ");
-            return statsPairRow(label, score, sub || null, rg.result === "L" ? "bad" : null);
-          })));
+        // Their highlight games, tappable to a full hand-by-hand Game Detail —
+        // the exact interaction the local page's Highlights rows have. Records
+        // arrive Firebase-shaped (arrays as keyed objects, stripped seats
+        // possibly absent), so normalize before handing one to the shared
+        // detail sheet.
+        var normalizeSharedRec = function (r) {
+          var c = JSON.parse(JSON.stringify(r));
+          c.teams = fbObjToArr(c.teams || ["Team 1", "Team 2"]);
+          c.players = fbObjToArr(c.players || []);
+          while (c.players.length < 4) c.players.push("");
+          c.deals = fbObjToArr(c.deals || []);
+          if (c.totals) c.totals = fbObjToArr(c.totals);
+          return c;
+        };
+        var dhl = d.highlights || {};
+        var hlRows = [];
+        var sharedGameRow = function (label, raw, valueText) {
+          var rec = normalizeSharedRec(raw);
+          return statsPairRow(label, valueText, shortDate(rec.date), null,
+            function () { ui.gameDetailShared = rec; render(); });
+        };
+        if (dhl.bestWin && dhl.bestWin.totals) {
+          var bwT = fbObjToArr(dhl.bestWin.totals);
+          var bwWinner = dhl.bestWin.winner === 1 ? 1 : 0;
+          hlRows.push(sharedGameRow("Biggest win", dhl.bestWin, "+" + (bwT[bwWinner] - bwT[1 - bwWinner])));
+        }
+        if (dhl.longestGame && dhl.longestGame.deals) {
+          var lgN = fbObjToArr(dhl.longestGame.deals).length;
+          hlRows.push(sharedGameRow("Longest game", dhl.longestGame, lgN + " hand" + (lgN === 1 ? "" : "s")));
+        }
+        if (dhl.shortestGame && dhl.shortestGame.deals) {
+          var sgN = fbObjToArr(dhl.shortestGame.deals).length;
+          hlRows.push(sharedGameRow("Shortest game", dhl.shortestGame, sgN + " hand" + (sgN === 1 ? "" : "s")));
+        }
+        if (hlRows.length) {
+          overallKids.push(el("p", { class:"stats-section-title disp", style:"margin-top:14px;" }, ["Their highlights"]));
+          overallKids.push(el("div", { class:"stats-pair-list" }, hlRows));
         }
         if (d.updatedAt) {
           overallKids.push(el("p", { class:"peer-sub disp" },
@@ -6541,7 +6577,9 @@ window.SOMERSET_FB_CONFIG = {
     });
   }
 
-  function renderHistoryDetail(rec, onDeleted) {
+  // `readOnly` suppresses the delete action — used for a followed player's
+  // shared highlight game, which isn't in any local history to delete.
+  function renderHistoryDetail(rec, onDeleted, readOnly) {
     var wrap = el("div", { class:"hist-detail" }, [0, 1].map(function (i) {
       var roster = rosterLine(rec, i);
       return roster ? el("p", { class:"hist-roster disp" }, [ roster ]) : null;
@@ -6580,11 +6618,13 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
       ]));
     });
-    wrap.appendChild(el("div", { class:"hist-del" }, [
-      el("button", { class:"link-btn danger disp", onClick:function(){
-        deleteHistoryRecordWithUndo(rec, onDeleted);
-      } }, ["Delete this game"])
-    ]));
+    if (!readOnly) {
+      wrap.appendChild(el("div", { class:"hist-del" }, [
+        el("button", { class:"link-btn danger disp", onClick:function(){
+          deleteHistoryRecordWithUndo(rec, onDeleted);
+        } }, ["Delete this game"])
+      ]));
+    }
     return wrap;
   }
 
@@ -7893,7 +7933,7 @@ window.SOMERSET_FB_CONFIG = {
     try { history.pushState({ somerset: 1 }, "", ""); backArmed = true; } catch (e) {}
   }
   function closeTopLayer() {
-    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); return true; }
+    if (ui.gameDetailRecId != null || ui.gameDetailShared != null) { ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); return true; }
     if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
     if (ui.identityEditor) { ui.identityEditor = false; softRender(); return true; }
     if (ui.linkDeviceSheet) { closeLinkDeviceSheet(); softRender(); return true; }
@@ -7938,7 +7978,7 @@ window.SOMERSET_FB_CONFIG = {
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (ui.gameDetailRecId != null) { ui.gameDetailRecId = null; softRender(); }
+    if (ui.gameDetailRecId != null || ui.gameDetailShared != null) { ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); }
     else if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); }
     else if (ui.identityEditor) { ui.identityEditor = false; softRender(); }
     else if (ui.mergeSheet) { ui.mergeSheet = null; softRender(); }

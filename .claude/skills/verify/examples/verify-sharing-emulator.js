@@ -197,19 +197,39 @@ async function pollFor(fn, attempts = 15, delay = 1000) {
     check("Alice sees Bob's live overall record", !!overall && /Record/.test(overall), overall);
     await alice.page.screenshot({ path: shots + "/02-alice-sees-bob-digest.png", fullPage: true });
 
-    // ---- Recent-games feed: rows visible, names ABSENT by default ----
-    const recentRows = await pollFor(async () => {
-      const title = alice.page.locator(".stats-section-title", { hasText: "Their recent games" });
-      if ((await title.count()) === 0) return null;
-      const rows = alice.page.locator(".stats-section:has(.stats-section-title:text('Their recent games')) .stats-pair-row");
-      return (await rows.count()) ? await rows.allTextContents() : null;
-    }, 8, 1000);
-    check("Alice sees Bob's recent-games feed", !!recentRows && recentRows.length >= 1, recentRows && recentRows[0]);
+    // ---- Shared highlights: rows render, and the published records carry
+    // NO roster by default (players stripped, teams neutralized) ----
+    const hlTitle = await pollFor(async () =>
+      (await alice.page.locator(".stats-section-title", { hasText: "Their highlights" }).count()) > 0, 8, 1000);
+    check("Alice sees Bob's shared highlights rows", !!hlTitle);
     const digestNow = await (await fetch(`http://127.0.0.1:9000/statsProfiles/${bobProfile}/digest.json?ns=demo-somerset-default-rtdb&access_token=owner`)).json();
-    const namesAbsent = digestNow && digestNow.recentGames && digestNow.recentGames.every((g) => !g.partner && !g.opponents);
-    check("Names absent from published games by default", !!namesAbsent, JSON.stringify(digestNow && digestNow.recentGames && digestNow.recentGames[0]));
+    const hl = digestNow && digestNow.highlights;
+    const rosterStripped = hl && Object.keys(hl).length >= 1 && Object.keys(hl).every((k) => {
+      const players = hl[k].players || [];
+      const names = (Array.isArray(players) ? players : Object.values(players)).filter((n) => n && n.trim());
+      return names.length === 0 && (hl[k].teams || [])[0] === "Team 1";
+    });
+    check("Highlight records have roster stripped by default", !!rosterStripped,
+      hl && JSON.stringify({ keys: Object.keys(hl), teams: hl[Object.keys(hl)[0]].teams }));
 
-    // ---- Bob opts into names; Alice's rows gain "vs ..." ----
+    // ---- Tapping a shared highlight opens the hand-by-hand Game Detail,
+    // read-only (no delete button) ----
+    // Only the highlight rows are tappable (role=button); the Record/Moons/…
+    // rows in the same section are plain.
+    const bwRow = alice.page.locator(".stats-section:has(.stats-section-title:text('Their highlights')) .stats-pair-row[role='button']").first();
+    await bwRow.click();
+    await alice.page.waitForTimeout(300);
+    const sharedDetail = alice.page.locator('[role="dialog"][aria-label="Game detail"]');
+    check("Shared highlight opens Game Detail sheet", (await sharedDetail.count()) > 0);
+    const handRows = await sharedDetail.locator(".hist-hand").count();
+    check("Shared Game Detail shows hand-by-hand rows", handRows > 0, handRows + " hands");
+    check("Shared Game Detail has no delete button",
+      (await sharedDetail.locator(".hist-del").count()) === 0);
+    await alice.page.screenshot({ path: shots + "/05-shared-hand-by-hand.png" });
+    await sharedDetail.locator(".sheet-btn.ghost", { hasText: "Close" }).click();
+    await alice.page.waitForTimeout(200);
+
+    // ---- Bob opts into names; Alice's copy of the highlight gains the roster ----
     await linking.openDisplaySheet(bob.page);
     await openSharingSheet(bob.page);
     await bob.page.locator('[aria-label="Include names in shared games"]').click();
@@ -217,14 +237,14 @@ async function pollFor(fn, attempts = 15, delay = 1000) {
     check("Bob: names toggle flips on",
       (await bob.page.locator('[aria-label="Include names in shared games"]').getAttribute("aria-checked")) === "true");
     await closeSheet(bob.page);
-    const namedRow = await pollFor(async () => {
-      await stats.openStatsBoard(alice.page);
-      await stats.openPlayerDetail(alice.page, "Bob");
-      const rows = alice.page.locator(".stats-section:has(.stats-section-title:text('Their recent games')) .stats-pair-row");
-      const texts = (await rows.count()) ? await rows.allTextContents() : [];
-      return texts.find((t) => /vs /.test(t)) || null;
+    const namedHl = await pollFor(async () => {
+      const dg = await (await fetch(`http://127.0.0.1:9000/statsProfiles/${bobProfile}/digest.json?ns=demo-somerset-default-rtdb&access_token=owner`)).json();
+      const h = dg && dg.highlights && (dg.highlights.bestWin || dg.highlights.longestGame);
+      if (!h) return null;
+      const players = (Array.isArray(h.players) ? h.players : Object.values(h.players || {})).filter((n) => n && n.trim());
+      return players.length ? players.join(",") : null;
     }, 10, 1000);
-    check("Alice sees opponent names after Bob opts in", !!namedRow, namedRow);
+    check("Highlight roster appears after Bob's names opt-in", !!namedHl, namedHl);
 
     // ---- Highlights link: "Longest game" opens the game-detail sheet ----
     await stats.openStatsBoard(alice.page);
