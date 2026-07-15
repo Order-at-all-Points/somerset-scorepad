@@ -476,6 +476,17 @@ const unlinkStopsMerging = {
 // now deletes the code the moment it's redeemed, so a second device that
 // somehow still has the code (shoulder-surfed, screenshotted, pasted into the
 // wrong chat) can no longer join with it.
+//
+// This deliberately does NOT use linking.linkDevices() -- that helper ends by
+// calling closeLinkDeviceSheet(deviceA.page), which *also* deletes an
+// outstanding code once A's sheet is on the "show" step, regardless of
+// whether B ever redeemed it. Using it here would let the test pass even if
+// commitLinkCode's redeem-time delete were removed entirely, since A's own
+// cleanup would still make the code gone by the time C tries it. Instead,
+// device A's "show code" sheet is left open through C's attempt (only closed
+// at the very end), and B's join is asserted before C ever tries -- so the
+// only thing that can have consumed the code by the time C tries it is B's
+// own redemption.
 const linkCodeSingleUse = {
   name: "device-linking/link-code-single-use",
   phase: "sync",
@@ -485,8 +496,10 @@ const linkCodeSingleUse = {
     const deviceB = await browserLib.createDevice(browser, { label: "deviceB", scenarioLogger: logger });
     const deviceC = await browserLib.createDevice(browser, { label: "deviceC", scenarioLogger: logger });
     try {
-      logger.step("Device A generates a code, Device B redeems it (consuming it)");
-      const code = await linking.linkDevices(deviceA, deviceB);
+      logger.step("Device A generates a code (sheet stays open -- not using linkDevices()'s auto-close)");
+      await linking.openDisplaySheet(deviceA.page);
+      await linking.openLinkDeviceSheet(deviceA.page);
+      const code = await linking.generateLinkCode(deviceA.page);
       if (!code || code.length !== 6) {
         await logger.record({
           severity: "critical",
@@ -497,8 +510,29 @@ const linkCodeSingleUse = {
         });
         return;
       }
+      await deviceA.page.waitForTimeout(config.syncSettleMs);
 
-      logger.step("Device C tries to redeem the SAME code -- it should already be consumed and gone");
+      logger.step("Device B redeems it (this, not A's cleanup, must be what consumes it)");
+      await linking.openDisplaySheet(deviceB.page);
+      await linking.openLinkDeviceSheet(deviceB.page);
+      await linking.redeemLinkCode(deviceB.page, code);
+      await deviceB.page.waitForTimeout(config.syncSettleMs);
+
+      const personB = await storage.readKey(deviceB.page, storage.KEYS.personId);
+      if (!personB.raw) {
+        await logger.record({
+          severity: "critical",
+          category: "correctness",
+          summary: `Device B must have actually joined the group after redeeming a valid code, but personId is unset -- can't test single-use without a real redemption`,
+          expected: "a personId",
+          actual: personB.raw,
+          page: deviceB.page,
+          contextLabel: "deviceB",
+        });
+        return;
+      }
+
+      logger.step("Device C tries to redeem the SAME code, while A's sheet is still open -- it should already be consumed and gone because B redeemed it");
       await linking.openDisplaySheet(deviceC.page);
       await linking.openLinkDeviceSheet(deviceC.page);
       await deviceC.page.waitForTimeout(1000);
@@ -527,6 +561,8 @@ const linkCodeSingleUse = {
           contextLabel: "deviceC",
         });
       }
+
+      await linking.closeLinkDeviceSheet(deviceA.page);
     } catch (e) {
       await logger.record({
         severity: "high",

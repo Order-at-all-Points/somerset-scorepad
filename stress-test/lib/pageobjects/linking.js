@@ -30,22 +30,48 @@ function displaySheet(page) {
   return page.locator('[role="dialog"][aria-label="Display settings"]');
 }
 
-/** From the open Display sheet, tap "Back up my History" / "Cloud backup: On". */
+/**
+ * From the open Display sheet, tap the "Cloud Backup" row to open the full
+ * link-device sheet (menu/show/enter/confirm/unlink steps). This is the row
+ * label's tap target, not the iOS-style toggle beside it -- the toggle acts
+ * immediately (see index.html's Display-sheet render) rather than opening
+ * this sheet, so tests that need the toggle itself use a separate locator.
+ */
 async function openLinkDeviceSheet(page) {
   await displaySheet(page)
-    .locator(".sheet-btn", { hasText: /Back up my History|Cloud backup: On/ })
+    .locator(".settings-row-label", { hasText: "Cloud Backup" })
     .click({ timeout: config.actionTimeoutMs });
   await page.waitForTimeout(60);
+}
+
+/** The iOS-style toggle beside the "Cloud Backup" row on the Display sheet. */
+function cloudBackupToggle(page) {
+  return displaySheet(page).locator(".ios-toggle");
 }
 
 function linkDeviceSheet(page) {
   return page.locator('[role="dialog"][aria-label="Link this device"]');
 }
 
-/** From the link-device menu step, generate a code and return it once shown. */
+/**
+ * From the link-device menu step, generate a code and return it once shown.
+ * On a device that hasn't backed up yet, the menu step only offers "Turn on
+ * backup" (see turnOnBackup() in index.html) -- tapping it flips cloudSync
+ * on synchronously and re-renders this same step in place as the "already
+ * backing up" state, whose primary button is "Show a code to link another
+ * device". So on a fresh device this is a two-tap sequence; on an
+ * already-enabled device the first tap is skipped.
+ */
 async function generateLinkCode(page) {
+  const turnOnBtn = linkDeviceSheet(page).locator(".sheet-btn.primary", { hasText: "Turn on backup" });
+  if (await turnOnBtn.count()) {
+    await turnOnBtn.click({ timeout: config.actionTimeoutMs });
+    await linkDeviceSheet(page)
+      .locator(".sheet-btn.primary", { hasText: "Show a code to link another device" })
+      .waitFor({ state: "visible", timeout: config.actionTimeoutMs });
+  }
   await linkDeviceSheet(page)
-    .locator(".sheet-btn", { hasText: "Show a code to link this device" })
+    .locator(".sheet-btn", { hasText: "Show a code to link another device" })
     .click({ timeout: config.actionTimeoutMs });
   await linkDeviceSheet(page).locator(".join-code").waitFor({ state: "visible", timeout: config.actionTimeoutMs });
   return (await linkDeviceSheet(page).locator(".join-code").textContent()).trim();
@@ -136,6 +162,7 @@ module.exports = {
   openDisplaySheet,
   displaySheet,
   openLinkDeviceSheet,
+  cloudBackupToggle,
   linkDeviceSheet,
   generateLinkCode,
   redeemLinkCode,

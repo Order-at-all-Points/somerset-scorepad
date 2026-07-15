@@ -295,6 +295,8 @@
   @media (prefers-reduced-motion: reduce) { .undo-toast-bar { animation:none; } }
   .undo-toast button { background:var(--brass); color:var(--cream); border:none; border-radius:var(--r-pill); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-text); padding:7px 14px; flex:0 0 auto; }
   .undo-toast button:active { opacity:.75; }
+  /* No trailing Undo button on a plain confirmation toast (showInfoToast) -- match padding on both sides. */
+  .undo-toast.info-only { padding-right:16px; }
   .deal-detail b { font-weight:600; color:var(--brass-text); margin-left:4px; }
   .del { background:none; border:none; color:var(--ink-soft); cursor:pointer; padding:12px; border-radius:var(--r-control); transition:color .08s, background .08s; line-height:1; }
   .del:active { color:var(--red); background:color-mix(in srgb, var(--red) 10%, transparent); }
@@ -464,6 +466,21 @@
   .sheet-btn.primary[disabled] { background:var(--cream-shade); color:var(--ink-soft); border-color:var(--rule); cursor:default; box-shadow:none; }
   .sheet-btn.ghost { border:none; background:transparent; color:var(--ink-soft); margin-bottom:0; min-height:40px; box-shadow:none; }
   .sheet-btn.ghost:active { opacity:.6; }
+  /* iOS-style row: a label that opens the full sheet, plus a toggle that acts
+     directly (see the Display sheet's Cloud Backup row) -- the row and the
+     toggle have independent tap targets (toggle stopPropagation()s). */
+  .settings-row { display:flex; align-items:center; justify-content:space-between; width:100%;
+    min-height:48px; padding:12px 0; margin-bottom:8px; border-radius:var(--r-control);
+    border:1.5px solid var(--rule); background:var(--control); box-sizing:border-box;
+    padding-left:16px; padding-right:12px; cursor:pointer; }
+  .settings-row:active { background:var(--cream-shade); }
+  .settings-row-label { font-size:17px; font-family:var(--font-text); color:var(--ink); }
+  .ios-toggle { position:relative; display:inline-block; width:51px; height:31px; border-radius:var(--r-pill);
+    background:var(--rule); flex:0 0 auto; cursor:pointer; transition:background .2s ease; }
+  .ios-toggle.on { background:var(--brass); }
+  .ios-toggle-knob { position:absolute; top:2px; left:2px; width:27px; height:27px; border-radius:50%;
+    background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.25); transition:transform .2s ease; }
+  .ios-toggle.on .ios-toggle-knob { transform:translateX(20px); }
   /* text inputs hold at 16px — the one size off the scale — so iOS doesn't zoom the page on focus */
   .sheet-input { width:100%; padding:12px; box-sizing:border-box; border:1.5px solid var(--rule); border-radius:var(--r-control);
     font-size:16px; font-family:var(--font-text); color:var(--ink); background:#fff; margin:8px 0 12px; }
@@ -1050,11 +1067,42 @@ window.SOMERSET_FB_CONFIG = {
   // paths drift apart (the generator once skipped subscribeLinkedHistories and
   // couldn't see a linked device's games until reload).
   function enableCloudSync() {
+    var wasOff = !cloudSyncEnabled;
     cloudSyncEnabled = true;
     saveCloudSyncEnabled(true);
     subscribeMyHistory();
     if (personId) subscribeLinkedHistories();
     syncHistoryToCloud();
+    // Only the moment backup actually flips on, not every re-entry into this
+    // function (e.g. linking a second device onto an already-backed-up
+    // device calls this too, but that's not new news about backup itself).
+    if (wasOff) showInfoToast("Backup is on");
+  }
+  // Turn cloud backup on for THIS device only, independent of linking a
+  // second device: enableCloudSync() has no personId/linkCode dependency, so
+  // solo backup shouldn't require generating (or the user parsing) a pairing
+  // code any more than turning it off later requires one. Kept separate from
+  // generateLinkCode() so this tap doesn't also silently create a people/
+  // group + linkCodes/ entry a solo user will never use.
+  // Callable from either the link-device sheet's "Turn on backup" button
+  // (ui.linkDeviceSheet set) or the Display sheet's Cloud Backup toggle
+  // (ui.linkDeviceSheet null) -- always renders and always surfaces failure
+  // somehow, since a caller-context-dependent no-op here would silently
+  // strand the toggle in its old visual position even though cloudSyncEnabled
+  // actually flipped.
+  function turnOnBackup() {
+    if (!authUid || !initFb()) {
+      if (ui.linkDeviceSheet) { ui.linkDeviceSheet.error = "Couldn't connect."; }
+      else { showInfoToast("Couldn't connect."); }
+      render();
+      return;
+    }
+    enableCloudSync();
+    // Re-render the same menu step in place -- cloudSyncEnabled is now true,
+    // so it immediately shows the "Backup is on" state instead of the "Turn
+    // on backup" button the user just tapped, without closing the sheet.
+    if (ui.linkDeviceSheet) { ui.linkDeviceSheet = { step: "menu" }; }
+    render();
   }
   // Seeded from the first snapshot so opting into cloud sync back-fills existing
   // history instead of silently no-op'ing (every local record looks "unsynced"
@@ -1136,7 +1184,11 @@ window.SOMERSET_FB_CONFIG = {
       enableCloudSync();
       // The sheet may have been closed (overlay tap) while the writes were in
       // flight — sync is enabled either way, but don't reopen UI the user left.
+      // If it's gone, no one will ever see or redeem this code (closeLinkDeviceSheet
+      // could only have deleted it from the "show" step, which never opened), so
+      // delete it here instead of leaving it live and orphaned until it expires.
       if (ui.linkDeviceSheet) { ui.linkDeviceSheet = { step: "show", code: code, error: null }; render(); }
+      else { fb.ref("linkCodes/" + code).remove().catch(function () {}); }
     }).catch(function () {
       if (!ui.linkDeviceSheet) return;
       ui.linkDeviceSheet.error = "Couldn't generate a code. Try again.";
@@ -1186,14 +1238,33 @@ window.SOMERSET_FB_CONFIG = {
   // into the same people/<personId>.linkedUids set. Split out from the lookup
   // so the UI can insert a confirmation step in between showing the owner's
   // name and this — the part with real, hard-to-undo consequences.
-  function commitLinkCode(code, data, onError) {
+  // expectedSheet, if given, is the ui.linkDeviceSheet the caller rendered this
+  // commit from; the UI is only touched if that's still the current sheet, so
+  // navigating away mid-commit (e.g. tapping Back) doesn't yank the user's new
+  // screen out from under them — the join itself still completes either way.
+  // Mirrors lookupLinkCode's offline pre-check + timeout (see its comment) —
+  // without either, a stalled write leaves the confirm sheet looking like the
+  // tap did nothing.
+  function commitLinkCode(code, data, onError, expectedSheet) {
     if (!initFb() || !authUid) { onError("Couldn't connect. Check your internet connection."); return; }
+    if (typeof navigator.onLine === "boolean" && !navigator.onLine) {
+      onError("Couldn't connect. Check your internet connection.");
+      return;
+    }
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      onError("Couldn't connect. Check your internet connection.");
+    }, LINK_REDEEM_TIMEOUT_MS);
     // The membership value is the redeemed code itself, not `true`: inert under
     // the current rules (everything checks .exists(), not the value), and it's
     // the proof-of-code the hardened .validate keys on (SECURITY_REVIEW.md #8).
     fb.ref("people/" + data.personId + "/linkedUids/" + authUid).set(code).then(function () {
       return fb.ref("personOf/" + authUid).set(data.personId);
     }).then(function () {
+      if (settled) return;
+      settled = true; clearTimeout(timeoutId);
       personId = data.personId; savePersonId(personId);
       enableCloudSync();
       // Best-effort consume: this code has done its job and shouldn't remain
@@ -1201,10 +1272,16 @@ window.SOMERSET_FB_CONFIG = {
       // signed-in device may delete a code (rules' any-auth delete clause),
       // so this doesn't need to be the owner.
       fb.ref("linkCodes/" + code).remove().catch(function () {});
-      ui.linkDeviceSheet = null;
+      if (!expectedSheet || ui.linkDeviceSheet === expectedSheet) { ui.linkDeviceSheet = null; }
       render();
-    }).catch(function () {
-      onError("Couldn't join. Try again.");
+    }).catch(function (err) {
+      if (settled) return;
+      settled = true; clearTimeout(timeoutId);
+      // A PERMISSION_DENIED here almost always means the code was consumed,
+      // deleted, or expired between lookup and this tap (the .validate's
+      // proof-of-code check just failed) — tell the user the code is gone
+      // rather than inviting a pointless retry on the same dead code.
+      onError(err && err.code === "PERMISSION_DENIED" ? "No link code found." : "Couldn't join. Try again.");
     });
   }
   // Close the link-device sheet from any path (Done button, overlay tap,
@@ -3771,8 +3848,21 @@ window.SOMERSET_FB_CONFIG = {
           })),
         el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } },
           [ myDeviceName ? ("Playing as: " + myDeviceName + " · Change") : "Set your name" ]),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } },
-          [ cloudSyncEnabled ? "Cloud backup: On" : "Back up my History" ]),
+        el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Manage cloud backup",
+          onClick:function(){ ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, [
+          el("span", { class:"settings-row-label disp" }, ["Cloud Backup"]),
+          // Independent tap target from the row above: flipping the toggle acts
+          // immediately (on: turnOnBackup() directly, no sheet); off still routes
+          // through the existing unlink confirm step rather than flipping bare,
+          // since unlinking has a real consequence (leaves linked devices).
+          el("span", { class:"ios-toggle disp" + (cloudSyncEnabled ? " on" : ""), role:"switch",
+            "aria-checked": cloudSyncEnabled ? "true" : "false", "aria-label":"Cloud Backup",
+            onClick:function(e){
+              e.stopPropagation();
+              if (cloudSyncEnabled) { ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"unlink" }; render(); }
+              else { turnOnBackup(); }
+            } }, [ el("span", { class:"ios-toggle-knob" }, []) ])
+        ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
@@ -4140,8 +4230,9 @@ window.SOMERSET_FB_CONFIG = {
         ldKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
           var code = ldInput.value.trim().toUpperCase();
           if (code.length < 6) { ui.linkDeviceSheet.error = "Code must be 6 characters."; softRender(); return; }
+          var ldsAtCall = lds;
           lookupLinkCode(code, function(data, msg){
-            if (!ui.linkDeviceSheet) return;   // closed while the lookup was in flight
+            if (ui.linkDeviceSheet !== ldsAtCall) return;   // navigated away while the lookup was in flight
             if (!data) { ui.linkDeviceSheet.error = msg; softRender(); return; }
             ui.linkDeviceSheet = { step:"confirm", code:code, data:data };
             softRender();
@@ -4162,10 +4253,11 @@ window.SOMERSET_FB_CONFIG = {
         ];
         if (lds.error) ldKids.push(el("p", { class:"join-error disp" }, [lds.error]));
         ldKids.push(el("button", { class:"sheet-btn primary disp", onClick:function(){
+          var ldsAtCall = lds;
           commitLinkCode(lds.code, lds.data, function(msg){
-            if (!ui.linkDeviceSheet) return;   // closed while the join was in flight
+            if (ui.linkDeviceSheet !== ldsAtCall) return;   // navigated away while the join was in flight
             ui.linkDeviceSheet.error = msg; softRender();
-          });
+          }, ldsAtCall);
         } }, ["Link →"]));
         ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Back"]));
       } else if (lds.step === "unlink") {
@@ -4192,8 +4284,9 @@ window.SOMERSET_FB_CONFIG = {
           el("button", { class:"sheet-btn disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Enter a code from another device"])
         ] : [
           el("h3", { class:"disp" }, ["Back Up My History"]),
-          el("p", { class:"sub disp" }, ["Sync this device's History to the cloud, and merge it with other devices you've played on."]),
-          el("button", { class:"sheet-btn primary disp", onClick:function(){ generateLinkCode(); } }, ["Show a code to link this device"]),
+          el("p", { class:"sub disp" }, ["Save this device's game History to the cloud, so it's safe if you lose your phone."]),
+          el("button", { class:"sheet-btn primary disp", onClick:function(){ turnOnBackup(); } }, ["Turn on backup"]),
+          el("p", { class:"sub disp", style:"font-size:13px; margin-top:14px;" }, ["Already backing up on another device?"]),
           el("button", { class:"sheet-btn disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Enter a code from another device"])
         ];
         if (lds.error) ldKids.push(el("p", { class:"join-error disp" }, [lds.error]));
@@ -4608,6 +4701,22 @@ window.SOMERSET_FB_CONFIG = {
     ]);
     document.body.appendChild(undoToastEl);
     undoTimer = setTimeout(dismissUndoToast, UNDO_TOAST_MS);
+  }
+  // Plain, non-actionable confirmation toast (same look as the undo toast
+  // above, minus the bar/Undo button) -- kept on entirely separate state
+  // from undoToastEl/undoTimer so it can never interfere with the
+  // deal/game-delete undo window's timing.
+  var INFO_TOAST_MS = 2600;
+  var infoToastEl = null, infoToastTimer = null;
+  function showInfoToast(msg) {
+    if (infoToastTimer) { clearTimeout(infoToastTimer); infoToastTimer = null; }
+    if (infoToastEl && infoToastEl.parentNode) infoToastEl.parentNode.removeChild(infoToastEl);
+    infoToastEl = el("div", { class:"undo-toast info-only fade disp", role:"status" }, [ el("span", {}, [msg]) ]);
+    document.body.appendChild(infoToastEl);
+    infoToastTimer = setTimeout(function () {
+      if (infoToastEl && infoToastEl.parentNode) infoToastEl.parentNode.removeChild(infoToastEl);
+      infoToastEl = null;
+    }, INFO_TOAST_MS);
   }
   function removeDealWithUndo(d, idx) {
     var snapGame = game, snapArchivedId = game.archivedId, snapRec = null;
@@ -5158,20 +5267,28 @@ window.SOMERSET_FB_CONFIG = {
 
   // Union of this device's local gameHistory with any linked devices' synced
   // history (see subscribeLinkedHistories), deduped on matchUid where present
-  // (shared-match records — see buildHistoryRecordForMatch) or id otherwise
-  // (casual records, which can only ever exist on the one device that played
-  // them). With no linked uids this degenerates to exactly gameHistory.slice(),
-  // so devices that never opt into cloud sync see no behavior change.
+  // (shared-match records — see buildHistoryRecordForMatch) or, for casual
+  // records (which have no matchUid), on the owning uid + id. The owning uid
+  // is required, not just id: ids are only unique per-device (Date.now() +
+  // a small random offset), so two different real games archived around the
+  // same time on two linked devices can mint the same bare id — prefixing
+  // with the uid that actually wrote each record makes the merge key globally
+  // unique instead of merely low-collision. With no linked uids this
+  // degenerates to exactly gameHistory.slice(), so devices that never opt
+  // into cloud sync see no behavior change.
   function mergedHistoryForStats() {
-    var all = gameHistory.slice();
+    var all = gameHistory.map(function (r) { return { r: r, owner: authUid }; });
     linkedUids.forEach(function (uid) {
       if (uid === authUid) return;
-      (linkedHistoryCache[uid] || []).forEach(function (r) { all.push(r); });
+      (linkedHistoryCache[uid] || []).forEach(function (r) { all.push({ r: r, owner: uid }); });
     });
     var seen = {}, out = [];
-    all.forEach(function (r) {
-      var key = r.matchUid || r.id;
-      if (seen[key] || historyTombstones[key]) return;   // this device explicitly deleted it (SECURITY_REVIEW.md C4)
+    all.forEach(function (item) {
+      var r = item.r;
+      var tombstoneKey = r.matchUid || r.id;
+      if (historyTombstones[tombstoneKey]) return;   // this device explicitly deleted it (SECURITY_REVIEW.md C4)
+      var key = r.matchUid || (item.owner + ":" + r.id);
+      if (seen[key]) return;
       seen[key] = true;
       out.push(r);
     });
