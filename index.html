@@ -472,7 +472,7 @@
   .settings-row { display:flex; align-items:center; justify-content:space-between; width:100%;
     min-height:48px; padding:12px 0; margin-bottom:8px; border-radius:var(--r-control);
     border:1.5px solid var(--rule); background:var(--control); box-sizing:border-box;
-    padding-left:16px; padding-right:12px; cursor:pointer; }
+    padding-left:36px; padding-right:32px; cursor:pointer; }
   .settings-row:active { background:var(--cream-shade); }
   .settings-row-label { font-size:17px; font-family:var(--font-text); color:var(--ink); }
   .ios-toggle { position:relative; display:inline-block; width:51px; height:31px; border-radius:var(--r-pill);
@@ -3838,8 +3838,7 @@ window.SOMERSET_FB_CONFIG = {
       var curThemePref = loadThemePref();
       var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Display settings",
         onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp" }, ["Display"]),
-        el("p", { class:"sub disp" }, ["Match your device, or pin a theme"]),
+        el("h3", { class:"disp", style:"margin-bottom:6px;" }, ["Display"]),
         el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
           [["auto","Auto"],["light","Classic Light",true],["dark","Classic Dark",true],["aubergine","Dark"],["aubergine-light","Light"]]
             .filter(function (opt) { return !opt[2]; }).map(function (opt) {
