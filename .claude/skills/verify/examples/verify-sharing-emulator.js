@@ -197,6 +197,49 @@ async function pollFor(fn, attempts = 15, delay = 1000) {
     check("Alice sees Bob's live overall record", !!overall && /Record/.test(overall), overall);
     await alice.page.screenshot({ path: shots + "/02-alice-sees-bob-digest.png", fullPage: true });
 
+    // ---- Recent-games feed: rows visible, names ABSENT by default ----
+    const recentRows = await pollFor(async () => {
+      const title = alice.page.locator(".stats-section-title", { hasText: "Their recent games" });
+      if ((await title.count()) === 0) return null;
+      const rows = alice.page.locator(".stats-section:has(.stats-section-title:text('Their recent games')) .stats-pair-row");
+      return (await rows.count()) ? await rows.allTextContents() : null;
+    }, 8, 1000);
+    check("Alice sees Bob's recent-games feed", !!recentRows && recentRows.length >= 1, recentRows && recentRows[0]);
+    const digestNow = await (await fetch(`http://127.0.0.1:9000/statsProfiles/${bobProfile}/digest.json?ns=demo-somerset-default-rtdb&access_token=owner`)).json();
+    const namesAbsent = digestNow && digestNow.recentGames && digestNow.recentGames.every((g) => !g.partner && !g.opponents);
+    check("Names absent from published games by default", !!namesAbsent, JSON.stringify(digestNow && digestNow.recentGames && digestNow.recentGames[0]));
+
+    // ---- Bob opts into names; Alice's rows gain "vs ..." ----
+    await linking.openDisplaySheet(bob.page);
+    await openSharingSheet(bob.page);
+    await bob.page.locator('[aria-label="Include names in shared games"]').click();
+    await bob.page.waitForTimeout(300);
+    check("Bob: names toggle flips on",
+      (await bob.page.locator('[aria-label="Include names in shared games"]').getAttribute("aria-checked")) === "true");
+    await closeSheet(bob.page);
+    const namedRow = await pollFor(async () => {
+      await stats.openStatsBoard(alice.page);
+      await stats.openPlayerDetail(alice.page, "Bob");
+      const rows = alice.page.locator(".stats-section:has(.stats-section-title:text('Their recent games')) .stats-pair-row");
+      const texts = (await rows.count()) ? await rows.allTextContents() : [];
+      return texts.find((t) => /vs /.test(t)) || null;
+    }, 10, 1000);
+    check("Alice sees opponent names after Bob opts in", !!namedRow, namedRow);
+
+    // ---- Highlights link: "Longest game" opens the game-detail sheet ----
+    await stats.openStatsBoard(alice.page);
+    await stats.openPlayerDetail(alice.page, "Alice");
+    const lgRow = alice.page.locator(".stats-pair-row", { hasText: "Longest game" });
+    check("Alice: Longest game highlight row exists", (await lgRow.count()) === 1);
+    await lgRow.click();
+    await alice.page.waitForTimeout(300);
+    const detailOpen = (await alice.page.locator('[role="dialog"][aria-label="Game detail"]').count()) > 0;
+    check("Highlight link opens the game-detail sheet", detailOpen);
+    if (detailOpen) {
+      await alice.page.locator('[role="dialog"][aria-label="Game detail"] .sheet-btn.ghost').click().catch(() => {});
+      await alice.page.waitForTimeout(200);
+    }
+
     // ---- Revocation: Bob cuts Alice off; Alice's view flips to denied ----
     await linking.openDisplaySheet(bob.page);
     await openSharingSheet(bob.page);

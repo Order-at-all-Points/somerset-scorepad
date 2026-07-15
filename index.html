@@ -2011,9 +2011,12 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- Stats Sharing (opt-in: follow the overall records of people you play with) ----
   // One master switch (autoShare). While it's on, this device: (1) publishes a
-  // compact aggregate digest of its own record to statsProfiles/<myProfileId>
-  // — never raw history, so no third-party names/scores/dates ever leave the
-  // device (see FIREBASE_SETUP.md); (2) announces "roster name X = profileId Y"
+  // compact digest of its own record to statsProfiles/<myProfileId> — career
+  // aggregates plus a capped recent-games feed (result/score/date only; the
+  // NAMES of the other people in those games stay off the wire unless the
+  // separate shareGameNames toggle is on, since third parties never consented
+  // to a viewer they don't know — see FIREBASE_SETUP.md); (2) announces
+  // "roster name X = profileId Y"
   // claims inside shared sessions (tournamentClaims/<code>, kept OUTSIDE the
   // tournament blob so whole-object tourney writes can't clobber other devices'
   // claims); (3) auto-follows anyone whose claim matches a player in a match
@@ -2025,6 +2028,7 @@ window.SOMERSET_FB_CONFIG = {
   // statsProfiles/<pid>/allowed are the shared, enforcing state.
   var PROFILE_ID_KEY = "somerset:dev-profile-id";
   var AUTO_SHARE_KEY = "somerset:dev-auto-share";
+  var SHARE_GAME_NAMES_KEY = "somerset:dev-share-game-names";
   var SHARE_PEERS_KEY = "somerset:dev-share-peers";
   function loadMyProfileId() { try { return localStorage.getItem(PROFILE_ID_KEY); } catch (e) { return null; } }
   function saveMyProfileId(id) { try { localStorage.setItem(PROFILE_ID_KEY, id); } catch (e) {} }
@@ -2032,6 +2036,13 @@ window.SOMERSET_FB_CONFIG = {
   function loadAutoShare() { try { return localStorage.getItem(AUTO_SHARE_KEY) === "1"; } catch (e) { return false; } }
   function saveAutoShare(v) { try { localStorage.setItem(AUTO_SHARE_KEY, v ? "1" : "0"); } catch (e) {} }
   var autoShare = loadAutoShare();
+  function loadShareGameNames() { try { return localStorage.getItem(SHARE_GAME_NAMES_KEY) === "1"; } catch (e) { return false; } }
+  var shareGameNames = loadShareGameNames();
+  function setShareGameNames(v) {
+    shareGameNames = !!v;
+    try { localStorage.setItem(SHARE_GAME_NAMES_KEY, shareGameNames ? "1" : "0"); } catch (e) {}
+    publishMyDigestSoon();   // the published recent-games rows change shape with this
+  }
   function loadSharePeers() { try { var r = localStorage.getItem(SHARE_PEERS_KEY); if (r) return JSON.parse(r); } catch (e) {} return {}; }
   function saveSharePeersLocal() { try { localStorage.setItem(SHARE_PEERS_KEY, JSON.stringify(sharePeers)); } catch (e) {} }
   var sharePeers = loadSharePeers();  // { profileId: { profileId, name, lastPlayed, follow, share, updatedAt } }
@@ -2103,6 +2114,23 @@ window.SOMERSET_FB_CONFIG = {
       currentStreakType: p.currentStreak.type || null,
       currentStreakCount: p.currentStreak.count || 0,
       form: p.games.slice(-5).map(function (g) { return g.tie ? "T" : (g.won ? "W" : "L"); }).join(""),
+      // Individual games, newest first, capped. Result/score/hands/date always;
+      // the other players' NAMES ride along only when shareGameNames is on —
+      // they're third parties who never consented to this viewer, so the
+      // conservative shape is the default. Manual bracket wins have no totals,
+      // so my/opp are simply omitted there (Firebase drops nulls anyway).
+      recentGames: p.games.slice(-20).reverse().map(function (g) {
+        var row = { date: g.date, result: g.tie ? "T" : (g.won ? "W" : "L"), format: g.format };
+        if (g.dealsCount) row.hands = g.dealsCount;
+        if (g.myPts != null && g.oppPts != null) { row.my = g.myPts; row.opp = g.oppPts; }
+        if (g.champion) row.champ = true;
+        if (shareGameNames) {
+          if (g.partnerName && g.partnerName !== "?") row.partner = g.partnerName;
+          var opps = (g.opponentNames || []).filter(function (n) { return n && n !== "?"; });
+          if (opps.length) row.opponents = opps;
+        }
+        return row;
+      }),
       updatedAt: firebase.database.ServerValue.TIMESTAMP
     };
     fb.ref("statsProfiles/" + myProfileId + "/digest").set(digest).catch(function () {});
@@ -4234,12 +4262,12 @@ window.SOMERSET_FB_CONFIG = {
       var shKids = [ el("h3", { class:"disp", style:"margin-bottom:6px;" }, ["Stats Sharing"]) ];
       if (!cloudSyncEnabled) {
         shKids.push(el("p", { class:"sub disp" },
-          ["Follow the overall records of people you play shared games with — and let them follow yours. Only career totals are ever shared, never individual games. Needs Cloud Backup to be on."]));
+          ["Follow the records and recent games of people you play shared games with — and let them follow yours. Results and scores only; names of other players are shared only if you opt in. Needs Cloud Backup to be on."]));
         shKids.push(el("button", { class:"sheet-btn primary disp",
           onClick:function(){ ui.sharingSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set up Cloud Backup"]));
       } else {
         shKids.push(el("p", { class:"sub disp" },
-          ["While on, people you play shared games with can see your overall record (wins, moons, streaks — never individual games), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
+          ["While on, people you play shared games with can see your overall record and recent games (results and scores — who else you played with stays private unless you say so below), and theirs shows up on their Stats page here, kept current as they play. Anyone can be cut off below."]));
         shKids.push(el("div", { class:"settings-row disp" }, [
           el("span", { class:"settings-row-label disp" }, ["Share with people I play"]),
           el("span", { class:"ios-toggle disp" + (autoShare ? " on" : ""), role:"switch",
@@ -4247,6 +4275,17 @@ window.SOMERSET_FB_CONFIG = {
             onClick:function(e){ e.stopPropagation(); setStatsSharing(!autoShare); } },
             [ el("span", { class:"ios-toggle-knob" }, []) ])
         ]));
+        if (autoShare) {
+          shKids.push(el("div", { class:"settings-row disp" }, [
+            el("span", { class:"settings-row-label disp" }, ["Include names in shared games"]),
+            el("span", { class:"ios-toggle disp" + (shareGameNames ? " on" : ""), role:"switch",
+              "aria-checked": shareGameNames ? "true" : "false", "aria-label":"Include names in shared games",
+              onClick:function(e){ e.stopPropagation(); setShareGameNames(!shareGameNames); softRender(); } },
+              [ el("span", { class:"ios-toggle-knob" }, []) ])
+          ]));
+          shKids.push(el("p", { class:"sub disp", style:"padding-top:0;" },
+            ["Off: your shared games show only results and scores. On: they also name who you played with — worth asking your group first, since those people don't pick your followers."]));
+        }
         var peerIds = Object.keys(sharePeers).sort(function (a, b) { return (sharePeers[b].lastPlayed || 0) - (sharePeers[a].lastPlayed || 0); });
         if (!peerIds.length) {
           shKids.push(el("p", { class:"sub disp", style:"padding-top:4px;" },
@@ -4289,6 +4328,13 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.gameDetailRecId != null) {
       var gdRec = gameHistory.find(function (r) { return r.id === ui.gameDetailRecId; });
+      // Stats highlights (Biggest win / Longest game / …) are computed over the
+      // MERGED history, so their recId can belong to a linked device's record
+      // that only exists in linkedHistoryCache — without this fallback the
+      // sheet silently closed for exactly those rows. Own-history lookup stays
+      // first: ids are only unique per device, and on a collision the local
+      // record is the one History itself shows.
+      if (!gdRec) gdRec = mergedHistoryForStats().find(function (r) { return r.id === ui.gameDetailRecId; });
       if (!gdRec) { ui.gameDetailRecId = null; }
       else {
         var closeGameDetail = function(){ ui.gameDetailRecId = null; softRender(); };
@@ -5715,6 +5761,7 @@ window.SOMERSET_FB_CONFIG = {
         var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
           recId: rec.id, date: rec.date, team: team, won: won, tie: tie,
+          myPts: rec.totals ? rec.totals[team] : null, oppPts: rec.totals ? rec.totals[1 - team] : null,
           champion: !!(rec.tournament && rec.tournament.championship && won),
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
           bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
@@ -6056,6 +6103,22 @@ window.SOMERSET_FB_CONFIG = {
             d.form.split("").map(function (ch) {
               return el("div", { class:"stats-form-pill " + (ch === "T" ? "t" : (ch === "W" ? "w" : "l")) }, [ch]);
             })));
+        }
+        var rgames = fbObjToArr(d.recentGames || []).filter(Boolean);
+        if (rgames.length) {
+          overallKids.push(el("p", { class:"stats-section-title disp", style:"margin-top:14px;" }, ["Their recent games"]));
+          overallKids.push(el("div", { class:"stats-pair-list" }, rgames.slice(0, 10).map(function (rg) {
+            var label = (rg.champ ? "🏆 " : "") + (rg.result === "T" ? "Tie" : (rg.result === "W" ? "Win" : "Loss"));
+            var score = (rg.my != null && rg.opp != null) ? (rg.my + "–" + rg.opp)
+              : (rg.hands ? (rg.hands + " hand" + (rg.hands === 1 ? "" : "s")) : "—");
+            var who = null;
+            if (rg.partner || rg.opponents) {
+              var opps = fbObjToArr(rg.opponents || []).filter(Boolean);
+              who = (rg.partner ? "w/ " + rg.partner : "") + (opps.length ? (rg.partner ? " " : "") + "vs " + opps.join(" & ") : "");
+            }
+            var sub = [who, shortDate(rg.date)].filter(Boolean).join(" · ");
+            return statsPairRow(label, score, sub || null, rg.result === "L" ? "bad" : null);
+          })));
         }
         if (d.updatedAt) {
           overallKids.push(el("p", { class:"peer-sub disp" },
