@@ -2167,8 +2167,9 @@ window.SOMERSET_FB_CONFIG = {
           // Nailbiter can be a loss, so the raw record's own winner field can't
           // tell a follower which side was the owner's — stamp it explicitly.
           if (h.team != null) c.myTeam = h.team;
-          // Moon-fest is a per-seat count (bidder crediting, not just team),
-          // so the follower needs to know exactly which seat was the owner.
+          // Hail Mary is a per-seat highlight (bidder crediting, not just
+          // team), so the follower needs to know exactly which seat was
+          // the owner to recompute the pre-shot deficit.
           if (h.seat != null) c.mySeat = h.seat;
           if (!shareGameNames) {
             c.players = ["", "", "", ""];
@@ -2181,7 +2182,7 @@ window.SOMERSET_FB_CONFIG = {
         var bw = pick(p.bestWin); if (bw) out.bestWin = bw;
         var nb = pick(p.nailbiter); if (nb) out.nailbiter = nb;
         var cb = pick(p.comebackWin); if (cb) out.comebackWin = cb;
-        var mf = pick(p.moonFest); if (mf) out.moonFest = mf;
+        var hm = pick(p.hailMary); if (hm) out.hailMary = hm;
         var lg = pick(p.longestGame); if (lg) out.longestGame = lg;
         var sg = pick(p.shortestGame); if (sg) out.shortestGame = sg;
         return out;
@@ -3380,17 +3381,26 @@ window.SOMERSET_FB_CONFIG = {
     });
     return maxDeficit;
   }
-  // Moons a given seat gets credited with in one game -- mirrors the crediting
-  // rule computePlayerStats uses (bidderSeat when known, else both seats on
-  // the bidding team for pre-bidderSeat-tracking deals).
-  function gameMoonsForSeat(rec, seat) {
-    var count = 0;
+  // Deepest deficit a given seat's team faced right before a moon it gets
+  // credited with (bidderSeat when known, else both seats on the bidding
+  // team, mirroring computePlayerStats' crediting rule). Walks the running
+  // score the same way gameComebackDeficit does, but captures the gap
+  // immediately before the moon-shot deal instead of the worst point
+  // reached at any deal -- that pre-shot gap is what "Hail Mary" measures.
+  function gameHailMaryDeficit(rec, seat) {
+    var s = [0, 0], best = 0;
     (rec.deals || []).forEach(function (d) {
-      if (!isMoonMade(d)) return;
-      var creditSeats = (d.bidderSeat != null) ? [d.bidderSeat] : [d.bidTeam, d.bidTeam + 2];
-      if (creditSeats.indexOf(seat) !== -1) count++;
+      if (isMoonMade(d)) {
+        var creditSeats = (d.bidderSeat != null) ? [d.bidderSeat] : [d.bidTeam, d.bidTeam + 2];
+        if (creditSeats.indexOf(seat) !== -1) {
+          var deficit = s[1 - d.bidTeam] - s[d.bidTeam];
+          if (deficit > best) best = deficit;
+        }
+      }
+      var delta = dealDelta(d, s);
+      s[0] += delta[0]; s[1] += delta[1];
     });
-    return count;
+    return best;
   }
   // A game can't end in a tie: if both teams clear the target on the same hand
   // with equal scores, the bidding team on that hand wins it (they took the
@@ -5950,12 +5960,23 @@ window.SOMERSET_FB_CONFIG = {
       // they fall back to crediting both seats on the bidding team, as before.
       var moonsBySeat = [0, 0, 0, 0], setsBySeat = [0, 0, 0, 0], moonAttemptsBySeat = [0, 0, 0, 0];
       var bidsBySeat = [0, 0, 0, 0], bidPtsBySeat = [0, 0, 0, 0];
+      // Deepest deficit erased by a made-moon credited to each seat this
+      // game -- only trailing (deficit > 0) moon shots qualify, per the
+      // "Hail Mary" highlight (a moon is a one-shot, game-swinging event,
+      // not something to tally like a running count).
+      var hailMaryBySeat = [0, 0, 0, 0], runningScore = [0, 0];
       (rec.deals || []).forEach(function (d) {
         var creditSeats = (d.bidderSeat != null) ? [d.bidderSeat] : [d.bidTeam, d.bidTeam + 2];
         if (d.bid === POINTS_PER_DEAL) creditSeats.forEach(function (s) { moonAttemptsBySeat[s]++; });
-        if (isMoonMade(d)) creditSeats.forEach(function (s) { moonsBySeat[s]++; });
+        if (isMoonMade(d)) {
+          creditSeats.forEach(function (s) { moonsBySeat[s]++; });
+          var deficit = runningScore[1 - d.bidTeam] - runningScore[d.bidTeam];
+          if (deficit > 0) creditSeats.forEach(function (s) { if (deficit > hailMaryBySeat[s]) hailMaryBySeat[s] = deficit; });
+        }
         if (isDealSet(d)) creditSeats.forEach(function (s) { setsBySeat[s]++; });
         creditSeats.forEach(function (s) { bidsBySeat[s]++; bidPtsBySeat[s] += d.bid; });
+        var scoreDelta = dealDelta(d, runningScore);
+        runningScore[0] += scoreDelta[0]; runningScore[1] += scoreDelta[1];
       });
       var comebackDeficit = gameComebackDeficit(rec);
       var format = rec.tournament ? rec.tournament.format : "casual";
@@ -5980,6 +6001,7 @@ window.SOMERSET_FB_CONFIG = {
           recId: rec.id, date: rec.date, team: team, seat: seat, won: won, tie: tie,
           champion: !!(rec.tournament && rec.tournament.championship && won),
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
+          hailMaryDeficit: hailMaryBySeat[seat] || null,
           bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
           partnerName: partnerName, opponentNames: opponentNames,
           format: format, tournamentId: tournamentId, dealsCount: dealsCount, margin: margin,
@@ -6023,7 +6045,7 @@ window.SOMERSET_FB_CONFIG = {
   function finalizePlayerStats(p) {
     p.games.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var wins = 0, losses = 0, moons = 0, sets = 0, moonAttempts = 0, champs = 0, longest = 0, run = 0, longestLoss = 0, lossRun = 0;
-    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null, nailbiter = null, comebackWin = null, moonFest = null;
+    var curType = null, curRun = 0, tournamentIds = {}, bestWin = null, longestGame = null, shortestGame = null, nailbiter = null, comebackWin = null, hailMary = null;
     var totalBids = 0, totalBidPoints = 0;
     var byFormat = {};
     p.games.forEach(function (g) {
@@ -6048,12 +6070,12 @@ window.SOMERSET_FB_CONFIG = {
       if (g.won && g.comebackDeficit && (!comebackWin || g.comebackDeficit > comebackWin.deficit)) {
         comebackWin = { deficit: g.comebackDeficit, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
-      if (g.moons > 0 && (!moonFest || g.moons > moonFest.moons)) {
-        moonFest = { moons: g.moons, seat: g.seat, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
+      if (g.hailMaryDeficit != null && (!hailMary || g.hailMaryDeficit > hailMary.deficit)) {
+        hailMary = { deficit: g.hailMaryDeficit, seat: g.seat, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
       if (g.dealsCount) {
-        if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
-        if (!shortestGame || g.dealsCount < shortestGame.dealsCount) shortestGame = { dealsCount: g.dealsCount, date: g.date, recId: g.recId };
+        if (!longestGame || g.dealsCount > longestGame.dealsCount) longestGame = { dealsCount: g.dealsCount, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
+        if (!shortestGame || g.dealsCount < shortestGame.dealsCount) shortestGame = { dealsCount: g.dealsCount, opponentNames: g.opponentNames, date: g.date, recId: g.recId };
       }
       var fb = byFormat[g.format] || (byFormat[g.format] = { format: g.format, wins: 0, losses: 0, games: 0 });
       fb.games++; if (!g.tie) { if (g.won) fb.wins++; else fb.losses++; }
@@ -6075,7 +6097,7 @@ window.SOMERSET_FB_CONFIG = {
     p.bestWin = bestWin;
     p.nailbiter = nailbiter;
     p.comebackWin = comebackWin;
-    p.moonFest = moonFest;
+    p.hailMary = hailMary;
     p.longestGame = longestGame;
     p.shortestGame = (shortestGame && shortestGame.dealsCount !== (longestGame && longestGame.dealsCount)) ? shortestGame : null;
     p.bestPartner = bestOrWorstPairing(p.partners, true);
@@ -6369,10 +6391,10 @@ window.SOMERSET_FB_CONFIG = {
           var cbDeficit = gameComebackDeficit(normalizeSharedRec(dhl.comebackWin));
           hlRows.push(sharedGameRow("Comeback win", dhl.comebackWin, "Down " + cbDeficit));
         }
-        if (dhl.moonFest && dhl.moonFest.deals) {
-          var mfSeat = dhl.moonFest.mySeat != null ? dhl.moonFest.mySeat : 0;
-          var mfN = gameMoonsForSeat(normalizeSharedRec(dhl.moonFest), mfSeat);
-          hlRows.push(sharedGameRow("Moon-fest", dhl.moonFest, mfN + " moon" + (mfN === 1 ? "" : "s")));
+        if (dhl.hailMary && dhl.hailMary.deals) {
+          var hmSeat = dhl.hailMary.mySeat != null ? dhl.hailMary.mySeat : 0;
+          var hmDeficit = gameHailMaryDeficit(normalizeSharedRec(dhl.hailMary), hmSeat);
+          hlRows.push(sharedGameRow("Hail Mary", dhl.hailMary, "Down " + hmDeficit));
         }
         if (dhl.longestGame && dhl.longestGame.deals) {
           var lgN = fbObjToArr(dhl.longestGame.deals).length;
@@ -6496,7 +6518,7 @@ window.SOMERSET_FB_CONFIG = {
       ]));
     }
 
-    if (p.bestWin || p.longestGame || p.nailbiter || p.comebackWin || p.moonFest) {
+    if (p.bestWin || p.longestGame || p.nailbiter || p.comebackWin || p.hailMary) {
       var hlRows = [];
       if (p.bestWin) {
         hlRows.push(statsPairRow("Biggest win", "+" + p.bestWin.margin,
@@ -6513,17 +6535,19 @@ window.SOMERSET_FB_CONFIG = {
           "vs " + p.comebackWin.opponentNames.join(" & ") + " · " + dateHeading(p.comebackWin.date), null,
           function(){ ui.gameDetailRecId = p.comebackWin.recId; render(); }));
       }
-      if (p.moonFest) {
-        hlRows.push(statsPairRow("Moon-fest", p.moonFest.moons + " moon" + (p.moonFest.moons === 1 ? "" : "s"),
-          "vs " + p.moonFest.opponentNames.join(" & ") + " · " + dateHeading(p.moonFest.date), null,
-          function(){ ui.gameDetailRecId = p.moonFest.recId; render(); }));
+      if (p.hailMary) {
+        hlRows.push(statsPairRow("Hail Mary", "Down " + p.hailMary.deficit,
+          "vs " + p.hailMary.opponentNames.join(" & ") + " · " + dateHeading(p.hailMary.date), null,
+          function(){ ui.gameDetailRecId = p.hailMary.recId; render(); }));
       }
       if (p.longestGame) {
-        hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.longestGame.date), null,
+        hlRows.push(statsPairRow("Longest game", p.longestGame.dealsCount + " hand" + (p.longestGame.dealsCount === 1 ? "" : "s"),
+          "vs " + p.longestGame.opponentNames.join(" & ") + " · " + dateHeading(p.longestGame.date), null,
           function(){ ui.gameDetailRecId = p.longestGame.recId; render(); }));
       }
       if (p.shortestGame) {
-        hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"), dateHeading(p.shortestGame.date), null,
+        hlRows.push(statsPairRow("Shortest game", p.shortestGame.dealsCount + " hand" + (p.shortestGame.dealsCount === 1 ? "" : "s"),
+          "vs " + p.shortestGame.opponentNames.join(" & ") + " · " + dateHeading(p.shortestGame.date), null,
           function(){ ui.gameDetailRecId = p.shortestGame.recId; render(); }));
       }
       card.appendChild(el("div", { class:"stats-section" }, [

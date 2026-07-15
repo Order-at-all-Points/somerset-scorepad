@@ -111,7 +111,7 @@ A **Stats** link in the History tab footer opens a cross‑player leaderboard, c
 
 - **Leaderboard** — sortable by Wins / Win % / Moons / Streak.
 - **Per‑player detail** — record & win rate, championships, longest and current win streak, moons shot & moon conversion rate, times set, games played, a recent‑form strip, a win/loss bar, a games‑by‑month chart, and a win‑rate‑by‑format breakdown (casual vs. bracket vs. round robin vs. best‑of series).
-- **Highlights** — biggest win margin, nailbiter, comeback win, moon‑fest (most moons by one seat in a game), longest and shortest game, each tappable to open that game's full hand‑by‑hand log.
+- **Highlights** — biggest win margin, nailbiter, comeback win, Hail Mary (a made moon while trailing by the most points), longest and shortest game, each tappable to open that game's full hand‑by‑hand log.
 - **Best partner** / **toughest opponent ("nemesis")** — best and worst joint/head‑to‑head records, minimum two games together.
 - **Merge names…** — fold a typo'd or nicknamed entry ("Daniel" → "Dan") into one canonical player, with a per‑merge undo. Stored as a per‑device alias map that stats resolve through before bucketing games; the underlying History records are never rewritten.
 - **Split a name…** — the inverse of Merge, for when two *different* people share one name (e.g. two friends both named "Sam"): pick the name, select which of its games actually belong to the other person, and give them a new name. Scoped to just those games, with its own undo, and — like Merge — never rewrites History.
@@ -168,7 +168,7 @@ Opt-in, via **☰ → Cloud Backup**:
 Opt-in, via **☰ → Stats Sharing** (requires Cloud Backup):
 
 - While on, anyone you play a **shared game** with is followed automatically after the first match: their **overall record** — wins, moons, sets, streaks, recent form, career totals from *every* game they record anywhere — appears as a live **"Overall record — shared live"** section on their Stats page on your device, and stays current as they play.
-- Their **highlight games** (biggest win, nailbiter, comeback win, moon-fest, longest game, shortest game) are shared as full records and open **hand-by-hand** with a tap — the same interaction the local Stats page's Highlights rows have.
+- Their **highlight games** (biggest win, nailbiter, comeback win, Hail Mary, longest game, shortest game) are shared as full records and open **hand-by-hand** with a tap — the same interaction the local Stats page's Highlights rows have.
 - **Third-party names stay private by default**: shared highlight games arrive with the roster stripped (hands and scores still show, seats read "Seat 1…4"). A separate **"Include names in shared games"** toggle shares the full table for groups where everyone knows everyone — off, because the people in your games don't pick your followers.
 - It's **mutual but independently controlled**: the same first match shares your record with them, and the **People list** in the Stats Sharing sheet has a per-person toggle — flip someone off and their access is revoked immediately (enforced by Firebase security rules, not just hidden in the UI). Unfollow anyone from the same list or from their Stats page.
 - Your local Stats table is untouched — it still counts only games in your own History; the shared record is shown alongside, clearly labeled, so nothing double-counts.
