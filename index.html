@@ -1000,7 +1000,7 @@ window.SOMERSET_FB_CONFIG = {
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
-    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
+    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, confirmStartSeries:null, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", seatMenuError:null, info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
@@ -1784,6 +1784,10 @@ window.SOMERSET_FB_CONFIG = {
   // Build a History record for a completed match exactly like the in-app
   // recording paths (archiveCurrentGame / archiveManualWin) do, so a teammate who
   // didn't personally enter the score still gets a matching record in their History.
+  // Shared by every history-record constructor (buildHistoryRecordForMatch,
+  // archiveCurrentGame, archiveManualWin) — random offset keeps two records
+  // archived in the same tick from colliding on id.
+  function genRecordId() { return Date.now() + Math.floor(Math.random() * 1000); }
   function buildHistoryRecordForMatch(t, am, m) {
     var A = t.teams[m.a], B = t.teams[m.b];
     if (!A || !B) return null;
@@ -1798,7 +1802,7 @@ window.SOMERSET_FB_CONFIG = {
     // 1409), so mergedHistoryForStats() can dedup on it instead.
     if (g && g.deals && g.deals.length) {
       return {
-        id: Date.now() + Math.floor(Math.random() * 1000),
+        id: genRecordId(),
         matchUid: matchUid(am),
         date: new Date().toISOString(),
         teams: [A.name, B.name],
@@ -1812,7 +1816,7 @@ window.SOMERSET_FB_CONFIG = {
       };
     }
     return {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: genRecordId(),
       matchUid: matchUid(am),
       date: new Date().toISOString(),
       teams: [A.name, B.name],
@@ -2138,7 +2142,8 @@ window.SOMERSET_FB_CONFIG = {
   function publishMyDigestNow() {
     digestPublishTimer = null;
     if (!statsSharingOn() || !myProfileId || !myDeviceName) return;
-    var p = computePlayerStats()[statKey(canonicalName(myDeviceName))];
+    var merged = mergedHistoryForStats();
+    var p = computePlayerStats(merged)[statKey(canonicalName(myDeviceName))];
     if (!p) return;
     var digest = {
       name: canonicalName(myDeviceName),
@@ -2158,7 +2163,7 @@ window.SOMERSET_FB_CONFIG = {
       // locally — hand rows fall back to "Seat N").
       highlights: (function () {
         var byId = {};
-        mergedHistoryForStats().forEach(function (r) { byId[r.id] = r; });
+        merged.forEach(function (r) { byId[r.id] = r; });
         var pick = function (h) {
           var r = h && byId[h.recId];
           if (!r) return null;
@@ -2283,6 +2288,20 @@ window.SOMERSET_FB_CONFIG = {
   // session's claims and auto-follow/grant every claimed player who isn't me.
   // A once() read instead of a claims listener — claims are only ever consumed
   // here, so there's no lifecycle to manage across join/leave/reload.
+  // Creates (or refreshes) a followed peer from a resolved tournamentClaims
+  // entry {profileId, name}, wiring up the grant-share/subscribe-digest side
+  // effects every caller needs. Persisting the sharePeers change
+  // (saveSharePeersLocal/syncPeersToCloud) is left to the caller — maybeHarvestPeers
+  // batches that once for the whole claims snapshot, while a one-off resolution
+  // (e.g. the ambiguous-claim "Different person" button) does it immediately.
+  function addPeerFromClaim(c) {
+    var peer = sharePeers[c.profileId];
+    if (!peer) peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+    else { peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now(); }
+    if (peerShared(peer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
+    if (peer.follow) subscribeDigest(c.profileId);
+    return peer;
+  }
   function maybeHarvestPeers(rec) {
     if (!syncCode || !rec || !rec.matchUid || !statsSharingOn()) return;
     var me = myNameForCurrentTourney() || myDeviceName;
@@ -2301,8 +2320,7 @@ window.SOMERSET_FB_CONFIG = {
       others.forEach(function (nm) {
         var c = byName[statKey(nm)];
         if (!c || c.profileId === myProfileId) return;
-        var peer = sharePeers[c.profileId];
-        if (!peer) {
+        if (!sharePeers[c.profileId]) {
           // A different profileId already claims this same name — could be two
           // real people who happen to share it, or the accepted wrong-name-claim
           // risk (see [[firebase-sync-open-issues]]). Either way, don't silently
@@ -2316,13 +2334,9 @@ window.SOMERSET_FB_CONFIG = {
             if (!already) { ui.ambiguousClaims.push({ name: c.name, existingPid: conflictPid, claim: { profileId: c.profileId, name: c.name } }); ambiguityAdded = true; }
             return;
           }
-          peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
-        } else {
-          peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now();
         }
+        addPeerFromClaim(c);
         changed = true;
-        if (peerShared(peer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
-        if (peer.follow) subscribeDigest(c.profileId);
       });
       if (changed) {
         saveSharePeersLocal(); syncPeersToCloud();
@@ -2694,6 +2708,13 @@ window.SOMERSET_FB_CONFIG = {
   function fbEq(a, b) {
     return JSON.stringify(fbCanon(a)) === JSON.stringify(fbCanon(b));
   }
+  // a/b/winner are the only match fields two devices legitimately write on the
+  // SAME match at the same moment (see tourneyUnitDiff's matchUnits and the
+  // incoming-snapshot merge below) — kept as one predicate so the outgoing-diff
+  // and incoming-merge sides can never drift apart on which fields are seed-only.
+  function isSeedField(f) {
+    return f === "a" || f === "b" || f === "winner";
+  }
   function getAtPath(obj, path) {
     var segs = path.split("/"), cur = obj;
     for (var i = 0; i < segs.length; i++) {
@@ -2762,7 +2783,7 @@ window.SOMERSET_FB_CONFIG = {
       Object.keys(nM).forEach(function (f) { fields[f] = 1; });
       var changed = Object.keys(fields).filter(function (f) { return !fbEq(bM[f], nM[f]); });
       if (changed.length === 0) return;
-      var seedOnly = changed.every(function (f) { return f === "a" || f === "b" || f === "winner"; });
+      var seedOnly = changed.every(isSeedField);
       if (!seedOnly) { diff[path] = nM; return; }   // known unequal — addUnit's fbEq would re-canonicalize both
       changed.forEach(function (f) { addUnit(path + "/" + f, bM[f], nM[f]); });
     }
@@ -3132,7 +3153,7 @@ window.SOMERSET_FB_CONFIG = {
               Object.keys(baseVal).forEach(function(f) { fields[f] = 1; });
               Object.keys(srvVal).forEach(function(f) { fields[f] = 1; });
               var srvChanged = Object.keys(fields).filter(function(f) { return !fbEq(baseVal[f], srvVal[f]); });
-              var seedOnly = srvChanged.length > 0 && srvChanged.every(function(f) { return f === "a" || f === "b" || f === "winner"; });
+              var seedOnly = srvChanged.length > 0 && srvChanged.every(isSeedField);
               if (seedOnly) {
                 var merged = JSON.parse(JSON.stringify(local));
                 srvChanged.forEach(function(f) {
@@ -3199,8 +3220,10 @@ window.SOMERSET_FB_CONFIG = {
     });
   }
 
-  function mkGameShareTeam(name, p0, p1) {
-    return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: [p0, p1] };
+  // Shared team-object shape used both here (wrapping an existing named team's
+  // players) and by the Series-setup screen (naming a freshly-drawn/chosen pair).
+  function mkTeam(name, players) {
+    return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: players };
   }
 
   // Wraps the current solo game (in progress or empty) into a series-shaped tourney,
@@ -3210,8 +3233,8 @@ window.SOMERSET_FB_CONFIG = {
   // ahead of the live one, so the shared scoreboard isn't misleading about what's
   // actually happened so far.
   function startGameShare() {
-    var teamA = mkGameShareTeam(soloGame.teams[0], soloGame.players[0], soloGame.players[2]);
-    var teamB = mkGameShareTeam(soloGame.teams[1], soloGame.players[1], soloGame.players[3]);
+    var teamA = mkTeam(soloGame.teams[0], [soloGame.players[0], soloGame.players[2]]);
+    var teamB = mkTeam(soloGame.teams[1], [soloGame.players[1], soloGame.players[3]]);
     var bestOf = ui.series ? ui.series.bestOf : 1;
     var t = makeSeries([teamA, teamB], bestOf);
     t.games = [];
@@ -3272,7 +3295,6 @@ window.SOMERSET_FB_CONFIG = {
       if (settled) return;
       settled = true; clearTimeout(timeoutId);
       var data = snap.val();
-      if (!data) { syncStatus = "offline"; onError("No tournament found with that code."); return; }
       syncCode = code; syncRole = "guest";
       localStorage.setItem(SYNC_CODE_KEY, syncCode);
       localStorage.setItem(SYNC_ROLE_KEY, "guest");
@@ -3295,11 +3317,9 @@ window.SOMERSET_FB_CONFIG = {
       syncStatus = "offline";
       // The security rules' .read condition requires data.exists(), so a
       // code that never existed (or one that's expired -- same rule) denies
-      // the read outright rather than resolving with null; the friendlier
-      // "No tournament found" branch above is therefore unreachable for the
-      // most common failure. PERMISSION_DENIED is the real signal for "bad
-      // code," not a network problem -- only fall back to the connectivity
-      // message for genuine failures (offline, DNS, etc).
+      // the read outright rather than resolving with null -- PERMISSION_DENIED
+      // is the real signal for "bad code," not a network problem -- only fall
+      // back to the connectivity message for genuine failures (offline, DNS, etc).
       if (err && err.code === "PERMISSION_DENIED") onError("No tournament found with that code.");
       else onError("Couldn't connect. Check your internet connection.");
     });
@@ -3679,7 +3699,7 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
+           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.confirmStartSeries != null || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
            ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
@@ -4291,6 +4311,25 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
       return;
     }
+    if (ui.confirmStartSeries) {
+      var css = ui.confirmStartSeries;
+      var startSeriesSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Start a series",
+        onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Start a series?"]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
+          ["Your current game in the Game tab hasn't been saved to History yet — starting a series will discard it."]),
+        el("button", { class:"sheet-btn primary disp", onClick:function(){
+          ui.confirmStartSeries = null;
+          rememberNames(css.players.map(function(p){ return p.trim(); }));
+          var t = makeTourney("series", css.teams, css.bestOf);
+          ui.sSetup = null;
+          startLocalTourney(t);
+        } }, ["Discard and start series"]),
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, ["Cancel"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, [startSeriesSheet]));
+      return;
+    }
     if (ui.showThemeSheet) {
       var curThemePref = loadThemePref();
       var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Display settings",
@@ -4398,12 +4437,9 @@ window.SOMERSET_FB_CONFIG = {
               el("div", { style:"display:flex; gap:8px;" }, [
                 el("button", { class:"chip disp", onClick:function () { ui.ambiguousClaims.splice(ai, 1); softRender(); } }, ["Same person"]),
                 el("button", { class:"chip disp", onClick:function () {
-                  var c = amb.claim;
-                  var newPeer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+                  addPeerFromClaim(amb.claim);
                   ui.ambiguousClaims.splice(ai, 1);
                   saveSharePeersLocal(); syncPeersToCloud();
-                  if (peerShared(newPeer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
-                  subscribeDigest(c.profileId);
                   softRender();
                 } }, ["Different person — follow separately"])
               ])
@@ -4614,7 +4650,7 @@ window.SOMERSET_FB_CONFIG = {
       var snsInputs = [], snsBtn, snsMsgEl;
       var snsUpdate = function () {
         var dup = snsAllNamed() && rosterHasDuplicateNames(sns.players);
-        if (snsMsgEl) snsMsgEl.textContent = dup ? "Two players have the same name — add a nickname or initial to tell them apart." : "";
+        if (snsMsgEl) snsMsgEl.textContent = dup ? DUP_NAME_WARNING : "";
         snsBtn.disabled = !snsValid();
       };
       var snsKids = [
@@ -5496,7 +5532,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!game.deals.length) return;
     var detail = winnerDetail();
     if (detail.winner === null) return;   // only archive completed games
-    var id = Date.now() + Math.floor(Math.random() * 1000);
+    var id = genRecordId();
     var rec = {
       id: id,
       date: new Date().toISOString(),
@@ -5517,6 +5553,15 @@ window.SOMERSET_FB_CONFIG = {
     return id;
   }
 
+  // True when the casual Game tab has hands entered that haven't been archived
+  // yet — i.e. an unfinished game (archivedId is only ever set the instant a
+  // winner is decided, see recordDeal). Anything that's about to replace the
+  // global soloGame pointer out from under the Game tab (starting/rematching/
+  // redrawing a Tournament-tab series) must check this first or the in-progress
+  // game vanishes with no History record and no warning.
+  function soloGameInProgress() {
+    return soloGame.deals.length > 0 && !soloGame.archivedId;
+  }
   function newGame(keepSeries) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) {   // safety net — normally already auto-archived on completion
@@ -5914,6 +5959,9 @@ window.SOMERSET_FB_CONFIG = {
     }
     return false;
   }
+  // Shared across every roster-setup wizard (Share, Tournament, Series) so the
+  // wording can't drift between them.
+  var DUP_NAME_WARNING = "Two players have the same name — add a nickname or initial to tell them apart.";
 
   // Partner/opponent are tracked by seat parity: seats 0/2 are one team, 1/3 the
   // other, and within a team the other seat is your partner while both seats of
@@ -5951,9 +5999,9 @@ window.SOMERSET_FB_CONFIG = {
     return out;
   }
 
-  function computePlayerStats() {
+  function computePlayerStats(merged) {
     var byKey = {};
-    mergedHistoryForStats().forEach(function (rec) {
+    (merged || mergedHistoryForStats()).forEach(function (rec) {
       if (rec.winner == null || !rec.players) return;
       // Bid outcomes (moons, sets) are credited to the seat that actually placed the
       // bid. Deals recorded before bidder tracking existed have no bidderSeat, so
@@ -7378,7 +7426,7 @@ window.SOMERSET_FB_CONFIG = {
     var A = tourney.teams[m.a], B = tourney.teams[m.b];
     var ap = A.players || [], bp = B.players || [];
     var rec = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: genRecordId(),
       date: new Date().toISOString(),
       teams: [A.name, B.name],
       players: [ ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || "" ],   // seats 0&2 = A, 1&3 = B
@@ -7558,7 +7606,7 @@ window.SOMERSET_FB_CONFIG = {
       var tms = count / 2;
       msgEl.textContent = !validCount ? ("Need an even number of players, at least 6 (currently " + count + ")")
         : !allNamed ? ""
-        : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
+        : dup ? DUP_NAME_WARNING
         : (count + " players · " + tms + " teams" + (tms % 2 === 1 ? " · one bye" : ""));
       msgEl.className = "tvalid disp" + (ok ? " ok" : "");
       if (drawBtn) drawBtn.disabled = !ok;
@@ -7660,7 +7708,6 @@ window.SOMERSET_FB_CONFIG = {
 
     function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
     function noDupNames() { return !rosterHasDuplicateNames(s.players); }
-    function mkTeam(a, b) { return { id: "t" + Math.random().toString(36).slice(2, 7), name: a + " & " + b, players: [a, b] }; }
     function invalidateTeams() { s.teams = null; s.partner = null; }
 
     var startBtn, msgEl, drawBtn = null, partnerBtns = [], partnerLabelEl = null;
@@ -7670,7 +7717,7 @@ window.SOMERSET_FB_CONFIG = {
       var ok = filled && !dup && !!s.teams;
       if (msgEl) {
         msgEl.textContent = !filled ? "Enter all 4 player names"
-          : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
+          : dup ? DUP_NAME_WARNING
           : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
           : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
         msgEl.className = "tvalid disp" + (ok ? " ok" : "");
@@ -7767,7 +7814,7 @@ window.SOMERSET_FB_CONFIG = {
             var nm = s.players.map(function(p){ return p.trim(); });
             s.partner = pi;
             var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
-            s.teams = [ mkTeam(nm[0], nm[pi]), mkTeam(nm[rest[0]], nm[rest[1]]) ];
+            s.teams = [ mkTeam(nm[0] + " & " + nm[pi], [nm[0], nm[pi]]), mkTeam(nm[rest[0]] + " & " + nm[rest[1]], [nm[rest[0]], nm[rest[1]]]) ];
             softRender();
           } }, [ names[pi] || ("Player " + (pi + 1)) ]);
           b._pi = pi;
@@ -7789,6 +7836,7 @@ window.SOMERSET_FB_CONFIG = {
 
     startBtn = el("button", { class:"btn btn-new disp", onClick:function(){
       if (!recompute()) return;
+      if (soloGameInProgress()) { ui.confirmStartSeries = { players: s.players.slice(), teams: s.teams, bestOf: s.bestOf }; render(); return; }
       rememberNames(s.players.map(function(p){ return p.trim(); }));
       var t = makeTourney("series", s.teams, s.bestOf);
       ui.sSetup = null;
@@ -8224,6 +8272,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.info != null) { ui.info = null; softRender(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
+    if (ui.confirmStartSeries) { ui.confirmStartSeries = null; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
     if (ui.whoSheet) { if (!whoSheetForced()) { ui.whoSheet = false; softRender(); } return true; }
     if (ui.shareSheetOpen) { closeShareSheet(); return true; }
