@@ -15,9 +15,14 @@ Single-file PWA (`index.html`), no build step. Surface = browser GUI.
 
 ## Cloud features against local Firebase emulators (not production)
 
-The stress-test scenarios hit the PRODUCTION Firebase project (see rate-limit
-notes in `stress-test/config.js` — authThrottleMs, sync concurrency 1). To test
-rules changes, or avoid production writes, run the emulators:
+Every device the stress-test harness creates (`stress-test/lib/browser.js`
+`createDevice()`) wires itself to the local Firebase emulators by default —
+no phase (local/sync/sharing) ever writes to production anymore (see
+rate-limit notes in `stress-test/config.js` — authThrottleMs, sync
+concurrency 1, both still relevant if you ever point a manual run at
+production). A full `node stress-test/orchestrator.js` run needs the
+emulators up or it skips every phase with a loud notice instead of running.
+To bring them up:
 
 1. **JDK 21+** needed (firebase-tools hard-fails below 21: "no longer supports Java
    version before 21") and the machine only has Java 8 — a standalone JDK works

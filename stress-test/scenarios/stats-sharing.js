@@ -3,8 +3,12 @@
  * Regression guards for Cloud Backup + Stats Sharing, from the 2026-07-16
  * stress investigation (full writeup: CLOUD_SYNC_STRESS_2026-07-16.md).
  *
- * These run in the "sharing" phase against LOCAL Firebase emulators, not
- * production -- see lib/emulator.js for why they have to.
+ * These run in the "sharing" phase, and reset the shared local Firebase
+ * emulator database between scenarios (every phase now runs against the
+ * local emulators, never production -- see lib/browser.js createDevice() and
+ * lib/emulator.js) -- this phase additionally needs the emulator's
+ * ?access_token=owner ground-truth reads and deliberately drives revocation
+ * failures, which is why it's kept separate and gated on emulator.isUp().
  *
  * Every guard here asserts the DESIRED behaviour, so each one currently FAILS
  * against the shipped code by design: they were written from confirmed bugs

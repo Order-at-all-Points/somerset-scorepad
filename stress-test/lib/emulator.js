@@ -1,15 +1,22 @@
 "use strict";
 /**
- * Local Firebase emulator support for the "sharing" phase.
+ * Local Firebase emulator support.
  *
- * Why this phase can't run against production like the others do:
- *  - its assertions need ground-truth reads of statsProfiles/allowed via the
- *    emulator's ?access_token=owner backdoor, which production has no
- *    equivalent for (the whole point is that the app CAN'T read those paths);
- *  - the scenarios deliberately drive revocation failures, which against
- *    production would leave real, permanently-unrevocable grants on real
- *    profiles (see CLOUD_SYNC_STRESS_2026-07-16.md, F6);
- *  - it resets the whole database between scenarios.
+ * lib/browser.js's createDevice() wires every device to these emulators by
+ * default -- no scenario in any phase talks to production Firebase anymore.
+ * (Earlier revisions ran "local"/"sync" against production directly, which is
+ * how tournaments/linkCodes/users/etc. ended up full of stress-test debris;
+ * see the 2026-07-17 cleanup.)
+ *
+ * The "sharing" phase additionally needs this module directly (not just the
+ * default wiring), because on top of the default wiring it also:
+ *  - needs ground-truth reads of statsProfiles/allowed via the emulator's
+ *    ?access_token=owner backdoor, which production has no equivalent for
+ *    (the whole point is that the app CAN'T read those paths);
+ *  - deliberately drives revocation failures, which against production
+ *    would leave real, permanently-unrevocable grants on real profiles (see
+ *    CLOUD_SYNC_STRESS_2026-07-16.md, F6);
+ *  - resets the whole database between scenarios.
  *
  * Setup (see .claude/skills/verify/SKILL.md for the full recipe):
  *   JDK 21+, then in a scratch dir with a package.json:

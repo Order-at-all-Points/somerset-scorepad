@@ -1,5 +1,6 @@
 "use strict";
 const config = require("../config");
+const emulator = require("./emulator");
 
 const APP_URL = `http://127.0.0.1:${config.serverPort}/index.html`;
 
@@ -39,13 +40,19 @@ async function launchBrowser(browserName = "chromium") {
  * one phone) wired so console errors and uncaught page exceptions become
  * findings automatically, no per-scenario boilerplate needed.
  */
-async function createDevice(browser, { label, scenarioLogger, severity = "high", contextInit, throttleAuth = true } = {}) {
+async function createDevice(browser, { label, scenarioLogger, severity = "high", contextInit, throttleAuth } = {}) {
   const context = await browser.newContext();
-  // Hook for callers that must touch the context before the app ever boots:
-  // the sharing phase rewires Firebase to the local emulators here, and some
-  // scenarios pre-seed localStorage. Runs before addInitScript/newPage so
+  // Every device is wired to the local Firebase emulators by default -- no
+  // scenario should ever be able to sign in or write against production
+  // (that's how tournaments/linkCodes/users/etc. ended up full of stress-test
+  // debris before). Callers that need extra context setup (e.g. stats-sharing.js
+  // layering localStorage seeding on top of the emulator wiring) pass their own
+  // contextInit and are responsible for calling emulator.wireToEmulators
+  // themselves if they still want it. Runs before addInitScript/newPage so
   // route handlers and init scripts are both in place for the first load.
-  if (contextInit) await contextInit(context);
+  const usingEmulator = !contextInit;
+  if (usingEmulator) await emulator.wireToEmulators(context);
+  else await contextInit(context);
   // Keep the harness deterministic: don't let the app's service worker start
   // caching responses out from under our controlled static server between runs.
   await context.addInitScript(() => {
@@ -107,8 +114,10 @@ async function createDevice(browser, { label, scenarioLogger, severity = "high",
 
   // The auth throttle exists solely to stay under Firebase's hosted
   // anti-abuse limits (see config.authThrottleMs). The local auth emulator has
-  // none, so emulator-backed scenarios opt out rather than pay 1.5s per device.
-  if (throttleAuth) await waitForAuthSlot();
+  // none, so emulator-wired devices skip it by default; explicit true/false
+  // from the caller always wins.
+  const skipThrottle = throttleAuth === false || (throttleAuth === undefined && usingEmulator);
+  if (!skipThrottle) await waitForAuthSlot();
   await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
   await page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible", timeout: config.actionTimeoutMs });
 
