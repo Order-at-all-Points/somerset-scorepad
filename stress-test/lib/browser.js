@@ -24,7 +24,14 @@ async function launchBrowser(browserName = "chromium") {
   const playwright = require("playwright");
   const launcher = playwright[browserName];
   if (!launcher) throw new Error(`Unknown browser: ${browserName}`);
-  return launcher.launch({ headless: config.headless });
+  // LocalNetworkAccessChecks: headless Chrome auto-denies page->loopback
+  // fetches ("Permission was denied for this request to access the `loopback`
+  // address space"), which silently breaks the sharing phase -- the app's
+  // anonymous sign-in against the auth emulator on 127.0.0.1:9099 never
+  // resolves, so authUid stays null and every cloud control no-ops. Harmless
+  // for the production-backed phases, which don't talk to loopback at all.
+  const args = browserName === "chromium" ? ["--disable-features=LocalNetworkAccessChecks"] : [];
+  return launcher.launch({ headless: config.headless, args });
 }
 
 /**
@@ -32,8 +39,13 @@ async function launchBrowser(browserName = "chromium") {
  * one phone) wired so console errors and uncaught page exceptions become
  * findings automatically, no per-scenario boilerplate needed.
  */
-async function createDevice(browser, { label, scenarioLogger, severity = "high" } = {}) {
+async function createDevice(browser, { label, scenarioLogger, severity = "high", contextInit, throttleAuth = true } = {}) {
   const context = await browser.newContext();
+  // Hook for callers that must touch the context before the app ever boots:
+  // the sharing phase rewires Firebase to the local emulators here, and some
+  // scenarios pre-seed localStorage. Runs before addInitScript/newPage so
+  // route handlers and init scripts are both in place for the first load.
+  if (contextInit) await contextInit(context);
   // Keep the harness deterministic: don't let the app's service worker start
   // caching responses out from under our controlled static server between runs.
   await context.addInitScript(() => {
@@ -93,7 +105,10 @@ async function createDevice(browser, { label, scenarioLogger, severity = "high" 
     });
   }
 
-  await waitForAuthSlot();
+  // The auth throttle exists solely to stay under Firebase's hosted
+  // anti-abuse limits (see config.authThrottleMs). The local auth emulator has
+  // none, so emulator-backed scenarios opt out rather than pay 1.5s per device.
+  if (throttleAuth) await waitForAuthSlot();
   await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
   await page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible", timeout: config.actionTimeoutMs });
 

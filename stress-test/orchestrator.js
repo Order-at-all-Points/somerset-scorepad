@@ -6,6 +6,7 @@ const { execSync } = require("child_process");
 const config = require("./config");
 const server = require("./server");
 const browserLib = require("./lib/browser");
+const emulator = require("./lib/emulator");
 const { FindingsStore } = require("./lib/findings");
 const report = require("./lib/report");
 
@@ -19,6 +20,7 @@ const SCENARIO_FILES = [
   "sync-cross-cutting",
   "history-export-import",
   "device-linking",
+  "stats-sharing",
 ];
 
 function parseArgs() {
@@ -121,6 +123,28 @@ async function main() {
     scenarioResults = scenarioResults.concat(await runQueue(syncScenarios, browser, store, config.concurrency.sync));
   }
 
+  // The sharing phase needs local emulators (see lib/emulator.js) -- it can't
+  // run against production. Skip with a loud notice rather than failing the
+  // run, so `--phase=all` still works on a machine without them; the notice
+  // matters because silently skipping privacy guards is exactly how these bugs
+  // survived to begin with. Concurrency is 1: these scenarios reset the shared
+  // emulator database between each other.
+  const sharingScenarios = allScenarios.filter((s) => s.phase === "sharing");
+  let sharingSkipped = false;
+  if (sharingScenarios.length) {
+    if (await emulator.isUp()) {
+      console.log(`\n=== SHARING phase: ${sharingScenarios.length} scenarios (local emulators), concurrency 1 ===`);
+      scenarioResults = scenarioResults.concat(await runQueue(sharingScenarios, browser, store, 1));
+    } else {
+      sharingSkipped = true;
+      console.log(
+        `\n=== SHARING phase: SKIPPED — ${sharingScenarios.length} scenarios not run ===\n` +
+        `    Firebase emulators unreachable at ${config.emulator.databaseUrl}.\n` +
+        "    These guards cover Stats Sharing privacy/revocation and cannot run against production.\n" +
+        "    Start them per .claude/skills/verify/SKILL.md, then re-run with --phase=sharing.");
+    }
+  }
+
   await browser.close();
 
   const runMeta = {
@@ -133,6 +157,7 @@ async function main() {
     filter: opts.filter,
     scenarioCount: allScenarios.length,
     findingCount: store.all.length,
+    sharingPhaseSkipped: sharingSkipped,
     scenarioResults,
   };
   fs.writeFileSync(path.join(config.artifactsDir, "run-summary.json"), JSON.stringify(runMeta, null, 2));

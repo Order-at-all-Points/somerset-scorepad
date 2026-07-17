@@ -29,4 +29,13 @@ module.exports = {
   // serializes new-device creation behind this minimum spacing so a run never
   // fires sign-ins faster than this, regardless of scenario concurrency.
   authThrottleMs: 1500,
+  // The "sharing" phase runs against LOCAL emulators instead of production --
+  // see lib/emulator.js for why it has to. Skipped with a notice when they
+  // aren't running, so a normal run is unaffected.
+  emulator: {
+    databaseUrl: "http://127.0.0.1:9000",
+    authUrl: "http://127.0.0.1:9099",
+    namespace: "demo-somerset-default-rtdb",
+    projectId: "demo-somerset",
+  },
 };
