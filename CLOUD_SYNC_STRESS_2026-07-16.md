@@ -636,9 +636,26 @@ local phase (incl. history export/import round-trip + dedup): 22 scenarios, 0 fi
 remaining: F5 (1)
 ```
 
+## F5 fix — 2026-07-17
+
+Digest carries `updatedAt` but the follower's section title hardcoded "Overall record — shared live"
+regardless of age. Fixed by comparing `Date.now() - d.updatedAt` against `DIGEST_STALE_MS` (14 days, chosen
+as generous slack past ordinary gaps between games — Firebase has no way to tell "will never update again"
+from "hasn't played in a while", so the label errs toward not crying wolf on a normal lull). Past the
+threshold the section title becomes "Overall record — not currently updating", the explain-sheet copy drops
+the "kept current as they play" promise, and the "Updated …" line becomes "Stopped updating …".
+
+**Guard had to change, not just the fix.** The original `stale-digest-is-marked` guard froze the digest by
+unlinking Alice — but that is exactly the F1 path, and F1's fix now revokes Bob's grant on that unlink
+(correctly), so Bob's `digestCache` came back `{status:"denied"}`, not a stale-but-readable `"ok"`. The guard
+was failing for the *right reason under the old code* and the *wrong reason under the new code*: it looked
+like F5 was unfixed when it was actually exercising a state F5 doesn't need to handle anymore. Rewrote the
+guard to age `updatedAt` on an Alice who never unlinks — the actual residual case (still fully authorized,
+just hasn't played recently). Sharing phase: 7/7 green. Local phase: 22/22 green.
+
 ## What I did not fix
-F5 — reproduced and root-caused only. It is the last open finding, and safe to do now that every state it
-would label is trustworthy.
+Nothing outstanding from this investigation — F1-F6 are all closed. Remaining work is deploying the client
+(rules are already published) and the older carried-in issues below.
 
 ---
 

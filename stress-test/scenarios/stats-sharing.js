@@ -496,12 +496,12 @@ const staleDigestIsMarked = guard("stats-sharing/stale-digest-is-marked", async 
   const { alice, bob, alicePid } = await establishMutualSharing(browser, logger, { seed: 11 });
   track(alice); track(bob);
 
-  // Freeze Alice's digest by unlinking her, then age it far past any plausible
-  // freshness window so this asserts on staleness, not on timing.
-  await linking.unlinkThisDevice(alice.page);
-  await alice.page.waitForTimeout(1000);
-  const frozen = await emulator.dbGet(`statsProfiles/${alicePid}/digest`);
-  if (!frozen) return;   // fixture already covered by F1's guard
+  // The realistic staleness case, now that F1/F6 close the "revoked but still
+  // readable" hole: Alice is still a fully authorized, actively-sharing
+  // device -- she just hasn't recorded a game in a month. Grants stay
+  // intact; only updatedAt ages. (Unlinking Alice here would instead trip
+  // the F1 fix and revoke Bob's grant outright -- a different, already-
+  // covered case, not this one.)
   const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
   await fetch(
     `${config.emulator.databaseUrl}/statsProfiles/${alicePid}/digest/updatedAt.json` +
@@ -519,10 +519,10 @@ const staleDigestIsMarked = guard("stats-sharing/stale-digest-is-marked", async 
       severity: "medium",
       category: "correctness",
       summary:
-        "A digest frozen 30 days ago is still rendered under \"Overall record — shared live\", with copy " +
-        "promising it is \"kept current as they play\" (index.html:6380). The follower gets no signal that the " +
-        "record stopped updating and will silently drift from reality. The digest already carries updatedAt, so " +
-        "the data needed to detect this is present and simply unused. See CLOUD_SYNC_STRESS_2026-07-16.md F5.",
+        "A digest whose updatedAt is 30 days old is still rendered under \"Overall record — shared live\", with " +
+        "copy promising it is \"kept current as they play\" (index.html:6380). The follower gets no signal that " +
+        "the record stopped updating and will silently drift from reality. The digest already carries updatedAt, " +
+        "so the data needed to detect this is present and simply unused. See CLOUD_SYNC_STRESS_2026-07-16.md F5.",
       expected: "a staleness indication once the digest stops updating",
       actual: "section still titled \"Overall record — shared live\" with a 30-day-old digest",
       page: bob.page,

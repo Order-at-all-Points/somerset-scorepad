@@ -2148,6 +2148,11 @@ window.SOMERSET_FB_CONFIG = {
   var digestSubs = {};                // { profileId: true } — statsProfiles/<pid>/digest listener attached
   var digestRetries = {};
   var DIGEST_MAX_RETRIES = 4;
+  // F5: a digest that stops publishing (sharer went inactive, or their device
+  // lost the ability to update it) stays perfectly readable — Firebase has no
+  // way to distinguish "frozen forever" from "hasn't played in a while", so a
+  // generous window is used before the UI stops calling it "live".
+  var DIGEST_STALE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   function sharingReady() { return cloudSyncEnabled && !!authUid && (!!fb || initFb()); }
   function statsSharingOn() { return autoShare && sharingReady(); }
@@ -6573,11 +6578,16 @@ window.SOMERSET_FB_CONFIG = {
     if (followedPeer && statsSharingOn() && followedPeer.follow) {
       var fpid = followedPeer.profileId;
       var dc = digestCache[fpid];
-      var overallExplain = "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
+      var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
+        (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+      var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
+      var overallExplain = digestStale
+        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."
+        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
       var overallKids = [
         el("p", { class:"stats-section-title disp", role:"button", tabindex:"0",
-          "aria-label":"Overall record, shared live: " + overallExplain,
-          onClick:function(){ ui.info = overallExplain; render(); } }, ["Overall record — shared live"])
+          "aria-label": overallTitleText + ": " + overallExplain,
+          onClick:function(){ ui.info = overallExplain; render(); } }, [overallTitleText])
       ];
       if (dc && dc.status === "ok" && dc.data) {
         var d = dc.data;
@@ -6654,7 +6664,8 @@ window.SOMERSET_FB_CONFIG = {
         }
         if (d.updatedAt) {
           overallKids.push(el("p", { class:"peer-sub disp" },
-            ["Updated " + shortDate(new Date(d.updatedAt).toISOString()) + (d.name ? (" · shared as " + d.name) : "")]));
+            [(digestStale ? "Stopped updating " : "Updated ") + shortDate(new Date(d.updatedAt).toISOString()) +
+             (d.name ? (" · shared as " + d.name) : "")]));
         }
       } else if (dc && dc.status === "denied") {
         overallKids.push(el("p", { class:"peer-sub disp" }, [p.name + " isn't sharing their stats with you right now."]));
