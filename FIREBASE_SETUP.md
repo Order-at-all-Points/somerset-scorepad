@@ -149,7 +149,7 @@ Nothing else to configure — the app calls `signInAnonymously()` on load and ea
 
 ## 5. Done
 
-Deploy `index.html` to Vercel (`cd ~/Desktop/SomeRSet && npx vercel --prod`).
+Deploy `index.html` to Vercel (`cd ~/Developer/SomeRSet && npx vercel --prod`).
 
 When you start a tournament, the app automatically:
 - Generates a join code (e.g. `K7MXQ2`)
