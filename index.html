@@ -646,7 +646,11 @@
   .rank-chevron { flex:none; color:var(--ink-soft); display:inline-block; width:12px; height:12px; }
   .rank-chevron svg { display:block; width:100%; height:100%; }
 
-  .stats-hero { text-align:center; padding:20px 16px 18px; border-bottom:1px solid var(--cream-shade); }
+  .stats-player-head { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; background:var(--cream); border-bottom:3px double var(--brass); }
+  .stats-player-head .back-btn { grid-column:1; justify-self:start; }
+  .stats-player-head .stats-player-name { grid-column:2; font-family:var(--font-display); font-size:20px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 4px; }
+
+  .stats-hero { text-align:center; padding:0 16px 18px; border-bottom:1px solid var(--cream-shade); }
   .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
   .stats-hero-sub { font-size:13px; color:var(--ink-soft); margin:4px 0 0; }
   .stats-hero-champ { display:inline-flex; align-items:center; gap:4px; margin-top:10px; font-size:12px; font-weight:600;
@@ -6543,10 +6547,10 @@ window.SOMERSET_FB_CONFIG = {
     var p = stats[statKey(ui.statsPlayer || "")];
 
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      el("div", { class:"view-head disp" }, [p ? p.name : (ui.statsPlayer || "Player")]),
-      el("div", { style:"padding:6px 6px 0;" }, [
+      el("div", { class:"stats-player-head disp" }, [
         el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; softRender(); } },
-          [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Stats" ])
+          [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Stats" ]),
+        el("div", { class:"stats-player-name disp" }, [p ? p.name : (ui.statsPlayer || "Player")])
       ])
     ]);
 
