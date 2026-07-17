@@ -15,18 +15,28 @@ Single-file PWA (`index.html`), no build step. Surface = browser GUI.
 
 ## Cloud features against local Firebase emulators (not production)
 
-The stress-test scenarios hit the PRODUCTION Firebase project (see rate-limit
-notes in `stress-test/config.js` — authThrottleMs, sync concurrency 1). To test
-rules changes, or avoid production writes, run the emulators:
+Every device the stress-test harness creates (`stress-test/lib/browser.js`
+`createDevice()`) wires itself to the local Firebase emulators by default —
+no phase (local/sync/sharing) ever writes to production anymore (see
+rate-limit notes in `stress-test/config.js` — authThrottleMs, sync
+concurrency 1, both still relevant if you ever point a manual run at
+production). A full `node stress-test/orchestrator.js` run needs the
+emulators up or it skips every phase with a loud notice instead of running.
+To bring them up:
 
-1. Java 11+ needed and the machine only has Java 8 — a standalone JDK works
+1. **JDK 21+** needed (firebase-tools hard-fails below 21: "no longer supports Java
+   version before 21") and the machine only has Java 8 — a standalone JDK works
    without touching the system:
-   `curl -sL -o jdk17.tgz "https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jdk/hotspot/normal/eclipse" && tar xzf jdk17.tgz`
-   then `export PATH="$PWD/jdk-17*/Contents/Home/bin:$PATH"`.
+   `curl -sL -o jdk21.tgz "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jdk/hotspot/normal/eclipse" && tar xzf jdk21.tgz`
+   then `export JAVA_HOME="$PWD/jdk-21*/Contents/Home"; export PATH="$JAVA_HOME/bin:$PATH"`.
 2. Extract the rules JSON from FIREBASE_SETUP.md's ```json fence into
-   `database.rules.json`; write a `firebase.json` enabling `database` (9000) +
-   `auth` (9099) emulators; `npm i firebase-tools` in a scratch dir and
-   `npx firebase emulators:start --only database,auth --project demo-somerset`.
+   `database.rules.json` (extract programmatically — pick the fence that parses
+   and has a `.rules` key; never transcribe by hand, or the emulator stops
+   enforcing what production enforces); write a `firebase.json` enabling
+   `database` (9000) + `auth` (9099) emulators; in a scratch dir put a minimal
+   `package.json` first (without one, `npm i firebase-tools` can silently install
+   nothing), then `npm i firebase-tools` and
+   `./node_modules/.bin/firebase emulators:start --only database,auth --project demo-somerset`.
 3. Point the app at the emulators via Playwright route interception on
    `**/index.html` (three string replacements):
    - `databaseURL` → `http://127.0.0.1:9000?ns=demo-somerset-default-rtdb`

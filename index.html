@@ -499,8 +499,12 @@
     box-shadow:0 1px 3px rgba(0,0,0,.18); }
   /* View titles print on the pad itself — serif ink over a double brass rule — rather
      than sitting in a filled bar; the filled treatment is reserved for .banner moments. */
-  .view-head { background:var(--cream); color:var(--ink); font-family:var(--font-display); text-align:center; padding:16px 12px 12px; font-size:20px; font-weight:600; border-bottom:3px double var(--brass); }
+  .view-head { background:var(--cream); color:var(--ink); font-family:var(--font-display); text-align:center; padding:16px 12px 12px; font-size:23px; font-weight:600; border-bottom:3px double var(--brass); }
 
+  /* Wraps the Log/Stats toggle when it stands in for a page heading — carries the
+     same double-brass rule the .view-head titles use, spanning the full card width. */
+  .toggle-head { padding:14px 0 12px; border-bottom:3px double var(--brass); }
+  .toggle-head .seg-toggle { margin:0 12px; }
   .seg-toggle { display:flex; gap:4px; margin:10px 12px 2px; padding:3px; background:var(--cream-shade); border-radius:var(--r-control); }
   .seg-btn { flex:1; padding:8px 0; border:none; border-radius:calc(var(--r-control) - 3px); background:none;
     font-family:var(--font-text); font-size:14px; font-weight:600; color:var(--ink-soft); cursor:pointer; }
@@ -646,7 +650,11 @@
   .rank-chevron { flex:none; color:var(--ink-soft); display:inline-block; width:12px; height:12px; }
   .rank-chevron svg { display:block; width:100%; height:100%; }
 
-  .stats-hero { text-align:center; padding:20px 16px 18px; border-bottom:1px solid var(--cream-shade); }
+  .stats-player-head { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:14px 12px 12px; background:var(--cream); border-bottom:3px double var(--brass); }
+  .stats-player-head .back-btn { grid-column:1; justify-self:start; }
+  .stats-player-head .stats-player-name { grid-column:2; font-family:var(--font-display); font-size:23px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 4px; }
+
+  .stats-hero { text-align:center; padding:18px 16px 18px; border-bottom:1px solid var(--cream-shade); }
   .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
   .stats-hero-sub { font-size:13px; color:var(--ink-soft); margin:4px 0 0; }
   .stats-hero-champ { display:inline-flex; align-items:center; gap:4px; margin-top:10px; font-size:12px; font-weight:600;
@@ -1000,7 +1008,7 @@ window.SOMERSET_FB_CONFIG = {
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
-    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
+    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, confirmStartSeries:null, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", seatMenuError:null, info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
@@ -1406,8 +1414,41 @@ window.SOMERSET_FB_CONFIG = {
   // allows deletion via !newData.exists()) — but if this device is offline they
   // just fail silently, leaving one inert membership row behind; the local unlink
   // still fully takes effect, which is what the user asked for.
+  // True when turning backup off would leave NOBODY publishing this person's
+  // digest — i.e. this is the person's only/last backing-up device. That's the
+  // line the unlink flow turns on: sharing is per-PERSON, so a device leaving a
+  // group that still has other devices must NOT revoke (it would silently cut
+  // off everyone the user's other phone is still sharing with), while the last
+  // device leaving would strand a frozen-but-readable digest nobody can update
+  // or revoke. See CLOUD_SYNC_STRESS_2026-07-16.md F1.
+  function isLastBackupDevice() {
+    return !linkedUids.filter(function (u) { return u !== authUid; }).length;
+  }
+  // How many people this device believes it is currently sharing with — for the
+  // unlink sheet's copy only, so it can name the consequence before the tap.
+  function sharedPeerCount() {
+    if (!autoShare) return 0;
+    return Object.keys(sharePeers).filter(function (pid) { return sharePeers[pid].share !== false; }).length;
+  }
   function unlinkDevice() {
     var pidAtUnlink = personId, uidAtUnlink = authUid;
+    // Revoke FIRST, before anything is torn down. Two reasons this ordering is
+    // load-bearing: revokeAllGrants needs fb/authUid (still live here), and the
+    // personOf removal below is this device's own authorization to write the
+    // profile — once it's gone a retry can never succeed, so the last honest
+    // chance to revoke is right now. Only when this is the last device: with
+    // siblings still in the group, sharing keeps working from them and the
+    // person keeps control there.
+    var revoking = isLastBackupDevice() && autoShare && myProfileId;
+    if (revoking) {
+      autoShare = false; saveAutoShare(false);
+      revokeAllGrants(myProfileId, function (ok) {
+        // personOf is dropped only once the revoke has actually landed — see
+        // the note at its removal below.
+        if (ok) dropPersonOf(uidAtUnlink);
+        else showInfoToast("Couldn't stop sharing — we'll finish that next time you're online.");
+      });
+    }
     if (fb) {
       if (uidAtUnlink) fb.ref("users/" + uidAtUnlink + "/history").off();
       if (linkedListPid) {
@@ -1416,12 +1457,20 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (pidAtUnlink && uidAtUnlink) {
         fb.ref("people/" + pidAtUnlink + "/linkedUids/" + uidAtUnlink).remove().catch(function () {});
-        fb.ref("personOf/" + uidAtUnlink).remove().catch(function () {});
+        // personOf is this device's authorization to write the profile, so when
+        // a revoke is still in flight it has to outlive the rest of the unlink —
+        // dropping it here would make an owed revoke permanently impossible,
+        // which is exactly F6's shape. The revoke's callback drops it instead.
+        // Keeping it briefly also lets this device still read the group's
+        // history, but that device is the user's own and has already torn its
+        // listeners down locally; a third party keeping access to the user's
+        // stats is the worse of the two, so this is the right way to fail.
+        if (!revoking) dropPersonOf(uidAtUnlink);
       }
     }
-    // Stats sharing rides on cloud backup — detach its listeners too (autoShare
-    // and the local peer roster are kept, so re-enabling backup resumes where
-    // it left off; the digest and grants stay in the cloud, merely going stale).
+    // Stats sharing rides on cloud backup — detach its listeners too. The peer
+    // roster is kept so re-enabling backup resumes where it left off; whether
+    // the grants are also kept is decided above.
     Object.keys(digestSubs).forEach(function (pid) { if (fb) fb.ref("statsProfiles/" + pid + "/digest").off(); });
     digestSubs = {}; digestCache = {}; digestRetries = {};
     if (digestPublishTimer) { clearTimeout(digestPublishTimer); digestPublishTimer = null; }
@@ -1784,6 +1833,28 @@ window.SOMERSET_FB_CONFIG = {
   // Build a History record for a completed match exactly like the in-app
   // recording paths (archiveCurrentGame / archiveManualWin) do, so a teammate who
   // didn't personally enter the score still gets a matching record in their History.
+  // Shared by every history-record constructor (buildHistoryRecordForMatch,
+  // archiveCurrentGame, archiveManualWin) — random offset keeps two records
+  // archived in the same tick from colliding on id.
+  // Two independent jobs were collapsed into one integer here — "sortable by
+  // time" and "unique" — and the arithmetic made them cancel: adding jitter to a
+  // timestamp doesn't widen the id space, it smears each record across a ~1s
+  // window, so records archived close together land on the same integer
+  // (measured 2.8% per 8-record burst; syncMyHistoryFromTourney archives a whole
+  // tournament's worth in one synchronous loop with an identical Date.now()).
+  // A collision is silent data loss: the id IS the cloud storage key, so one
+  // game overwrites another under users/<uid>/history/<id>. Compose instead —
+  // millisecond prefix for ordering, 30 bits of crypto RNG (genCode, same
+  // generator the join codes and profile ids use) for identity, kept in separate
+  // parts of the string so neither term can cancel the other.
+  //
+  // Deliberately NOT applied retroactively: historyTombstones is keyed on
+  // `matchUid || id`, so re-keying would resurrect every locally-deleted casual
+  // game, and already-synced copies live at the old users/<uid>/history/<id>
+  // path — a migration would duplicate them rather than move them. The two
+  // formats coexist safely because ids are only ever compared record-to-record,
+  // never parsed, ordered, or done arithmetic on.
+  function genRecordId() { return Date.now() + "-" + genCode(); }
   function buildHistoryRecordForMatch(t, am, m) {
     var A = t.teams[m.a], B = t.teams[m.b];
     if (!A || !B) return null;
@@ -1798,7 +1869,7 @@ window.SOMERSET_FB_CONFIG = {
     // 1409), so mergedHistoryForStats() can dedup on it instead.
     if (g && g.deals && g.deals.length) {
       return {
-        id: Date.now() + Math.floor(Math.random() * 1000),
+        id: genRecordId(),
         matchUid: matchUid(am),
         date: new Date().toISOString(),
         teams: [A.name, B.name],
@@ -1812,7 +1883,7 @@ window.SOMERSET_FB_CONFIG = {
       };
     }
     return {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: genRecordId(),
       matchUid: matchUid(am),
       date: new Date().toISOString(),
       teams: [A.name, B.name],
@@ -2085,6 +2156,11 @@ window.SOMERSET_FB_CONFIG = {
   var digestSubs = {};                // { profileId: true } — statsProfiles/<pid>/digest listener attached
   var digestRetries = {};
   var DIGEST_MAX_RETRIES = 4;
+  // F5: a digest that stops publishing (sharer went inactive, or their device
+  // lost the ability to update it) stays perfectly readable — Firebase has no
+  // way to distinguish "frozen forever" from "hasn't played in a while", so a
+  // generous window is used before the UI stops calling it "live".
+  var DIGEST_STALE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   function sharingReady() { return cloudSyncEnabled && !!authUid && (!!fb || initFb()); }
   function statsSharingOn() { return autoShare && sharingReady(); }
@@ -2101,8 +2177,34 @@ window.SOMERSET_FB_CONFIG = {
   // (rare: both must flip the toggle in the same instant); they converge on the
   // sorted-uid winner at next boot, orphaning the loser's grants — re-toggling
   // a People row re-grants.
+  // Stamp this person's group id onto the profile. This is what keeps the
+  // profile writable — and its grants REVOCABLE — by every device of the
+  // person, independently of which device happened to mint it. The rules
+  // authorize a non-owner device via `personOf[auth.uid] === profile.personId`;
+  // the older rule chained through `personOf[ownerUid]` instead, which
+  // unlinkDevice() deletes, so once the minting device unlinked NOTHING could
+  // ever write the profile again — including removing an allowed/ entry, making
+  // sharing permanently unrevocable (SECURITY_REVIEW.md F6 /
+  // CLOUD_SYNC_STRESS_2026-07-16.md). Cheap and idempotent, so it's re-issued
+  // on every path that can establish or change personId rather than tracked.
+  // Deduped against the last value actually written: ensureStatsProfile() runs
+  // on every peer harvested from a claim, and re-issuing an identical write per
+  // peer per archive is pure noise. Cleared on failure so a dropped write is
+  // retried by the next caller rather than being remembered as done.
+  var stampedProfilePersonId = null;
+  function stampProfilePersonId() {
+    if (!myProfileId || !personId || !sharingReady()) return;
+    var key = myProfileId + ":" + personId;
+    if (stampedProfilePersonId === key) return;
+    stampedProfilePersonId = key;
+    fb.ref("statsProfiles/" + myProfileId + "/personId").set(personId)
+      .catch(function () { if (stampedProfilePersonId === key) stampedProfilePersonId = null; });
+  }
   function ensureStatsProfile(cb) {
-    if (myProfileId) { if (cb) cb(myProfileId); return; }
+    // Already known: still re-stamp. A device that minted its profile while
+    // solo (personId null) and linked later would otherwise leave the profile
+    // permanently unstamped, since this is the early-out every later call takes.
+    if (myProfileId) { stampProfilePersonId(); if (cb) cb(myProfileId); return; }
     if (!sharingReady()) { if (cb) cb(null); return; }
     var uids = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; })).sort();
     Promise.all(uids.map(function (u) {
@@ -2115,11 +2217,15 @@ window.SOMERSET_FB_CONFIG = {
         // users/<uid>/profileId copy is only the restore/adoption breadcrumb.
         return fb.ref("profileOf/" + authUid).set(pid)
           .then(function () { return fb.ref("users/" + authUid + "/profileId").set(pid); })
-          .then(function () { myProfileId = pid; saveMyProfileId(pid); if (cb) cb(pid); });
+          .then(function () { myProfileId = pid; saveMyProfileId(pid); stampProfilePersonId(); if (cb) cb(pid); });
       };
       if (existing) return adopt(existing);
       var pid = "sp" + genCode() + genCode();   // 12 chars of the 32-char alphabet = 60 bits, crypto RNG
-      return fb.ref("statsProfiles/" + pid).set({ ownerUid: authUid, createdAt: firebase.database.ServerValue.TIMESTAMP })
+      // personId rides along at creation when it's already known (a device that
+      // links first, then shares). Solo devices have none yet — stampProfilePersonId()
+      // fills it in later, on whichever path establishes one. Firebase drops
+      // null-valued keys, so an unset personId just omits the field.
+      return fb.ref("statsProfiles/" + pid).set({ ownerUid: authUid, personId: personId || null, createdAt: firebase.database.ServerValue.TIMESTAMP })
         .then(function () { return adopt(pid); });
     }).catch(function () { if (cb) cb(null); });
   }
@@ -2138,7 +2244,8 @@ window.SOMERSET_FB_CONFIG = {
   function publishMyDigestNow() {
     digestPublishTimer = null;
     if (!statsSharingOn() || !myProfileId || !myDeviceName) return;
-    var p = computePlayerStats()[statKey(canonicalName(myDeviceName))];
+    var merged = mergedHistoryForStats();
+    var p = computePlayerStats(merged)[statKey(canonicalName(myDeviceName))];
     if (!p) return;
     var digest = {
       name: canonicalName(myDeviceName),
@@ -2158,7 +2265,7 @@ window.SOMERSET_FB_CONFIG = {
       // locally — hand rows fall back to "Seat N").
       highlights: (function () {
         var byId = {};
-        mergedHistoryForStats().forEach(function (r) { byId[r.id] = r; });
+        merged.forEach(function (r) { byId[r.id] = r; });
         var pick = function (h) {
           var r = h && byId[h.recId];
           if (!r) return null;
@@ -2213,8 +2320,59 @@ window.SOMERSET_FB_CONFIG = {
     fb.ref("statsProfiles/" + myProfileId + "/allowed/" + theirPid).set(true).catch(function () {});
   }
   function revokeShare(theirPid) {
-    if (!myProfileId || !sharingReady()) return;
-    fb.ref("statsProfiles/" + myProfileId + "/allowed/" + theirPid).remove().catch(function () {});
+    if (!myProfileId || !sharingReady()) { showInfoToast("Couldn't stop sharing — check your connection."); return; }
+    fb.ref("statsProfiles/" + myProfileId + "/allowed/" + theirPid).remove()
+      .catch(function () { showInfoToast("Couldn't stop sharing — check your connection."); });
+  }
+  // Revoke EVERY grant on this person's profile by enumerating the authoritative
+  // allowed/ map, instead of looping over sharePeers. sharePeers is a per-device
+  // roster restored only from this uid's own backup copy, so a grant made on a
+  // LINKED device isn't in it — looping it meant "turn sharing off" on a second
+  // device revoked nothing while reporting success, and that device's People list
+  // showed nobody to cut off either (CLOUD_SYNC_STRESS_2026-07-16.md F2).
+  // allowed/ is the shared, enforcing state, and every device of the person can
+  // read it (the statsProfiles read rule admits personOf[auth.uid] === personId).
+  //
+  // A failure is remembered rather than swallowed: nothing else ever reconciles
+  // allowed/ against what the user asked for, so a dropped revoke used to mean
+  // the peer kept reading the digest forever while the UI said sharing was off.
+  var PENDING_REVOKE_KEY = "somerset:dev-pending-revoke-all";
+  function loadPendingRevokeAll() { try { return localStorage.getItem(PENDING_REVOKE_KEY); } catch (e) { return null; } }
+  function savePendingRevokeAll(pid) {
+    try { if (pid) localStorage.setItem(PENDING_REVOKE_KEY, pid); else localStorage.removeItem(PENDING_REVOKE_KEY); } catch (e) {}
+  }
+  function dropPersonOf(uid) { if (uid && fb) fb.ref("personOf/" + uid).remove().catch(function () {}); }
+  // Revoking needs a connection and an identity — deliberately NOT sharingReady(),
+  // which also demands cloudSyncEnabled. The single most important moment to
+  // revoke is while backup is being turned OFF, and again at the next boot after
+  // that, when cloudSyncEnabled is already false forever.
+  function cloudWritable() { return !!authUid && (!!fb || initFb()); }
+  function revokeAllGrants(pid, then) {
+    if (!pid) { if (then) then(true); return; }
+    if (!cloudWritable()) { savePendingRevokeAll(pid); if (then) then(false); return; }
+    savePendingRevokeAll(pid);   // cleared only once the removes actually land
+    fb.ref("statsProfiles/" + pid + "/allowed").once("value").then(function (snap) {
+      var theirs = Object.keys(snap.val() || {});
+      return Promise.all(theirs.map(function (tp) {
+        return fb.ref("statsProfiles/" + pid + "/allowed/" + tp).remove();
+      }));
+    }).then(function () {
+      savePendingRevokeAll(null);
+      if (then) then(true);
+    }).catch(function () { if (then) then(false); });
+  }
+  // Boot-time reconciler for the above: retry a revoke-all that never landed.
+  // Deliberately outside bootStatsSharing(), which early-outs when sharing is
+  // off — precisely the state a pending revoke leaves behind.
+  function retryPendingRevokeAll() {
+    var pid = loadPendingRevokeAll();
+    if (!pid || autoShare || !cloudWritable()) return;
+    var uid = authUid;
+    revokeAllGrants(pid, function (ok) {
+      // Finish the unlink that couldn't complete: personOf was held back purely
+      // so this retry could authorize, so let it go now that the job is done.
+      if (ok && !cloudSyncEnabled) dropPersonOf(uid);
+    });
   }
 
   // Live listener on one followed person's digest — same shape as
@@ -2264,15 +2422,30 @@ window.SOMERSET_FB_CONFIG = {
     if (!sharingReady()) return;
     fb.ref("users/" + authUid + "/sharePeers").set(sharePeers).catch(function () {});
   }
+  // Fans out across every linked device's copy, not just this uid's — the same
+  // union subscribeLinkedHistories() builds for history, and for the same
+  // reason: peers belong to the PERSON, not the device that happened to meet
+  // them. Reading only our own copy left a second device believing the person
+  // had no peers at all, so its People list was empty and its master toggle had
+  // nothing to iterate (CLOUD_SYNC_STRESS_2026-07-16.md F2). Each linked uid's
+  // users/<uid> path is already readable cross-device via the personOf rule.
+  // Newer-updatedAt-wins, so an explicit "ditch this rando" on one device
+  // survives the merge on the others rather than being resurrected by a stale copy.
   function restorePeersFromCloud(then) {
     if (!sharingReady()) { if (then) then(); return; }
-    fb.ref("users/" + authUid + "/sharePeers").once("value").then(function (snap) {
-      var cloud = snap.val() || {};
+    var uids = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; }));
+    Promise.all(uids.map(function (u) {
+      return fb.ref("users/" + u + "/sharePeers").once("value")
+        .then(function (s) { return s.val() || {}; })
+        .catch(function () { return {}; });   // one unreadable sibling must not sink the merge
+    })).then(function (maps) {
       var changed = false;
-      Object.keys(cloud).forEach(function (pid) {
-        var c = cloud[pid], local = sharePeers[pid];
-        if (!c || !c.profileId) return;
-        if (!local || (c.updatedAt || 0) > (local.updatedAt || 0)) { sharePeers[pid] = c; changed = true; }
+      maps.forEach(function (cloud) {
+        Object.keys(cloud).forEach(function (pid) {
+          var c = cloud[pid], local = sharePeers[pid];
+          if (!c || !c.profileId) return;
+          if (!local || (c.updatedAt || 0) > (local.updatedAt || 0)) { sharePeers[pid] = c; changed = true; }
+        });
       });
       if (changed) saveSharePeersLocal();
       if (then) then();
@@ -2283,6 +2456,20 @@ window.SOMERSET_FB_CONFIG = {
   // session's claims and auto-follow/grant every claimed player who isn't me.
   // A once() read instead of a claims listener — claims are only ever consumed
   // here, so there's no lifecycle to manage across join/leave/reload.
+  // Creates (or refreshes) a followed peer from a resolved tournamentClaims
+  // entry {profileId, name}, wiring up the grant-share/subscribe-digest side
+  // effects every caller needs. Persisting the sharePeers change
+  // (saveSharePeersLocal/syncPeersToCloud) is left to the caller — maybeHarvestPeers
+  // batches that once for the whole claims snapshot, while a one-off resolution
+  // (e.g. the ambiguous-claim "Different person" button) does it immediately.
+  function addPeerFromClaim(c) {
+    var peer = sharePeers[c.profileId];
+    if (!peer) peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+    else { peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now(); }
+    if (peerShared(peer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
+    if (peer.follow) subscribeDigest(c.profileId);
+    return peer;
+  }
   function maybeHarvestPeers(rec) {
     if (!syncCode || !rec || !rec.matchUid || !statsSharingOn()) return;
     var me = myNameForCurrentTourney() || myDeviceName;
@@ -2301,8 +2488,7 @@ window.SOMERSET_FB_CONFIG = {
       others.forEach(function (nm) {
         var c = byName[statKey(nm)];
         if (!c || c.profileId === myProfileId) return;
-        var peer = sharePeers[c.profileId];
-        if (!peer) {
+        if (!sharePeers[c.profileId]) {
           // A different profileId already claims this same name — could be two
           // real people who happen to share it, or the accepted wrong-name-claim
           // risk (see [[firebase-sync-open-issues]]). Either way, don't silently
@@ -2316,13 +2502,9 @@ window.SOMERSET_FB_CONFIG = {
             if (!already) { ui.ambiguousClaims.push({ name: c.name, existingPid: conflictPid, claim: { profileId: c.profileId, name: c.name } }); ambiguityAdded = true; }
             return;
           }
-          peer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
-        } else {
-          peer.name = c.name; peer.lastPlayed = Date.now(); peer.updatedAt = Date.now();
         }
+        addPeerFromClaim(c);
         changed = true;
-        if (peerShared(peer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
-        if (peer.follow) subscribeDigest(c.profileId);
       });
       if (changed) {
         saveSharePeersLocal(); syncPeersToCloud();
@@ -2354,26 +2536,36 @@ window.SOMERSET_FB_CONFIG = {
   function setStatsSharing(v) {
     autoShare = !!v; saveAutoShare(autoShare);
     if (v) {
-      ensureStatsProfile(function (mine) {
-        if (!mine) {
-          autoShare = false; saveAutoShare(false);
-          showInfoToast("Couldn't connect.");
+      savePendingRevokeAll(null);   // turning it back on supersedes any owed revoke
+      // Restore first: on a device that linked into an existing person, this is
+      // what surfaces the peers the person already knows, so the grant loop
+      // below covers them instead of silently doing nothing.
+      restorePeersFromCloud(function () {
+        ensureStatsProfile(function (mine) {
+          if (!mine) {
+            autoShare = false; saveAutoShare(false);
+            showInfoToast("Couldn't connect.");
+            softRender();
+            return;
+          }
+          publishSessionClaim();
+          publishMyDigestSoon();
+          Object.keys(sharePeers).forEach(function (pid) {
+            var peer = sharePeers[pid];
+            if (peer.share !== false) grantShare(pid);
+            if (peer.follow) subscribeDigest(pid);
+          });
           softRender();
-          return;
-        }
-        publishSessionClaim();
-        publishMyDigestSoon();
-        Object.keys(sharePeers).forEach(function (pid) {
-          var peer = sharePeers[pid];
-          if (peer.share !== false) grantShare(pid);
-          if (peer.follow) subscribeDigest(pid);
         });
-        softRender();
       });
     } else {
-      Object.keys(sharePeers).forEach(function (pid) {
-        revokeShare(pid);
-        unsubscribeDigest(pid);
+      // Detach our own follows locally, then cut off every grant on the profile
+      // by enumerating allowed/ — NOT by looping sharePeers, which can't see
+      // grants made from a linked device (F2).
+      Object.keys(sharePeers).forEach(function (pid) { unsubscribeDigest(pid); });
+      revokeAllGrants(myProfileId, function (ok) {
+        if (!ok) showInfoToast("Couldn't stop sharing — will retry.");
+        softRender();
       });
     }
     softRender();
@@ -2417,6 +2609,10 @@ window.SOMERSET_FB_CONFIG = {
       if (personId) subscribeLinkedHistories();
       bootStatsSharing();
     }
+    // Outside the cloudSyncEnabled gate on purpose: the case this exists for is
+    // a revoke owed from turning backup OFF, where cloudSyncEnabled is already
+    // false and will never be true again unless the user opts back in.
+    retryPendingRevokeAll();
   });
 
   // ---- Match descriptor helpers ----
@@ -2694,6 +2890,13 @@ window.SOMERSET_FB_CONFIG = {
   function fbEq(a, b) {
     return JSON.stringify(fbCanon(a)) === JSON.stringify(fbCanon(b));
   }
+  // a/b/winner are the only match fields two devices legitimately write on the
+  // SAME match at the same moment (see tourneyUnitDiff's matchUnits and the
+  // incoming-snapshot merge below) — kept as one predicate so the outgoing-diff
+  // and incoming-merge sides can never drift apart on which fields are seed-only.
+  function isSeedField(f) {
+    return f === "a" || f === "b" || f === "winner";
+  }
   function getAtPath(obj, path) {
     var segs = path.split("/"), cur = obj;
     for (var i = 0; i < segs.length; i++) {
@@ -2762,7 +2965,7 @@ window.SOMERSET_FB_CONFIG = {
       Object.keys(nM).forEach(function (f) { fields[f] = 1; });
       var changed = Object.keys(fields).filter(function (f) { return !fbEq(bM[f], nM[f]); });
       if (changed.length === 0) return;
-      var seedOnly = changed.every(function (f) { return f === "a" || f === "b" || f === "winner"; });
+      var seedOnly = changed.every(isSeedField);
       if (!seedOnly) { diff[path] = nM; return; }   // known unequal — addUnit's fbEq would re-canonicalize both
       changed.forEach(function (f) { addUnit(path + "/" + f, bM[f], nM[f]); });
     }
@@ -3132,7 +3335,7 @@ window.SOMERSET_FB_CONFIG = {
               Object.keys(baseVal).forEach(function(f) { fields[f] = 1; });
               Object.keys(srvVal).forEach(function(f) { fields[f] = 1; });
               var srvChanged = Object.keys(fields).filter(function(f) { return !fbEq(baseVal[f], srvVal[f]); });
-              var seedOnly = srvChanged.length > 0 && srvChanged.every(function(f) { return f === "a" || f === "b" || f === "winner"; });
+              var seedOnly = srvChanged.length > 0 && srvChanged.every(isSeedField);
               if (seedOnly) {
                 var merged = JSON.parse(JSON.stringify(local));
                 srvChanged.forEach(function(f) {
@@ -3199,8 +3402,10 @@ window.SOMERSET_FB_CONFIG = {
     });
   }
 
-  function mkGameShareTeam(name, p0, p1) {
-    return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: [p0, p1] };
+  // Shared team-object shape used both here (wrapping an existing named team's
+  // players) and by the Series-setup screen (naming a freshly-drawn/chosen pair).
+  function mkTeam(name, players) {
+    return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: players };
   }
 
   // Wraps the current solo game (in progress or empty) into a series-shaped tourney,
@@ -3210,8 +3415,8 @@ window.SOMERSET_FB_CONFIG = {
   // ahead of the live one, so the shared scoreboard isn't misleading about what's
   // actually happened so far.
   function startGameShare() {
-    var teamA = mkGameShareTeam(soloGame.teams[0], soloGame.players[0], soloGame.players[2]);
-    var teamB = mkGameShareTeam(soloGame.teams[1], soloGame.players[1], soloGame.players[3]);
+    var teamA = mkTeam(soloGame.teams[0], [soloGame.players[0], soloGame.players[2]]);
+    var teamB = mkTeam(soloGame.teams[1], [soloGame.players[1], soloGame.players[3]]);
     var bestOf = ui.series ? ui.series.bestOf : 1;
     var t = makeSeries([teamA, teamB], bestOf);
     t.games = [];
@@ -3272,7 +3477,6 @@ window.SOMERSET_FB_CONFIG = {
       if (settled) return;
       settled = true; clearTimeout(timeoutId);
       var data = snap.val();
-      if (!data) { syncStatus = "offline"; onError("No tournament found with that code."); return; }
       syncCode = code; syncRole = "guest";
       localStorage.setItem(SYNC_CODE_KEY, syncCode);
       localStorage.setItem(SYNC_ROLE_KEY, "guest");
@@ -3295,11 +3499,9 @@ window.SOMERSET_FB_CONFIG = {
       syncStatus = "offline";
       // The security rules' .read condition requires data.exists(), so a
       // code that never existed (or one that's expired -- same rule) denies
-      // the read outright rather than resolving with null; the friendlier
-      // "No tournament found" branch above is therefore unreachable for the
-      // most common failure. PERMISSION_DENIED is the real signal for "bad
-      // code," not a network problem -- only fall back to the connectivity
-      // message for genuine failures (offline, DNS, etc).
+      // the read outright rather than resolving with null -- PERMISSION_DENIED
+      // is the real signal for "bad code," not a network problem -- only fall
+      // back to the connectivity message for genuine failures (offline, DNS, etc).
       if (err && err.code === "PERMISSION_DENIED") onError("No tournament found with that code.");
       else onError("Couldn't connect. Check your internet connection.");
     });
@@ -3679,7 +3881,7 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
+           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.confirmStartSeries != null || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
            ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
@@ -4291,6 +4493,25 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
       return;
     }
+    if (ui.confirmStartSeries) {
+      var css = ui.confirmStartSeries;
+      var startSeriesSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Start a series",
+        onClick:function(e){ e.stopPropagation(); } }, [
+        el("h3", { class:"disp" }, ["Start a series?"]),
+        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
+          ["Your current game in the Game tab hasn't been saved to History yet — starting a series will discard it."]),
+        el("button", { class:"sheet-btn primary disp", onClick:function(){
+          ui.confirmStartSeries = null;
+          rememberNames(css.players.map(function(p){ return p.trim(); }));
+          var t = makeTourney("series", css.teams, css.bestOf);
+          ui.sSetup = null;
+          startLocalTourney(t);
+        } }, ["Discard and start series"]),
+        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, ["Cancel"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, [startSeriesSheet]));
+      return;
+    }
     if (ui.showThemeSheet) {
       var curThemePref = loadThemePref();
       var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Display settings",
@@ -4322,7 +4543,14 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Stats sharing",
           onClick:function(){ ui.showThemeSheet = false; ui.sharingSheet = true; render(); } }, [
           el("span", { class:"settings-row-label disp" }, ["Stats Sharing"]),
-          el("span", { class:"settings-row-state disp" }, [statsSharingOn() ? "On" : "Off"])
+          // The user's SETTING, not statsSharingOn() — that also folds in authUid,
+          // which is null for the first second of every boot, so this row used to
+          // flicker "Off" on every launch. Worse, it read "Off" the moment backup
+          // went off while the digest and its grants were still live and readable
+          // (CLOUD_SYNC_STRESS_2026-07-16.md F1). Backup-off now genuinely revokes
+          // when this is the last device (see unlinkDevice), so "Off" here is a
+          // statement about sharing rather than about connectivity.
+          el("span", { class:"settings-row-state disp" }, [(autoShare && cloudSyncEnabled) ? "On" : "Off"])
         ]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
@@ -4398,12 +4626,9 @@ window.SOMERSET_FB_CONFIG = {
               el("div", { style:"display:flex; gap:8px;" }, [
                 el("button", { class:"chip disp", onClick:function () { ui.ambiguousClaims.splice(ai, 1); softRender(); } }, ["Same person"]),
                 el("button", { class:"chip disp", onClick:function () {
-                  var c = amb.claim;
-                  var newPeer = sharePeers[c.profileId] = { profileId: c.profileId, name: c.name, follow: true, lastPlayed: Date.now(), updatedAt: Date.now() };
+                  addPeerFromClaim(amb.claim);
                   ui.ambiguousClaims.splice(ai, 1);
                   saveSharePeersLocal(); syncPeersToCloud();
-                  if (peerShared(newPeer)) ensureStatsProfile(function (mine) { if (mine) grantShare(c.profileId); });
-                  subscribeDigest(c.profileId);
                   softRender();
                 } }, ["Different person — follow separately"])
               ])
@@ -4614,7 +4839,7 @@ window.SOMERSET_FB_CONFIG = {
       var snsInputs = [], snsBtn, snsMsgEl;
       var snsUpdate = function () {
         var dup = snsAllNamed() && rosterHasDuplicateNames(sns.players);
-        if (snsMsgEl) snsMsgEl.textContent = dup ? "Two players have the same name — add a nickname or initial to tell them apart." : "";
+        if (snsMsgEl) snsMsgEl.textContent = dup ? DUP_NAME_WARNING : "";
         snsBtn.disabled = !snsValid();
       };
       var snsKids = [
@@ -4830,10 +5055,30 @@ window.SOMERSET_FB_CONFIG = {
         } }, ["Link →"]));
         ldKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"enter" }; softRender(); } }, ["Back"]));
       } else if (lds.step === "unlink") {
+        // Name what this does to Stats Sharing before the tap, because the answer
+        // isn't the same every time and isn't guessable: grants belong to the
+        // PERSON, so a device leaving a group that still has other devices must
+        // not revoke, while the last device leaving must (nobody would be left to
+        // update the digest, and it would stay readable forever). See F1.
+        var unlinkShareCount = sharedPeerCount();
+        var unlinkSharingNote = null;
+        if (!isLastBackupDevice()) {
+          unlinkSharingNote = "Your other devices keep backing up, and keep sharing your stats.";
+        } else if (unlinkShareCount) {
+          unlinkSharingNote = "You're also sharing your stats with " + unlinkShareCount + " " +
+            (unlinkShareCount === 1 ? "person" : "people") + ". Turning off backup stops sharing with " +
+            (unlinkShareCount === 1 ? "them" : "all of them") + ".";
+        }
         ldKids = [
           el("h3", { class:"disp" }, ["Turn Off Backup?"]),
           el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
             ["This device will stop backing up and leave your linked devices. Its game History stays here on this device, and your other devices keep their own copies. You can turn backup on again anytime."]),
+        ];
+        if (unlinkSharingNote) {
+          ldKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:-6px 0 14px;" },
+            [unlinkSharingNote]));
+        }
+        ldKids = ldKids.concat([
           el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){
             unlinkDevice();
             // Back to the Display sheet, whose entry now reads "Back up my
@@ -4844,7 +5089,7 @@ window.SOMERSET_FB_CONFIG = {
             render();
           } }, ["Turn off backup"]),
           el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.linkDeviceSheet = { step:"menu" }; softRender(); } }, ["Cancel"])
-        ];
+        ]);
       } else {
         ldKids = cloudSyncEnabled ? [
           el("h3", { class:"disp" }, ["Cloud Backup"]),
@@ -5496,7 +5741,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!game.deals.length) return;
     var detail = winnerDetail();
     if (detail.winner === null) return;   // only archive completed games
-    var id = Date.now() + Math.floor(Math.random() * 1000);
+    var id = genRecordId();
     var rec = {
       id: id,
       date: new Date().toISOString(),
@@ -5517,6 +5762,15 @@ window.SOMERSET_FB_CONFIG = {
     return id;
   }
 
+  // True when the casual Game tab has hands entered that haven't been archived
+  // yet — i.e. an unfinished game (archivedId is only ever set the instant a
+  // winner is decided, see recordDeal). Anything that's about to replace the
+  // global soloGame pointer out from under the Game tab (starting/rematching/
+  // redrawing a Tournament-tab series) must check this first or the in-progress
+  // game vanishes with no History record and no warning.
+  function soloGameInProgress() {
+    return soloGame.deals.length > 0 && !soloGame.archivedId;
+  }
   function newGame(keepSeries) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) {   // safety net — normally already auto-archived on completion
@@ -5814,11 +6068,15 @@ window.SOMERSET_FB_CONFIG = {
   // Log/Stats switcher shown at the top of the History and Stats board views —
   // `active` is "log" or "stats".
   function renderHistoryViewToggle(active) {
-    return el("div", { class:"seg-toggle" }, [
-      el("button", { class:"seg-btn" + (active === "log" ? " on" : ""),
-        onClick:function(){ ui.historySub = null; softRender(); } }, ["Log"]),
-      el("button", { class:"seg-btn" + (active === "stats" ? " on" : ""),
-        onClick:function(){ ui.historySub = "board"; softRender(); } }, ["Stats"])
+    // The toggle stands in for the page heading on these two views, so it wears
+    // the same double-brass letterpress rule the .view-head titles get elsewhere.
+    return el("div", { class:"toggle-head" }, [
+      el("div", { class:"seg-toggle" }, [
+        el("button", { class:"seg-btn" + (active === "log" ? " on" : ""),
+          onClick:function(){ ui.historySub = null; softRender(); } }, ["Log"]),
+        el("button", { class:"seg-btn" + (active === "stats" ? " on" : ""),
+          onClick:function(){ ui.historySub = "board"; softRender(); } }, ["Stats"])
+      ])
     ]);
   }
 
@@ -5829,7 +6087,6 @@ window.SOMERSET_FB_CONFIG = {
       fileInput.value = "";
     } }, []);
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      el("div", { class:"view-head disp" }, ["Log"]),
       renderHistoryViewToggle("log"),
       renderHistoryFilterRow()
     ]);
@@ -5914,6 +6171,9 @@ window.SOMERSET_FB_CONFIG = {
     }
     return false;
   }
+  // Shared across every roster-setup wizard (Share, Tournament, Series) so the
+  // wording can't drift between them.
+  var DUP_NAME_WARNING = "Two players have the same name — add a nickname or initial to tell them apart.";
 
   // Partner/opponent are tracked by seat parity: seats 0/2 are one team, 1/3 the
   // other, and within a team the other seat is your partner while both seats of
@@ -5951,9 +6211,9 @@ window.SOMERSET_FB_CONFIG = {
     return out;
   }
 
-  function computePlayerStats() {
+  function computePlayerStats(merged) {
     var byKey = {};
-    mergedHistoryForStats().forEach(function (rec) {
+    (merged || mergedHistoryForStats()).forEach(function (rec) {
       if (rec.winner == null || !rec.players) return;
       // Bid outcomes (moons, sets) are credited to the seat that actually placed the
       // bid. Deals recorded before bidder tracking existed have no bidderSeat, so
@@ -6210,7 +6470,6 @@ window.SOMERSET_FB_CONFIG = {
     var maxMetric = Math.max(1, players.length ? sortDef[2](players[0]) : 0);
 
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      el("div", { class:"view-head disp" }, ["Stats"]),
       renderHistoryViewToggle("stats"),
       el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
         return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
@@ -6294,10 +6553,10 @@ window.SOMERSET_FB_CONFIG = {
     var p = stats[statKey(ui.statsPlayer || "")];
 
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      el("div", { class:"view-head disp" }, [p ? p.name : (ui.statsPlayer || "Player")]),
-      el("div", { style:"padding:6px 6px 0;" }, [
+      el("div", { class:"stats-player-head disp" }, [
         el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.historySub = "board"; ui.statsPlayer = null; softRender(); } },
-          [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Stats" ])
+          [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Stats" ]),
+        el("div", { class:"stats-player-name disp" }, [p ? p.name : (ui.statsPlayer || "Player")])
       ])
     ]);
 
@@ -6329,11 +6588,16 @@ window.SOMERSET_FB_CONFIG = {
     if (followedPeer && statsSharingOn() && followedPeer.follow) {
       var fpid = followedPeer.profileId;
       var dc = digestCache[fpid];
-      var overallExplain = "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
+      var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
+        (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+      var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
+      var overallExplain = digestStale
+        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."
+        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
       var overallKids = [
         el("p", { class:"stats-section-title disp", role:"button", tabindex:"0",
-          "aria-label":"Overall record, shared live: " + overallExplain,
-          onClick:function(){ ui.info = overallExplain; render(); } }, ["Overall record — shared live"])
+          "aria-label": overallTitleText + ": " + overallExplain,
+          onClick:function(){ ui.info = overallExplain; render(); } }, [overallTitleText])
       ];
       if (dc && dc.status === "ok" && dc.data) {
         var d = dc.data;
@@ -6410,7 +6674,8 @@ window.SOMERSET_FB_CONFIG = {
         }
         if (d.updatedAt) {
           overallKids.push(el("p", { class:"peer-sub disp" },
-            ["Updated " + shortDate(new Date(d.updatedAt).toISOString()) + (d.name ? (" · shared as " + d.name) : "")]));
+            [(digestStale ? "Stopped updating " : "Updated ") + shortDate(new Date(d.updatedAt).toISOString()) +
+             (d.name ? (" · shared as " + d.name) : "")]));
         }
       } else if (dc && dc.status === "denied") {
         overallKids.push(el("p", { class:"peer-sub disp" }, [p.name + " isn't sharing their stats with you right now."]));
@@ -6825,7 +7090,15 @@ window.SOMERSET_FB_CONFIG = {
   // extra confirm tap — restoring re-inserts and re-sorts newest-first, matching
   // how gameHistory is otherwise maintained.
   function deleteHistoryRecordWithUndo(rec, onDeleted) {
-    gameHistory = gameHistory.filter(function (g) { return g.id !== rec.id; });
+    // Identity, not id-equality. `rec` is always the very object being rendered
+    // out of gameHistory, so this removes exactly the game the user tapped —
+    // whereas `g.id !== rec.id` removed EVERY record sharing that id, which
+    // silently destroyed a second, unrelated game whenever two ids collided
+    // (genRecordId no longer produces collisions, but records archived by older
+    // builds can already carry them, and Undo only ever restored one of the
+    // two). It also stops a linked device's record from deleting a local game
+    // that happens to share its id.
+    gameHistory = gameHistory.filter(function (g) { return g !== rec; });
     // Tombstone before saveHistory()'s cloud push, so mergedHistoryForStats
     // (and, on reconnect, subscribeMyHistory's import) stop resurrecting this
     // match via a linked device's own copy or a stale cloud snapshot
@@ -7378,7 +7651,7 @@ window.SOMERSET_FB_CONFIG = {
     var A = tourney.teams[m.a], B = tourney.teams[m.b];
     var ap = A.players || [], bp = B.players || [];
     var rec = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: genRecordId(),
       date: new Date().toISOString(),
       teams: [A.name, B.name],
       players: [ ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || "" ],   // seats 0&2 = A, 1&3 = B
@@ -7558,7 +7831,7 @@ window.SOMERSET_FB_CONFIG = {
       var tms = count / 2;
       msgEl.textContent = !validCount ? ("Need an even number of players, at least 6 (currently " + count + ")")
         : !allNamed ? ""
-        : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
+        : dup ? DUP_NAME_WARNING
         : (count + " players · " + tms + " teams" + (tms % 2 === 1 ? " · one bye" : ""));
       msgEl.className = "tvalid disp" + (ok ? " ok" : "");
       if (drawBtn) drawBtn.disabled = !ok;
@@ -7660,7 +7933,6 @@ window.SOMERSET_FB_CONFIG = {
 
     function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
     function noDupNames() { return !rosterHasDuplicateNames(s.players); }
-    function mkTeam(a, b) { return { id: "t" + Math.random().toString(36).slice(2, 7), name: a + " & " + b, players: [a, b] }; }
     function invalidateTeams() { s.teams = null; s.partner = null; }
 
     var startBtn, msgEl, drawBtn = null, partnerBtns = [], partnerLabelEl = null;
@@ -7670,7 +7942,7 @@ window.SOMERSET_FB_CONFIG = {
       var ok = filled && !dup && !!s.teams;
       if (msgEl) {
         msgEl.textContent = !filled ? "Enter all 4 player names"
-          : dup ? "Two players have the same name — add a nickname or initial to tell them apart."
+          : dup ? DUP_NAME_WARNING
           : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
           : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
         msgEl.className = "tvalid disp" + (ok ? " ok" : "");
@@ -7767,7 +8039,7 @@ window.SOMERSET_FB_CONFIG = {
             var nm = s.players.map(function(p){ return p.trim(); });
             s.partner = pi;
             var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
-            s.teams = [ mkTeam(nm[0], nm[pi]), mkTeam(nm[rest[0]], nm[rest[1]]) ];
+            s.teams = [ mkTeam(nm[0] + " & " + nm[pi], [nm[0], nm[pi]]), mkTeam(nm[rest[0]] + " & " + nm[rest[1]], [nm[rest[0]], nm[rest[1]]]) ];
             softRender();
           } }, [ names[pi] || ("Player " + (pi + 1)) ]);
           b._pi = pi;
@@ -7789,6 +8061,7 @@ window.SOMERSET_FB_CONFIG = {
 
     startBtn = el("button", { class:"btn btn-new disp", onClick:function(){
       if (!recompute()) return;
+      if (soloGameInProgress()) { ui.confirmStartSeries = { players: s.players.slice(), teams: s.teams, bestOf: s.bestOf }; render(); return; }
       rememberNames(s.players.map(function(p){ return p.trim(); }));
       var t = makeTourney("series", s.teams, s.bestOf);
       ui.sSetup = null;
@@ -8224,6 +8497,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.info != null) { ui.info = null; softRender(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
+    if (ui.confirmStartSeries) { ui.confirmStartSeries = null; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
     if (ui.whoSheet) { if (!whoSheetForced()) { ui.whoSheet = false; softRender(); } return true; }
     if (ui.shareSheetOpen) { closeShareSheet(); return true; }

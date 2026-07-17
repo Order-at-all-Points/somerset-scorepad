@@ -54,6 +54,28 @@ function linkDeviceSheet(page) {
 }
 
 /**
+ * Turn Cloud Backup on for this device via the Display sheet's toggle (no
+ * pairing code involved -- see turnOnBackup() in index.html). Waits for
+ * anonymous auth to resolve first: turnOnBackup() no-ops with a "Couldn't
+ * connect" toast while authUid is still null, which is the whole first second
+ * of every boot. Returns true once the toggle reads "on". Leaves the Display
+ * sheet open.
+ */
+async function enableBackupViaToggle(page) {
+  for (let i = 0; i < 20; i++) {
+    if ((await storage.readKey(page, storage.KEYS.authUid)).raw) break;
+    await page.waitForTimeout(500);
+  }
+  await openDisplaySheet(page);
+  await cloudBackupToggle(page).click({ timeout: config.actionTimeoutMs });
+  for (let i = 0; i < 8; i++) {
+    if (((await cloudBackupToggle(page).getAttribute("class")) || "").includes(" on")) return true;
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
+/**
  * From the link-device menu step, generate a code and return it once shown.
  * On a device that hasn't backed up yet, the menu step only offers "Turn on
  * backup" (see turnOnBackup() in index.html) -- tapping it flips cloudSync
@@ -163,6 +185,7 @@ module.exports = {
   displaySheet,
   openLinkDeviceSheet,
   cloudBackupToggle,
+  enableBackupViaToggle,
   linkDeviceSheet,
   generateLinkCode,
   redeemLinkCode,
