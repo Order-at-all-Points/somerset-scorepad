@@ -481,6 +481,17 @@
   .ios-toggle-knob { position:absolute; top:2px; left:2px; width:27px; height:27px; border-radius:50%;
     background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.25); transition:transform .2s ease; }
   .ios-toggle.on .ios-toggle-knob { transform:translateX(20px); }
+  /* Display-sheet grouping: the app's double-brass rule (see .view-head) sits
+     under the title and above Done; the Appearance field pairs a serif-italic
+     label inline with the theme pills, the label indented 36px so it lines up
+     with the .settings-row labels below it. The Account group carries no label —
+     the pills-vs-rows contrast plus whitespace does that work. */
+  .sheet-rule { border-bottom:3px double var(--brass); margin:14px 0; }
+  .appearance-row { display:flex; align-items:center; gap:12px; margin:6px 0 6px; padding-left:36px; }
+  .appearance-label { font-family:var(--font-display); font-style:italic; font-size:16px;
+    color:var(--brass-text); flex:none; white-space:nowrap; }
+  .settings-row-value { margin-left:auto; font-size:15px; color:var(--ink-soft); font-family:var(--font-text);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60%; }
   /* text inputs hold at 16px — the one size off the scale — so iOS doesn't zoom the page on focus */
   .sheet-input { width:100%; padding:12px; box-sizing:border-box; border:1.5px solid var(--rule); border-radius:var(--r-control);
     font-size:16px; font-family:var(--font-text); color:var(--ink); background:#fff; margin:8px 0 12px; }
@@ -822,7 +833,7 @@
 <body>
 <div class="wrap">
   <header>
-    <button class="menu-btn" id="menuBtn" aria-label="Display settings">
+    <button class="menu-btn" id="menuBtn" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
     <h1 class="disp">SOME-R-SET</h1>
@@ -4514,17 +4525,26 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.showThemeSheet) {
       var curThemePref = loadThemePref();
-      var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Display settings",
+      var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Settings",
         onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp", style:"margin-bottom:6px;" }, ["Display"]),
-        el("div", { class:"chips", style:"justify-content:center; margin-bottom:8px;" },
-          [["auto","Auto"],["light","Classic Light",true],["dark","Classic Dark",true],["aubergine","Dark"],["aubergine-light","Light"]]
-            .filter(function (opt) { return !opt[2]; }).map(function (opt) {
-            return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
-              onClick:function(){ saveThemePref(opt[0]); applyTheme(); softRender(); } }, [opt[1]]);
-          })),
-        el("button", { class:"sheet-btn disp", onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } },
-          [ myDeviceName ? ("Playing as: " + myDeviceName) : "Set your name" ]),
+        el("h3", { class:"disp" }, ["Settings"]),
+        el("div", { class:"sheet-rule" }, []),
+        el("div", { class:"appearance-row" }, [
+          el("span", { class:"appearance-label disp" }, ["Appearance"]),
+          el("div", { class:"chips" },
+            [["auto","Auto"],["light","Classic Light",true],["dark","Classic Dark",true],["aubergine","Dark"],["aubergine-light","Light"]]
+              .filter(function (opt) { return !opt[2]; }).map(function (opt) {
+              return el("button", { class:"chip"+(curThemePref===opt[0]?" on":""),
+                onClick:function(){ saveThemePref(opt[0]); applyTheme(); softRender(); } }, [opt[1]]);
+            }))
+        ]),
+        el("div", { class:"settings-row disp", role:"button", tabindex:"0", style:"margin-top:14px;",
+          "aria-label": myDeviceName ? ("Playing as " + myDeviceName) : "Set your name",
+          onClick:function(){ ui.showThemeSheet = false; ui.identityEditor = true; render(); } }, [
+          el("span", { class:"settings-row-label disp" }, ["Playing as"]),
+          el("span", { class:"settings-row-value disp" }, [ myDeviceName || "Set name" ]),
+          el("span", { class:"rank-chevron disp", style:"margin-left:6px;", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, [])
+        ]),
         el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Manage cloud backup",
           onClick:function(){ ui.showThemeSheet = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, [
           el("span", { class:"settings-row-label disp" }, ["Cloud Backup"]),
@@ -4552,6 +4572,7 @@ window.SOMERSET_FB_CONFIG = {
           // statement about sharing rather than about connectivity.
           el("span", { class:"settings-row-state disp" }, [(autoShare && cloudSyncEnabled) ? "On" : "Off"])
         ]),
+        el("div", { class:"sheet-rule" }, []),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
