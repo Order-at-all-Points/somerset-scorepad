@@ -260,7 +260,7 @@
      on one line — while still splitting proportionally with the dealer so the Bidder
      text centers at the same x on every row and under the "Bidder" header (a
      content-width dealer column would drift the centering row to row). */
-  .deal-bidder { display:flex; flex:2 1 0; min-width:0; font-size:13px; color:var(--ink-soft); overflow-wrap:anywhere; }
+  .deal-bidder { display:flex; flex:2 1 0; min-width:0; padding-left:14px; font-size:13px; color:var(--ink-soft); overflow-wrap:anywhere; }
   .deal-bidder .bid-left { flex:1 1 0; min-width:0; text-align:right; }
   .deal-bidder .bid-right { flex:1 1 0; min-width:0; text-align:left; padding-left:6px; white-space:nowrap; }
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
@@ -275,7 +275,7 @@
   .deal-head-score .dh-cell.l { width:3.5ch; }   /* matches a mirrored score-cell (sign+2ch+sign) */
   .deal-head-score .dh-cell.r { width:2.75ch; }  /* matches a plain score-cell (sign+2ch) */
   .deal-head-score .dh-badge { display:inline-block; }   /* nudged in JS so its "&" sits over the score digits, see alignDealHead */
-  .deal-head-bidder { flex:2 1 0; min-width:0; text-align:center; }
+  .deal-head-bidder { flex:2 1 0; min-width:0; padding-left:14px; text-align:center; }
   .deal-head-dealer { flex:1 1 0; min-width:0; text-align:right; }
   .deal-detail { display:flex; align-items:center; justify-content:center; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-took-line { text-align:center; }
@@ -586,10 +586,13 @@
   .hist-roster { font-size:13px; color:var(--ink); margin:0 0 6px; }
   /* The Bidder column (1fr) carries the whole "<player> bid <n>" line; the dealer
      column is content-sized (auto), right-aligned. */
-  .hist-hand { display:grid; grid-template-columns:26px 28px 8px 28px 1fr auto; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
+  /* One grid for the whole hand table; each row is a subgrid spanning all columns, so
+     every row shares identical column widths and the aligned bid digits never drift. */
+  .hist-hands { display:grid; grid-template-columns:26px 28px 8px 28px 1fr auto; }
+  .hist-hand { display:grid; grid-column:1 / -1; grid-template-columns:subgrid; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
-  .hist-hand .hh-bid { display:flex; color:var(--ink-soft); overflow-wrap:anywhere; }
+  .hist-hand .hh-bid { display:flex; padding-left:14px; color:var(--ink-soft); overflow-wrap:anywhere; }
   .hist-hand .hh-bid .bid-left { flex:1 1 0; min-width:0; text-align:right; }
   .hist-hand .hh-bid .bid-right { flex:1 1 0; min-width:0; text-align:left; padding-left:6px; white-space:nowrap; }
   .hist-hand .hh-bid.red { color:var(--red); }
@@ -599,7 +602,7 @@
   .hist-hand.hist-head { border-top:none; padding:0 0 6px; font-size:11px; text-transform:uppercase;
     letter-spacing:.06em; font-weight:600; color:var(--brass-text); border-bottom:1px solid var(--rule); }
   .hist-hand.hist-head .hh-sc { color:var(--brass-text); }
-  .hist-hand.hist-head .hh-head-bid { color:var(--brass-text); text-align:center; }
+  .hist-hand.hist-head .hh-head-bid { color:var(--brass-text); padding-left:14px; text-align:center; }
   .hist-hand.hist-head .hh-dlr { text-align:right; }
   .hist-hand.hist-head + .hist-hand { border-top:none; }
   .hist-del { margin-top:12px; }
@@ -7178,8 +7181,12 @@ window.SOMERSET_FB_CONFIG = {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
         ["No hands recorded."]));
     }
+    // One shared grid wraps the header + every hand row so all rows resolve to the
+    // same column widths (a subgrid). Without this, each row is its own grid and a
+    // long dealer name shrinks that row's bid column, drifting the aligned digits.
+    var handsWrap = el("div", { class:"hist-hands" }, []);
     if (rec.deals.length) {
-      wrap.appendChild(el("div", { class:"hist-hand hist-head", "aria-hidden":"true" }, [
+      handsWrap.appendChild(el("div", { class:"hist-hand hist-head", "aria-hidden":"true" }, [
         el("span", { class:"hh-no" }, []),
         el("span", { class:"hh-sc" }, [ teamBadge(rec.teams, rec.players, tvo[0]) ]),
         el("span", {}, []),
@@ -7204,7 +7211,7 @@ window.SOMERSET_FB_CONFIG = {
       // tag when made); it turns red for a set — the red hh-sc score marks the set
       // team's column too.
       var bidRightText = String(d.bid) + (isMoonMade(d) ? " (moon)" : "");
-      wrap.appendChild(el("div", { class:"hist-hand" }, [
+      handsWrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[0] ? " red" : "") }, [ String(delta[tvo[0]]) ]),
         el("span", { class:"mono" }, ["|"]),
@@ -7218,6 +7225,7 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"hh-dlr disp" }, [ dName ])
       ]));
     });
+    if (rec.deals.length) wrap.appendChild(handsWrap);
     if (!readOnly) {
       wrap.appendChild(el("div", { class:"hist-del" }, [
         el("button", { class:"link-btn danger disp", onClick:function(){
