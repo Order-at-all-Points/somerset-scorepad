@@ -255,28 +255,25 @@
   .score-digits { width:2ch; text-align:center; }
   .score-set { color:var(--red); cursor:pointer; }
   .dash { color:var(--rule); }
-  /* Bidder / Bid / Dealer columns. Bidder and Dealer both flex:1 so the fixed-width
-     Bid column stays centered between them at the same x on every row — and under the
-     header — regardless of how long any name is (a content-width column would drift
-     row to row). The Bid width is a fixed px, not ch, so it matches the smaller-font
-     header cell too (ch would differ across the two font sizes). */
-  .deal-bidder { flex:1 1 0; min-width:0; font-size:13px; color:var(--ink-soft); text-align:center; overflow-wrap:anywhere; }
-  .deal-bid { flex:none; width:28px; text-align:center; font-size:13px; font-weight:600; color:var(--ink); }
-  .deal-bid.moon { color:var(--brass-text); }   /* made moon — mirrors the old "shot the MOON" accent */
-  .deal-bid.set { color:var(--red); }            /* failed moon (a set) — red like the score */
+  /* Bidder / Dealer columns. The Bidder column carries the whole "<player> bid <n>"
+     line, so it gets the larger flex share (2 vs 1) — enough room for "shot the MOON"
+     on one line — while still splitting proportionally with the dealer so the Bidder
+     text centers at the same x on every row and under the "Bidder" header (a
+     content-width dealer column would drift the centering row to row). */
+  .deal-bidder { flex:2 1 0; min-width:0; font-size:13px; color:var(--ink-soft); text-align:center; overflow-wrap:anywhere; }
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:1 1 0; min-width:0; text-align:right; font-size:13px; color:var(--brass-text); overflow-wrap:anywhere; }
   .deal-row.open .deal-dealer { font-weight:600; }
   /* Column-header row above the deal history — mirrors .deal-row's flex layout so
-     the team initials | divider, Bidder, Bid and Dealer sit over their columns. */
+     the team initials | divider, Bidder and Dealer sit over their columns. */
   .deal-head { display:flex; align-items:center; gap:8px; padding:5px 12px 6px; border-bottom:1px solid var(--rule);
     font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--brass-text); }
   .deal-head-score { flex:none; }
   .deal-head-score .dh-cell { text-align:center; white-space:nowrap; }
   .deal-head-score .dh-cell.l { width:3.5ch; }   /* matches a mirrored score-cell (sign+2ch+sign) */
   .deal-head-score .dh-cell.r { width:2.75ch; }  /* matches a plain score-cell (sign+2ch) */
-  .deal-head-bidder { flex:1 1 0; min-width:0; text-align:center; }
-  .deal-head-bid { flex:none; width:28px; text-align:center; }
+  .deal-head-score .dh-badge { display:inline-block; }   /* nudged in JS so its "&" sits over the score digits, see alignDealHead */
+  .deal-head-bidder { flex:2 1 0; min-width:0; text-align:center; }
   .deal-head-dealer { flex:1 1 0; min-width:0; text-align:right; }
   .deal-detail { display:flex; align-items:center; justify-content:center; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-took-line { text-align:center; }
@@ -585,24 +582,20 @@
   .hist-meta { font-size:13px; color:var(--ink-soft); margin-top:6px; }
   .hist-detail { padding:8px 12px 16px; border-top:1px solid var(--cream-shade); }
   .hist-roster { font-size:13px; color:var(--ink); margin:0 0 6px; }
-  /* Bidder and Dealer are both 1fr so the fixed-width Bid track stays centered
-     between them at the same x on every row and under the header — a content-sized
-     dealer track (the old `auto`) would have drifted the Bid column row to row. */
-  .hist-hand { display:grid; grid-template-columns:26px 28px 8px 28px 1fr 28px 1fr; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
+  /* The Bidder column (1fr) carries the whole "<player> bid <n>" line; the dealer
+     column is content-sized (auto), right-aligned. */
+  .hist-hand { display:grid; grid-template-columns:26px 28px 8px 28px 1fr auto; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
-  .hist-hand .hh-bidder { text-align:center; color:var(--ink-soft); overflow-wrap:anywhere; }
-  .hist-hand .hh-bid { text-align:center; font-weight:600; color:var(--ink); }
-  .hist-hand .hh-bid.moon { color:var(--brass-text); }   /* made moon */
-  .hist-hand .hh-bid.set { color:var(--red); }            /* failed moon (a set) */
-  .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); text-align:right; overflow-wrap:anywhere; }
+  .hist-hand .hh-bid { color:var(--ink-soft); overflow-wrap:anywhere; }
+  .hist-hand .hh-bid.red { color:var(--red); }
+  .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); text-align:right; white-space:nowrap; }
   /* Column-header row of the archived hand table — same grid as .hist-hand so the
-     team initials, Bidder, Bid and Dealer labels sit over their columns. */
+     team initials, Bidder and Dealer labels sit over their columns. */
   .hist-hand.hist-head { border-top:none; padding:0 0 6px; font-size:11px; text-transform:uppercase;
     letter-spacing:.06em; font-weight:600; color:var(--brass-text); border-bottom:1px solid var(--rule); }
   .hist-hand.hist-head .hh-sc { color:var(--brass-text); }
-  .hist-hand.hist-head .hh-bidder { text-align:center; color:var(--brass-text); }
-  .hist-hand.hist-head .hh-head-bid { text-align:center; color:var(--brass-text); }
+  .hist-hand.hist-head .hh-head-bid { color:var(--brass-text); }
   .hist-hand.hist-head .hh-dlr { text-align:right; }
   .hist-hand.hist-head + .hist-hand { border-top:none; }
   .hist-del { margin-top:12px; }
@@ -4133,15 +4126,14 @@ window.SOMERSET_FB_CONFIG = {
     var hasDealRows = game.deals.length > 0 || (game.pendingBid && !(ui.showEntry && ui.editingDeal == null));
     if (hasDealRows) {
       var headScoreEl = el("span", { class:"deal-score-block deal-head-score" }, [
-        el("span", { class:"dh-cell l" }, [ teamBadge(game.teams, game.players, tvo[0]) ]),
+        el("span", { class:"dh-cell l" }, [ el("span", { class:"dh-badge" }, [ teamBadge(game.teams, game.players, tvo[0]) ]) ]),
         el("span", { class:"dash" }, ["|"]),
-        el("span", { class:"dh-cell r" }, [ teamBadge(game.teams, game.players, tvo[1]) ])
+        el("span", { class:"dh-cell r" }, [ el("span", { class:"dh-badge" }, [ teamBadge(game.teams, game.players, tvo[1]) ]) ])
       ]);
       target.__dealHeadScoreEl = headScoreEl;
       history.appendChild(el("div", { class:"deal-head disp", "aria-hidden":"true" }, [
         headScoreEl,
         el("span", { class:"deal-head-bidder" }, ["Bidder"]),
-        el("span", { class:"deal-head-bid" }, ["Bid"]),
         el("span", { class:"deal-head-dealer" }, ["Dealer"])
       ]));
     }
@@ -4154,11 +4146,11 @@ window.SOMERSET_FB_CONFIG = {
         // Older deals recorded before bidder tracking existed have no bidderSeat,
         // so they fall back to naming the team instead of a specific player.
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : teamLabel(d.bidTeam);
-        // Bid is its own column now (see the Bidder | Bid header): the number alone,
-        // tinted for a moon — accent when made, red when it fell short (a set) —
-        // which is what the old "shot the MOON" text used its color to say.
-        var isMoon = d.bid === POINTS_PER_DEAL;
-        var bidTint = isMoon ? (isMoonMade(d) ? " moon" : " set") : "";
+        // The Bidder column carries the whole line: "<player> bid <n>", or "<player>
+        // shot the MOON" — accent when made, red when it fell short (a set).
+        var descKids = (d.bid === POINTS_PER_DEAL)
+          ? [ bidderLabel + " shot the", el("strong", { class:"set-flag disp", style: isMoonMade(d) ? "color:var(--brass-text);" : "" }, ["MOON"]) ]
+          : [ bidderLabel + " bid " + d.bid ];
         var setMsg = !isSet ? null
           : (d.bid === POINTS_PER_DEAL)
             ? (bidderLabel + " attempted to shoot the moon but only took " + d.pts[d.bidTeam] + " — " + d.bid + " subtracted from their score.")
@@ -4171,8 +4163,7 @@ window.SOMERSET_FB_CONFIG = {
           scoreCell(delta[tvo[1]], (isSet && d.bidTeam === tvo[1]) ? setMsg : null)
         ]);
         if (!target.__dealRefScoreEl) target.__dealRefScoreEl = scoreBlockEl;
-        var bidderEl = el("span", { class:"deal-bidder disp" }, [ bidderLabel ]);
-        var bidEl = el("span", { class:"deal-bid disp" + bidTint }, [ String(d.bid) ]);
+        var bidderEl = el("span", { class:"deal-bidder disp" }, descKids);
         // Dealer column names the dealer outright (the rotated seat arrow it used to
         // show read as a near-identical stroke at 13px, and the name is what people
         // actually want to know at a glance).
@@ -4185,7 +4176,6 @@ window.SOMERSET_FB_CONFIG = {
         }, [
           scoreBlockEl,
           bidderEl,
-          bidEl,
           dealerLabelEl
         ]);
         history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl,
@@ -4220,15 +4210,17 @@ window.SOMERSET_FB_CONFIG = {
         pendingScoreCell()
       ]);
       if (!target.__dealRefScoreEl) target.__dealRefScoreEl = pbScoreBlockEl;
-      // Bid outcome isn't known yet (points not recorded), so the bid number stays
-      // untinted — no moon/set colour until the take lands.
-      var pbBidderEl = el("span", { class:"deal-bidder disp" }, [ pbBidderLabel ]);
-      var pbBidEl = el("span", { class:"deal-bid disp" }, [ String(pb.bid) ]);
+      // Outcome isn't known yet (points not recorded), so a moon bid stays untinted
+      // — no accent/red until the take lands.
+      var pbDescKids = (pb.bid === POINTS_PER_DEAL)
+        ? [ pbBidderLabel + " shot the", el("strong", { class:"set-flag disp" }, ["MOON"]) ]
+        : [ pbBidderLabel + " bid " + pb.bid ];
+      var pbBidderEl = el("span", { class:"deal-bidder disp" }, pbDescKids);
       var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(pbDlr) ]);
       history.appendChild(el("div", {
         class:"deal-row pending" + (noFade ? "" : " fade"),
         "aria-label":"Deal " + dealNo + " in progress, points not yet recorded"
-      }, [ pbScoreBlockEl, pbBidderEl, pbBidEl, pbDealerLabelEl ]));
+      }, [ pbScoreBlockEl, pbBidderEl, pbDealerLabelEl ]));
     }
     pad.appendChild(history);
 
@@ -4385,9 +4377,27 @@ window.SOMERSET_FB_CONFIG = {
     var hCells = headScoreEl.children, rCells = refScoreEl.children;
     if (hCells.length < 3 || rCells.length < 3) return;
     for (var i = 0; i < 3; i++) {
+      var rRect = rCells[i].getBoundingClientRect();
       hCells[i].style.flex = "none";
-      hCells[i].style.width = rCells[i].getBoundingClientRect().width + "px";
+      hCells[i].style.width = rRect.width + "px";
       hCells[i].style.textAlign = "center";
+      // The two team badges (i=0 left, i=2 right) get nudged so the badge centers on
+      // its score column's digits — putting the "&" of "B&D" right over the points
+      // that team took each hand. The cell's own center isn't the digit center: the
+      // left score cell mirrors its sign (digits centered) but the right one doesn't
+      // (digits sit right of center), so a plain text-align:center would misalign the
+      // right badge. The badge starts centered in the cell, so shift it by the gap
+      // between the digit center and the cell center.
+      var badge = hCells[i].firstChild;
+      if (i !== 1 && badge && badge.style) {
+        badge.style.transform = "";
+        var digits = rCells[i].querySelector(".score-digits");
+        if (digits) {
+          var dRect = digits.getBoundingClientRect();
+          var digitsCenterRel = (dRect.left + dRect.width / 2) - rRect.left;
+          badge.style.transform = "translateX(" + (digitsCenterRel - rRect.width / 2) + "px)";
+        }
+      }
     }
   }
 
@@ -7163,8 +7173,7 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"hh-sc" }, [ teamBadge(rec.teams, rec.players, tvo[0]) ]),
         el("span", {}, []),
         el("span", { class:"hh-sc" }, [ teamBadge(rec.teams, rec.players, tvo[1]) ]),
-        el("span", { class:"hh-bidder" }, ["Bidder"]),
-        el("span", { class:"hh-head-bid" }, ["Bid"]),
+        el("span", { class:"hh-head-bid" }, ["Bidder"]),
         el("span", { class:"hh-dlr" }, ["Dealer"])
       ]));
     }
@@ -7180,18 +7189,16 @@ window.SOMERSET_FB_CONFIG = {
       var bidderName = (d.bidderSeat != null)
         ? ((rec.players[d.bidderSeat] && rec.players[d.bidderSeat].trim()) ? rec.players[d.bidderSeat].trim() : ("Seat " + (d.bidderSeat + 1)))
         : rec.teams[d.bidTeam];
-      // Bid is its own numeric column now (Bidder | Bid), tinted for a moon —
-      // accent when made, red when it fell short (a set). Regular sets leave the
-      // bid neutral; the red hh-sc score already marks the set team.
-      var isMoon = d.bid === POINTS_PER_DEAL;
-      var bidTint = isMoon ? (isMoonMade(d) ? " moon" : " set") : "";
+      // The Bidder column carries the whole "<player> bid <n>" line (with a "(moon)"
+      // tag when made); it turns red for a set — the red hh-sc score marks the set
+      // team's column too.
+      var bidSuffix = " bid " + d.bid + (isMoonMade(d) ? " (moon)" : "");
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[0] ? " red" : "") }, [ String(delta[tvo[0]]) ]),
         el("span", { class:"mono" }, ["|"]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[1] ? " red" : "") }, [ String(delta[tvo[1]]) ]),
-        el("span", { class:"hh-bidder disp" }, [ bidderName ]),
-        el("span", { class:"hh-bid mono" + bidTint }, [ String(d.bid) ]),
+        el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [ bidderName + bidSuffix ]),
         el("span", { class:"hh-dlr disp" }, [ dName ])
       ]));
     });
