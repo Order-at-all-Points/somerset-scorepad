@@ -4333,18 +4333,39 @@ window.SOMERSET_FB_CONFIG = {
       var addAm = currentGameAm();
       var addKey = addAm ? handLockKey(addAm, null, dealNo) : null;
       if (addKey && !isMineOrUnlocked(addKey)) {
-        pad.appendChild(el("div", { class:"view-only-bar disp" }, ["Someone else is currently entering this hand"]));
+        pad.appendChild(el("div", { class:"view-only-bar disp" }, [game.pendingBid ? "Someone else is recording the take" : "Someone else is currently entering this hand"]));
+      } else if (game.pendingBid) {
+        // The bid's been placed and broadcast to everyone (game.pendingBid); the
+        // hand is being played. Any device can now record what the bidding team
+        // took — this reopens the sheet straight at step 2, prefilled from the bid.
+        pad.appendChild(el("div", { class:"add-wrap" }, [
+          el("button", { class:"btn btn-new disp", onClick:function(){
+            var openTake = function(){
+              var pb = game.pendingBid;
+              ui.bidTeam = pb.bidTeam; ui.bid = pb.bid; ui.bidderSeat = pb.bidderSeat;
+              ui.bidderPts = pb.bid; ui.bidderWarn = false;
+              ui.showEntry = true; ui.entryStep = 2; ui.editingDeal = null;
+              softRender(); scrollEntryIntoView();
+            };
+            if (!addKey) { openTake(); return; }
+            claimLock(addKey, function(won){
+              if (!won) { ui.info = "Someone else just started recording the take."; softRender(); return; }
+              ui.myLockKey = addKey;
+              openTake();
+            });
+          } }, ["Record Take"])
+        ]));
       } else {
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick:function(){
-            var openEntry = function(){ ui.showEntry = true; ui.entryStep = 1; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); };
+            var openEntry = function(){ ui.showEntry = true; ui.entryStep = 1; ui.editingDeal = null; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); };
             if (!addKey) { openEntry(); return; }
             claimLock(addKey, function(won){
               if (!won) { ui.info = "Someone else just started entering this hand."; softRender(); return; }
               ui.myLockKey = addKey;
               openEntry();
             });
-          } }, ["Record Deal " + dealNo])
+          } }, ["Record Bid"])
         ]));
       }
     }
@@ -5569,13 +5590,22 @@ window.SOMERSET_FB_CONFIG = {
           } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
             if (named && ui.bidderSeat == null) { ui.bidderWarn = true; softRender(); return; }
-            ui.bidderPts = ui.bid; ui.entryStep=2;
-            // Broadcast the confirmed bid to observers (join-by-code guests watching a
-            // locked match) so they see it before the deal is recorded. Skip while
-            // editing an already-recorded deal \u2014 that deal is already visible to them.
-            if (ui.editingDeal == null) { game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat }; persist(); }
-            else softRender();
-          } }, ["Next: play the hand \u2192"])
+            if (ui.editingDeal != null) {
+              // Editing an already-recorded deal keeps both steps in one flow on
+              // this device \u2014 that deal is already visible to everyone.
+              ui.bidderPts = ui.bid; ui.entryStep = 2; softRender();
+              return;
+            }
+            // New deal: lock in the bid, broadcast it (game.pendingBid), and close
+            // the sheet so every spectator sees the bid land on the scoreboard. The
+            // take is recorded separately, by anyone, via the "Record Take" button.
+            // Release the hand lock so whoever plays the hand can pick the take up.
+            game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat };
+            ui.bidderPts = ui.bid;
+            ui.showEntry = false; ui.entryStep = 1;
+            releaseMyHandLock();
+            persist();
+          } }, [ui.editingDeal != null ? "Next: play the hand \u2192" : "Record Bid"])
         ])
       ]);
       return el("div", { class:"entry" }, kids1);
@@ -5624,8 +5654,17 @@ window.SOMERSET_FB_CONFIG = {
     }
 
     kids.push(el("div", { class:"actions" }, [
-      el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.entryStep=1; softRender(); } }, ["\u2190 Back"]),
-      el("button", { class:"btn btn-record disp", onClick:recordDeal }, [isEditing ? "Save changes" : "Record deal"])
+      isEditing
+        ? el("button", { class:"btn btn-cancel disp", onClick:function(){ ui.entryStep=1; softRender(); } }, ["\u2190 Back"])
+        // Recording the take for a new deal: closing just backs out of the take
+        // sheet \u2014 the bid stays placed and visible to everyone (game.pendingBid),
+        // so anyone can come back and record the take.
+        : el("button", { class:"btn btn-cancel disp", onClick:function(){
+            ui.showEntry = false; ui.entryStep = 1;
+            releaseMyHandLock();
+            softRender();
+          } }, ["Cancel"]),
+      el("button", { class:"btn btn-record disp", onClick:recordDeal }, [isEditing ? "Save changes" : "Record Take"])
     ]));
 
     return el("div", { class:"entry" }, kids);
@@ -8611,9 +8650,13 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.backConfirm) { ui.backConfirm = false; softRender(); return true; }
     if (ui.matchMenu != null) { ui.matchMenu = null; softRender(); return true; }
     if (ui.showEntry) {
+      // Closing the sheet no longer discards a placed bid: game.pendingBid is a
+      // committed, broadcast bid that survives independently of any one device's
+      // sheet (whoever plays the hand records the take). Backing out just releases
+      // this device's lock and returns to the scoreboard; the bid stays put.
       ui.showEntry = false; ui.entryStep = 1; ui.editingDeal = null;
       releaseMyHandLock();
-      if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
+      softRender();
       return true;
     }
     if (ui.activeMatch) { leaveMatch(); return true; }
