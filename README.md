@@ -90,7 +90,7 @@ Scoring is computed by threading the running total through every deal (`gameTota
 
 ### Game tab
 
-- Two‑step hand entry: pick the bidding team and bid, then enter trump and points taken.
+- **Two‑phase hand entry, shared across devices.** **Record Bid** captures who bid and the bid, then returns everyone to the scoreboard — the pending bid lands on the hand table (with blank score columns) so every spectator sees it live while the hand is played. Once the hand is done, **any** device can tap **Record Take** to enter the points taken; the score and hand history then update for everyone at once. (Editing an already‑recorded deal keeps both steps in one flow on the editing device.)
 - Automatic set handling (bid subtracted, may go negative) and shoot‑the‑moon win detection.
 - Live running totals with progress bars toward 50.
 - Clockwise dealer rotation with a seat diagram; tap a seat → **Edit name** to type a name or **quick‑add** one from the per‑device name book (with an **Edit/Done** toggle to delete saved names). Names saved here are remembered for next time.
