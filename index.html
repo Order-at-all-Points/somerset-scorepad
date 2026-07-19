@@ -260,9 +260,7 @@
      on one line — while still splitting proportionally with the dealer so the Bidder
      text centers at the same x on every row and under the "Bidder" header (a
      content-width dealer column would drift the centering row to row). */
-  .deal-bidder { display:flex; flex:2 1 0; min-width:0; padding-left:14px; font-size:13px; color:var(--ink-soft); overflow-wrap:anywhere; }
-  .deal-bidder .bid-left { flex:1 1 0; min-width:0; text-align:right; }
-  .deal-bidder .bid-right { flex:1 1 0; min-width:0; text-align:left; padding-left:6px; white-space:nowrap; }
+  .deal-bidder { flex:2 1 0; min-width:0; font-size:13px; color:var(--ink-soft); text-align:center; overflow-wrap:anywhere; }
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:1 1 0; min-width:0; text-align:right; font-size:13px; color:var(--brass-text); overflow-wrap:anywhere; }
   .deal-row.open .deal-dealer { font-weight:600; }
@@ -275,7 +273,7 @@
   .deal-head-score .dh-cell.l { width:3.5ch; }   /* matches a mirrored score-cell (sign+2ch+sign) */
   .deal-head-score .dh-cell.r { width:2.75ch; }  /* matches a plain score-cell (sign+2ch) */
   .deal-head-score .dh-badge { display:inline-block; }   /* nudged in JS so its "&" sits over the score digits, see alignDealHead */
-  .deal-head-bidder { flex:2 1 0; min-width:0; padding-left:14px; text-align:center; }
+  .deal-head-bidder { flex:2 1 0; min-width:0; text-align:center; }
   .deal-head-dealer { flex:1 1 0; min-width:0; text-align:right; }
   .deal-detail { display:flex; align-items:center; justify-content:center; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-took-line { text-align:center; }
@@ -592,9 +590,7 @@
   .hist-hand { display:grid; grid-column:1 / -1; grid-template-columns:subgrid; gap:8px; align-items:center; padding:4px 0; font-size:13px; border-top:1px solid rgba(0,0,0,.07); }
   .hist-hand .hh-sc { text-align:center; font-weight:600; color:var(--ink); }
   .hist-hand .hh-sc.red { color:var(--red); }
-  .hist-hand .hh-bid { display:flex; padding-left:14px; color:var(--ink-soft); overflow-wrap:anywhere; }
-  .hist-hand .hh-bid .bid-left { flex:1 1 0; min-width:0; text-align:right; }
-  .hist-hand .hh-bid .bid-right { flex:1 1 0; min-width:0; text-align:left; padding-left:6px; white-space:nowrap; }
+  .hist-hand .hh-bid { color:var(--ink-soft); text-align:center; overflow-wrap:anywhere; }
   .hist-hand .hh-bid.red { color:var(--red); }
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); text-align:right; white-space:nowrap; }
   /* Column-header row of the archived hand table — same grid as .hist-hand so the
@@ -602,7 +598,7 @@
   .hist-hand.hist-head { border-top:none; padding:0 0 6px; font-size:11px; text-transform:uppercase;
     letter-spacing:.06em; font-weight:600; color:var(--brass-text); border-bottom:1px solid var(--rule); }
   .hist-hand.hist-head .hh-sc { color:var(--brass-text); }
-  .hist-hand.hist-head .hh-head-bid { color:var(--brass-text); padding-left:14px; text-align:center; }
+  .hist-hand.hist-head .hh-head-bid { color:var(--brass-text); text-align:center; }
   .hist-hand.hist-head .hh-dlr { text-align:right; }
   .hist-hand.hist-head + .hist-hand { border-top:none; }
   .hist-del { margin-top:12px; }
@@ -4155,14 +4151,9 @@ window.SOMERSET_FB_CONFIG = {
         var bidderLabel = (d.bidderSeat != null) ? seatName(d.bidderSeat) : teamLabel(d.bidTeam);
         // The Bidder column carries the whole line: "<player> bid <n>", or "<player>
         // shot the MOON" — accent when made, red when it fell short (a set).
-        // Split into a variable right-aligned left half (name + "bid") and a fixed
-        // left-aligned right half (the digit / MOON), so the bid digits line up down
-        // a single column edge no matter how long the names are.
         var descKids = (d.bid === POINTS_PER_DEAL)
-          ? [ el("span", { class:"bid-left" }, [ bidderLabel + " shot the" ]),
-              el("span", { class:"bid-right" }, [ el("strong", { class:"set-flag disp", style: isMoonMade(d) ? "color:var(--brass-text);" : "" }, ["MOON"]) ]) ]
-          : [ el("span", { class:"bid-left" }, [ bidderLabel + " bid" ]),
-              el("span", { class:"bid-right" }, [ String(d.bid) ]) ];
+          ? [ bidderLabel + " shot the", el("strong", { class:"set-flag disp", style: isMoonMade(d) ? "color:var(--brass-text);" : "" }, ["MOON"]) ]
+          : [ bidderLabel + " bid " + d.bid ];
         var setMsg = !isSet ? null
           : (d.bid === POINTS_PER_DEAL)
             ? (bidderLabel + " attempted to shoot the moon but only took " + d.pts[d.bidTeam] + " — " + d.bid + " subtracted from their score.")
@@ -4225,10 +4216,8 @@ window.SOMERSET_FB_CONFIG = {
       // Outcome isn't known yet (points not recorded), so a moon bid stays untinted
       // — no accent/red until the take lands.
       var pbDescKids = (pb.bid === POINTS_PER_DEAL)
-        ? [ el("span", { class:"bid-left" }, [ pbBidderLabel + " shot the" ]),
-            el("span", { class:"bid-right" }, [ el("strong", { class:"set-flag disp" }, ["MOON"]) ]) ]
-        : [ el("span", { class:"bid-left" }, [ pbBidderLabel + " bid" ]),
-            el("span", { class:"bid-right" }, [ String(pb.bid) ]) ];
+        ? [ pbBidderLabel + " shot the", el("strong", { class:"set-flag disp" }, ["MOON"]) ]
+        : [ pbBidderLabel + " bid " + pb.bid ];
       var pbBidderEl = el("span", { class:"deal-bidder disp" }, pbDescKids);
       var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(pbDlr) ]);
       history.appendChild(el("div", {
@@ -7210,18 +7199,13 @@ window.SOMERSET_FB_CONFIG = {
       // The Bidder column carries the whole "<player> bid <n>" line (with a "(moon)"
       // tag when made); it turns red for a set — the red hh-sc score marks the set
       // team's column too.
-      var bidRightText = String(d.bid) + (isMoonMade(d) ? " (moon)" : "");
+      var bidSuffix = " bid " + d.bid + (isMoonMade(d) ? " (moon)" : "");
       handsWrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[0] ? " red" : "") }, [ String(delta[tvo[0]]) ]),
         el("span", { class:"mono" }, ["|"]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[1] ? " red" : "") }, [ String(delta[tvo[1]]) ]),
-        // Left half (name + "bid") is variable and right-aligned; right half (the digit)
-        // is left-aligned so bid digits line up down the column.
-        el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [
-          el("span", { class:"bid-left" }, [ bidderName + " bid" ]),
-          el("span", { class:"bid-right" }, [ bidRightText ])
-        ]),
+        el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [ bidderName + bidSuffix ]),
         el("span", { class:"hh-dlr disp" }, [ dName ])
       ]));
     });
