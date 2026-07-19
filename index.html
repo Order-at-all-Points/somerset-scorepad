@@ -260,12 +260,18 @@
   .set-flag { color:var(--red); margin-left:6px; letter-spacing:.08em; font-weight:600; }
   .deal-dealer { flex:none; text-align:right; font-size:13px; color:var(--brass-text); white-space:nowrap; }
   .deal-row.open .deal-dealer { font-weight:600; }
-  /* fixed size so the box stays put as it's rotated toward whichever seat is dealing */
-  .deal-dealer-arrow { display:inline-block; width:12px; height:12px; vertical-align:-1px; }
-  .deal-dealer-arrow svg { display:block; width:100%; height:100%; }
+  /* Column-header row above the deal history — mirrors .deal-row's flex layout so
+     "We | They" (initials), "Bidding" and "Dealer" sit over their columns. */
+  .deal-head { display:flex; align-items:center; gap:8px; padding:5px 12px 6px; border-bottom:1px solid var(--rule);
+    font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--brass-text); }
+  .deal-head-score { flex:none; }
+  .deal-head-score .dh-cell { text-align:center; white-space:nowrap; }
+  .deal-head-score .dh-cell.l { width:3.5ch; }   /* matches a mirrored score-cell (sign+2ch+sign) */
+  .deal-head-score .dh-cell.r { width:2.75ch; }  /* matches a plain score-cell (sign+2ch) */
+  .deal-head-bid { flex:1; min-width:0; text-align:center; }
+  .deal-head-dealer { flex:none; text-align:right; }
   .deal-detail { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
   .deal-detail-trump { display:flex; align-items:center; justify-content:center; flex:none; gap:4px; }   /* width set in JS to match .deal-score-block */
-  .deal-detail-side { flex:none; text-align:right; }   /* Dealer */
   .deal-bid-line { flex:1 1 auto; text-align:center; }   /* box for digit alignment in JS; see .deal-bid-line-inner */
   .deal-bid-line-inner { display:inline-block; }   /* nudged so its digit lines up under the bid digit above, see alignDealDetail() */
   .deal-bid-line.red { color:var(--red); }
@@ -581,6 +587,14 @@
   .hh-bid-inner { display:inline-block; }   /* positioned in JS, see alignDealBidColumn; wraps rather than overlapping the dealer column when it doesn't fit */
   .hh-bidder { display:inline-block; text-align:right; }   /* padded to the widest name in the table in JS, see alignDealBidColumn; wraps rather than overflowing if a name is too long to fit */
   .hist-hand .hh-dlr { font-size:11px; color:var(--brass-text); white-space:nowrap; }
+  /* Column-header row of the archived hand table — same grid as .hist-hand so the
+     team initials, "Bidding" and "Dealer" labels sit over their columns. */
+  .hist-hand.hist-head { border-top:none; padding:0 0 6px; font-size:11px; text-transform:uppercase;
+    letter-spacing:.06em; font-weight:600; color:var(--brass-text); border-bottom:1px solid var(--rule); }
+  .hist-hand.hist-head .hh-sc { color:var(--brass-text); }
+  .hist-hand.hist-head .hh-head-bid { text-align:center; color:var(--brass-text); }
+  .hist-hand.hist-head .hh-dlr { text-align:right; }
+  .hist-hand.hist-head + .hist-hand { border-top:none; }
   .hist-del { margin-top:12px; }
   .link-btn { background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600; cursor:pointer; font-family:var(--font-text); padding:12px 8px; margin:-8px 0; }
   .link-btn:active { color:var(--ink); }
@@ -995,6 +1009,50 @@ window.SOMERSET_FB_CONFIG = {
     if (mt == null) return game.teams[teamIdx];
     if (!isDefault) return game.teams[teamIdx];
     return teamIdx === mt ? "We" : "They";
+  }
+  // Compact, non-truncating label for a team's narrow score column in the hand
+  // tables. Prefers the two players' initials ("K&D"); falls back to one initial,
+  // then to the team name's own initials ("Smith Family" -> "SF", "Rockets" ->
+  // "R"). Deliberately never the "We"/"They" pronoun — orientation (the viewer's
+  // own team is always the left column, see teamViewOrder/scoreViewOrder) already
+  // carries the perspective, so the header only needs a short, stable identity
+  // that fits above a two-digit score.
+  function nameInitial(name) {
+    var s = (name || "").trim();
+    return s ? s.charAt(0).toUpperCase() : "";
+  }
+  function teamBadge(teams, players, teamIdx) {
+    var i0 = nameInitial(players[teamIdx]), i1 = nameInitial(players[teamIdx + 2]);
+    if (i0 && i1) return i0 + "&" + i1;
+    if (i0 || i1) return i0 || i1;
+    var name = (teams[teamIdx] || "").trim();
+    var parts = name.split(/[\s&]+/).filter(function (p) { return p; });
+    if (parts.length > 1) return parts.map(nameInitial).join("");
+    return nameInitial(name) || (teamIdx === 0 ? "1" : "2");
+  }
+  // [left, right] real team indices so the viewer's own team renders on the left
+  // of an archived hand/score table — the stored-record analogue of the live Game
+  // tab's teamViewOrder(). Matches this device's name against the record's roster;
+  // falls back to the stored order [0, 1] for games the viewer wasn't in (someone
+  // else's shared game) or games with no named players.
+  function scoreViewOrder(players) {
+    var me = (myNameForCurrentTourney() || myDeviceName || "").trim().toLowerCase();
+    if (me && players) {
+      for (var i = 0; i < 4; i++) {
+        if (players[i] && players[i].trim().toLowerCase() === me) return (i % 2 === 0) ? [0, 1] : [1, 0];
+      }
+    }
+    return [0, 1];
+  }
+  // Perspective-correct short label for an archived team in the History summary and
+  // Game Detail scoreboard. A record freezes game.teams at archive time, so a stored
+  // default "We"/"They" reflects the ARCHIVER's seat, not this viewer's — re-derive it
+  // from the viewer's own column order (vo[0] is the viewer's team). Custom or
+  // tournament team names are shown exactly as stored. Mirrors the live teamLabel().
+  function histTeamLabel(rec, teamIdx, vo) {
+    var name = rec.teams[teamIdx];
+    if (name === "We" || name === "They") return teamIdx === vo[0] ? "We" : "They";
+    return name;
   }
   // ui.series/offerSeries/seriesResult track an in-progress (or just-decided)
   // best-of-N series/offer — deliberately local-only, never written to the
@@ -4058,6 +4116,22 @@ window.SOMERSET_FB_CONFIG = {
     // try to close a detached row.
     swipeCoord.current = null;
     swipeCoord.wrapEl = null;
+    // Viewer-perspective column order, so the deal scores line up under the totals
+    // scoreboard above (which uses this same order) — the viewer's own team on the
+    // left. Header row labels the columns with each team's initials (see teamBadge).
+    var tvo = teamViewOrder();
+    var hasDealRows = game.deals.length > 0 || (game.pendingBid && !(ui.showEntry && ui.editingDeal == null));
+    if (hasDealRows) {
+      history.appendChild(el("div", { class:"deal-head disp", "aria-hidden":"true" }, [
+        el("span", { class:"deal-score-block deal-head-score" }, [
+          el("span", { class:"dh-cell l" }, [ teamBadge(game.teams, game.players, tvo[0]) ]),
+          el("span", { class:"dash" }, ["|"]),
+          el("span", { class:"dh-cell r" }, [ teamBadge(game.teams, game.players, tvo[1]) ])
+        ]),
+        el("span", { class:"deal-head-bid" }, ["Bid"]),
+        el("span", { class:"deal-head-dealer" }, ["Dealer"])
+      ]));
+    }
     if (game.deals.length > 0) {
       var runningScore = [0, 0];
       game.deals.forEach(function (d, idx) {
@@ -4085,24 +4159,19 @@ window.SOMERSET_FB_CONFIG = {
             ? (bidderLabel + " attempted to shoot the moon but only took " + d.pts[d.bidTeam] + " — " + d.bid + " subtracted from their score.")
             : (bidderLabel + " went SET this hand: they bid " + d.bid + " but took only " + d.pts[d.bidTeam] + ", so " + d.bid + " was subtracted from their score.");
         var dlr = (typeof d.dealer === "number") ? d.dealer : ((game.dealerStart + idx) % 4 + 4) % 4;
-        // one shape rotated toward the seat (0 bottom, 1 left, 2 top, 3 right) — same convention as
-        // the table's dealer arrow (renderTable) — rather than four distinct icons, which read as
-        // near-identical strokes at 13px. The shared SVG shape stays legible at that size where a
-        // thin font-glyph arrow doesn't.
-        var seatArrowRot = [180, 270, 0, 90][dlr];
         var isOpen = ui.openDeal === d.id;
         var scoreBlockEl = el("span", { class:"deal-score-block" }, [
-          scoreCell(delta[0], (isSet && d.bidTeam === 0) ? setMsg : null, true),
+          scoreCell(delta[tvo[0]], (isSet && d.bidTeam === tvo[0]) ? setMsg : null, true),
           el("span", { class:"dash" }, ["|"]),
-          scoreCell(delta[1], (isSet && d.bidTeam === 1) ? setMsg : null)
+          scoreCell(delta[tvo[1]], (isSet && d.bidTeam === tvo[1]) ? setMsg : null)
         ]);
         var innerEl = el("span", { class:"deal-desc-inner" }, innerKids);
         var descEl = el("span", { class:"deal-desc disp" }, [innerEl]);
         target.__dealBidRows.push({ innerEl:innerEl, descEl:descEl });
-        var dealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
-          class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
-          style:"transform:rotate(" + seatArrowRot + "deg);"
-        })]);
+        // Dealer column now names the dealer outright (the rotated seat arrow it
+        // used to show read as a near-identical stroke at 13px, and the name is
+        // what people actually want to know at a glance).
+        var dealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(dlr) ]);
         var rowEl = el("div", {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
@@ -4130,14 +4199,14 @@ window.SOMERSET_FB_CONFIG = {
           var trumpEl = el("span", { class:"deal-detail-trump" }, []);
           var bidLineInnerEl = el("span", { class:"deal-bid-line-inner" }, bidLineKids);
           var bidLineEl = el("span", { class:"deal-bid-line disp" + (isSet ? " red" : "") }, [bidLineInnerEl]);
-          var dealerNameEl = el("span", { class:"deal-detail-side", "aria-label":"Dealer "+seatName(dlr) }, [el("b", {}, [seatName(dlr)])]);
+          // The dealer's name is shown in the collapsed row's Dealer column now, so
+          // the expanded detail no longer repeats it — just the "<team> took N" line.
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
             trumpEl,
-            bidLineEl,
-            dealerNameEl
+            bidLineEl
           ]));
           target.__dealAlign = {
-            scoreBlockEl:scoreBlockEl, trumpEl:trumpEl, dealerLabelEl:dealerLabelEl, dealerNameEl:dealerNameEl,
+            scoreBlockEl:scoreBlockEl, trumpEl:trumpEl,
             bidNumEl:bidNumEl, takenNumEl:takenNumEl, bidLineEl:bidLineEl, bidLineInnerEl:bidLineInnerEl
           };
         }
@@ -4164,10 +4233,7 @@ window.SOMERSET_FB_CONFIG = {
       var pbInnerEl = el("span", { class:"deal-desc-inner" }, pbInnerKids);
       var pbDescEl = el("span", { class:"deal-desc disp" }, [pbInnerEl]);
       target.__dealBidRows.push({ innerEl:pbInnerEl, descEl:pbDescEl });
-      var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, ["Dealer ", el("span", {
-        class:"deal-dealer-arrow", "aria-hidden":"true", html:DEALER_ARROW_SVG,
-        style:"transform:rotate(" + [180, 270, 0, 90][pbDlr] + "deg);"
-      })]);
+      var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(pbDlr) ]);
       history.appendChild(el("div", {
         class:"deal-row pending" + (noFade ? "" : " fade"),
         "aria-label":"Deal " + dealNo + " in progress, points not yet recorded"
@@ -4303,14 +4369,6 @@ window.SOMERSET_FB_CONFIG = {
   function alignDealDetail(a) {
     if (!a) return;
     a.trumpEl.style.width = a.scoreBlockEl.getBoundingClientRect().width + "px";
-    // The dealer's name is right-aligned like the "Dealer" label above it, but for
-    // short names a right-edge match leaves it floating under the arrow instead of
-    // under the word "Dealer". Nudge it left to line up under the "D" — but never
-    // right, since a name wider than "Dealer ↓" already reaches that edge and
-    // pushing it further would run it off the card.
-    a.dealerNameEl.style.transform = "";
-    var nameDelta = Math.min(0, a.dealerLabelEl.getBoundingClientRect().left - a.dealerNameEl.getBoundingClientRect().left);
-    a.dealerNameEl.style.transform = "translateX(" + nameDelta + "px)";
     // Nudge the "took" line's digit to line up under the "bid" digit in the collapsed
     // row above (skipped for a moon bid — bidNumEl is null, nothing to align to), so
     // at a glance the bid and the take read as one column. Runs after alignDealDesc
@@ -4719,9 +4777,10 @@ window.SOMERSET_FB_CONFIG = {
         var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
         var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
         var gdWinTxt = historyWinnerText(gdRec);
+        var gdvo = scoreViewOrder(gdRec.players);   // own team's score on the left, matching the hands below
         var gdScoreRow = function (i) {
           return el("div", { class:"hs-row" }, [
-            el("span", { class:"hs-name" }, [ gdRec.teams[i] ]),
+            el("span", { class:"hs-name" }, [ histTeamLabel(gdRec, i, gdvo) ]),
             gdManual ? null : el("span", { class:"hs-score mono" }, [ String(gdRec.totals[i]) ])
           ].filter(function (x) { return x; }));
         };
@@ -4731,7 +4790,7 @@ window.SOMERSET_FB_CONFIG = {
           el("p", { class:"sub disp" },
             [fmtTime(gdRec.date) + " · " + (gdRec.tournament ? (gdIsChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game")]),
           el("div", { class:"hist-line" }, [
-            el("div", { class:"hist-score" }, [ gdScoreRow(0), gdScoreRow(1) ]),
+            el("div", { class:"hist-score" }, [ gdScoreRow(gdvo[0]), gdScoreRow(gdvo[1]) ]),
             el("span", { class:"hist-win disp" }, [ (gdIsChamp ? "🏆 " : "") + gdWinTxt ])
           ]),
           renderHistoryDetail(gdRec, closeGameDetail, !!gdShared),
@@ -7026,11 +7085,10 @@ window.SOMERSET_FB_CONFIG = {
     for (var i = 0; i < details.length; i++) {
       var bidEls = details[i].querySelectorAll(".hh-bid"), rows = [];
       for (var j = 0; j < bidEls.length; j++) {
-        rows.push({
-          descEl: bidEls[j],
-          innerEl: bidEls[j].querySelector(".hh-bid-inner"),
-          nameEl: bidEls[j].querySelector(".hh-bidder")
-        });
+        var innerEl = bidEls[j].querySelector(".hh-bid-inner");
+        var nameEl = bidEls[j].querySelector(".hh-bidder");
+        if (!innerEl || !nameEl) continue;   // header/label cells carry no bidder to align
+        rows.push({ descEl: bidEls[j], innerEl: innerEl, nameEl: nameEl });
       }
       alignDealBidColumn(rows);
     }
@@ -7077,17 +7135,20 @@ window.SOMERSET_FB_CONFIG = {
       if (rec.winner === "tie") return "hs-row tie";
       return "hs-row " + (rec.winner === i ? "win" : "lose");
     };
+    // Own team first (matching the expanded hands and the Game Detail scoreboard);
+    // the win/lose emphasis is per-team via rowClass, so order doesn't affect it.
+    var hvo = scoreViewOrder(rec.players);
     // Manual entries have no score. Otherwise each team gets its own row so the two
     // totals form a vertically-aligned column regardless of team-name length.
     var hsRow = function (i) {
       return el("div", { class:rowClass(i) }, [
-        el("span", { class:"hs-name" }, [ rec.teams[i] ]),
+        el("span", { class:"hs-name" }, [ histTeamLabel(rec, i, hvo) ]),
         manual ? null : el("span", { class:"hs-score mono" }, [ String(rec.totals[i]) ])
       ].filter(function (x) { return x; }));
     };
     var summaryKids = [
       el("div", { class:"hist-line" }, [
-        el("div", { class:"hist-score" }, [ hsRow(0), hsRow(1) ]),
+        el("div", { class:"hist-score" }, [ hsRow(hvo[0]), hsRow(hvo[1]) ]),
         el("span", { class:"hist-win hist-win-badge" + (rec.winner === "tie" ? " tie" : "") + " disp" }, [ (isChamp ? "🏆 " : "") + winTxt ])
       ])
     ];
@@ -7150,7 +7211,11 @@ window.SOMERSET_FB_CONFIG = {
   // `readOnly` suppresses the delete action — used for a followed player's
   // shared highlight game, which isn't in any local history to delete.
   function renderHistoryDetail(rec, onDeleted, readOnly) {
-    var wrap = el("div", { class:"hist-detail" }, [0, 1].map(function (i) {
+    // Viewer-perspective column order (own team on the left), matching the score
+    // header above; see scoreViewOrder. Falls back to stored order for games this
+    // device's player wasn't in.
+    var tvo = scoreViewOrder(rec.players);
+    var wrap = el("div", { class:"hist-detail" }, tvo.map(function (i) {
       var roster = rosterLine(rec, i);
       return roster ? el("p", { class:"hist-roster disp" }, [ roster ]) : null;
     }).filter(function (x) { return x; }));
@@ -7161,6 +7226,16 @@ window.SOMERSET_FB_CONFIG = {
     if (rec.tournament && rec.tournament.manual) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
         ["No hands recorded."]));
+    }
+    if (rec.deals.length) {
+      wrap.appendChild(el("div", { class:"hist-hand hist-head", "aria-hidden":"true" }, [
+        el("span", { class:"hh-no" }, []),
+        el("span", { class:"hh-sc" }, [ teamBadge(rec.teams, rec.players, tvo[0]) ]),
+        el("span", {}, []),
+        el("span", { class:"hh-sc" }, [ teamBadge(rec.teams, rec.players, tvo[1]) ]),
+        el("span", { class:"hh-head-bid" }, ["Bid"]),
+        el("span", { class:"hh-dlr" }, ["Dealer"])
+      ]));
     }
     var runningScore = [0, 0];
     rec.deals.forEach(function (d, idx) {
@@ -7181,11 +7256,11 @@ window.SOMERSET_FB_CONFIG = {
       var bidSuffix = (d.bid === POINTS_PER_DEAL ? " bid 14" : (" bid " + d.bid)) + (isMoonMade(d) ? " (moon)" : "");
       wrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 0 ? " red" : "") }, [ String(delta[0]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[0] ? " red" : "") }, [ String(delta[tvo[0]]) ]),
         el("span", { class:"mono" }, ["|"]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === 1 ? " red" : "") }, [ String(delta[1]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[1] ? " red" : "") }, [ String(delta[tvo[1]]) ]),
         el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [ el("span", { class:"hh-bid-inner" }, [ el("span", { class:"hh-bidder" }, [bidderName]), bidSuffix ]) ]),
-        el("span", { class:"hh-dlr disp" }, [ "D: " + dName ])
+        el("span", { class:"hh-dlr disp" }, [ dName ])
       ]));
     });
     if (!readOnly) {
