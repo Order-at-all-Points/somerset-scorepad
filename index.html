@@ -1052,12 +1052,14 @@ window.SOMERSET_FB_CONFIG = {
   }
   // Perspective-correct short label for an archived team in the History summary and
   // Game Detail scoreboard. A record freezes game.teams at archive time, so a stored
-  // default "We"/"They" reflects the ARCHIVER's seat, not this viewer's — re-derive it
-  // from the viewer's own column order (vo[0] is the viewer's team). Custom or
-  // tournament team names are shown exactly as stored. Mirrors the live teamLabel().
+  // default "We"/"They" reflects the ARCHIVER's seat, not this viewer's. Prefer the
+  // team's actual players ("Alice & Bob") when names were entered — matching the
+  // winner badge (historyWinnerText/rosterLine) — and fall back to the viewer's own
+  // perspective "We"/"They" (vo[0] is the viewer's team) only when no names exist.
+  // Custom or tournament team names are shown exactly as stored (mirrors teamLabel()).
   function histTeamLabel(rec, teamIdx, vo) {
     var name = rec.teams[teamIdx];
-    if (name === "We" || name === "They") return teamIdx === vo[0] ? "We" : "They";
+    if (name === "We" || name === "They") return rosterLine(rec, teamIdx) || (teamIdx === vo[0] ? "We" : "They");
     return name;
   }
   // ui.series/offerSeries/seriesResult track an in-progress (or just-decided)
