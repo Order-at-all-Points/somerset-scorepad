@@ -1052,12 +1052,14 @@ window.SOMERSET_FB_CONFIG = {
   }
   // Perspective-correct short label for an archived team in the History summary and
   // Game Detail scoreboard. A record freezes game.teams at archive time, so a stored
-  // default "We"/"They" reflects the ARCHIVER's seat, not this viewer's — re-derive it
-  // from the viewer's own column order (vo[0] is the viewer's team). Custom or
-  // tournament team names are shown exactly as stored. Mirrors the live teamLabel().
+  // default "We"/"They" reflects the ARCHIVER's seat, not this viewer's. Prefer the
+  // team's actual players ("Alice & Bob") when names were entered — matching the
+  // winner badge (historyWinnerText/rosterLine) — and fall back to the viewer's own
+  // perspective "We"/"They" (vo[0] is the viewer's team) only when no names exist.
+  // Custom or tournament team names are shown exactly as stored (mirrors teamLabel()).
   function histTeamLabel(rec, teamIdx, vo) {
     var name = rec.teams[teamIdx];
-    if (name === "We" || name === "They") return teamIdx === vo[0] ? "We" : "They";
+    if (name === "We" || name === "They") return rosterLine(rec, teamIdx) || (teamIdx === vo[0] ? "We" : "They");
     return name;
   }
   // ui.series/offerSeries/seriesResult track an in-progress (or just-decided)
@@ -2042,6 +2044,18 @@ window.SOMERSET_FB_CONFIG = {
         });
       });
     }
+    // Keep every already-archived record's bestOf in step with the live series
+    // length. A shared best-of-1's earlier games log as bestOf:1 the instant
+    // they're decided; if the series is later escalated (its bestOf grows) those
+    // records must follow, so they stay classified as one multi-game tournament
+    // (see isTournamentRecord) instead of splitting off as stray Standard games.
+    // Runs on every device from the synced snapshot, so it reaches participants
+    // who never tapped the escalation offer themselves.
+    gameHistory.forEach(function (h) {
+      if (h.tournament && h.tournament.id === tourney.id && h.tournament.bestOf !== tourney.bestOf) {
+        h.tournament.bestOf = tourney.bestOf; changed = true;
+      }
+    });
     if (changed) { saveHistory(); saveArchivedMatches(); }
   }
 
@@ -4798,7 +4812,7 @@ window.SOMERSET_FB_CONFIG = {
           onClick:function(e){ e.stopPropagation(); } }, [
           el("h3", { class:"disp" }, ["Game Detail"]),
           el("p", { class:"sub disp" },
-            [fmtTime(gdRec.date) + " · " + (gdRec.tournament ? (gdIsChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game")]),
+            [fmtTime(gdRec.date) + " · " + (isTournamentRecord(gdRec) ? (gdIsChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game")]),
           el("div", { class:"hist-line" }, [
             el("div", { class:"hist-score" }, [ gdScoreRow(gdvo[0]), gdScoreRow(gdvo[1]) ]),
             el("span", { class:"hist-win disp" }, [ (gdIsChamp ? "🏆 " : "") + gdWinTxt ])
@@ -6040,6 +6054,15 @@ window.SOMERSET_FB_CONFIG = {
       tourney.escalations.push({ afterGameIndex: clinchIdx, from: fromBestOf, to: o.bestOf });
       setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
       if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
+      // The earlier game(s) of this series were already archived to history with
+      // the old bestOf (a shared best-of-1's seed game logs as bestOf:1 the
+      // instant it's decided). Bump every record sharing this tourney id to the
+      // new length so the seed joins the series instead of splitting off as a
+      // stray Standard game — mirrors the local escalation path's seedRec rewrite.
+      gameHistory.forEach(function (h) {
+        if (h.tournament && h.tournament.id === tourney.id) h.tournament.bestOf = o.bestOf;
+      });
+      saveHistory();
       ui.offerSeries = null; ui.seriesResult = null;
       saveTourney();
       render();
@@ -6359,8 +6382,9 @@ window.SOMERSET_FB_CONFIG = {
         runningScore[0] += scoreDelta[0]; runningScore[1] += scoreDelta[1];
       });
       var comebackDeficit = gameComebackDeficit(rec);
-      var format = rec.tournament ? rec.tournament.format : "casual";
-      var tournamentId = rec.tournament ? rec.tournament.id : null;
+      var isT = isTournamentRecord(rec);
+      var format = isT ? rec.tournament.format : "casual";
+      var tournamentId = isT ? rec.tournament.id : null;
       var dealsCount = (rec.deals || []).length;
       rec.players.forEach(function (raw, seat) {
         var nm = (raw || "").trim();
@@ -6980,14 +7004,26 @@ window.SOMERSET_FB_CONFIG = {
   function dateKey(iso) {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
   }
+  // A record counts as a tournament only if it belongs to a genuine multi-game
+  // competition: any bracket (single/double/round), or a best-of series longer
+  // than one game. A lone shared game is wrapped internally as format:"series"
+  // bestOf:1 to reuse the series sync/lock machinery, but to the player it's just
+  // a Standard game — so it never reads as a tournament in labels, filters,
+  // grouping, or stats.
+  function isTournamentRecord(rec) {
+    var t = rec && rec.tournament;
+    if (!t || t.id == null) return false;
+    if (t.format === "series") return t.bestOf > 1;
+    return true; // single / double / round brackets are always tournaments
+  }
   // Log-view filter pills shown under the Log/Stats switcher — same predicate
   // shape as STAT_SORTS. "today" compares local calendar day via dateKey, same
   // normalization buildHistoryGroups already uses to group by day.
   var HISTORY_FILTERS = [
     ["all", "All", function () { return true; }],
     ["today", "Today", function (rec) { return dateKey(rec.date) === dateKey(new Date().toISOString()); }],
-    ["standard", "Standard", function (rec) { return !(rec.tournament && rec.tournament.id != null); }],
-    ["tournaments", "Tournament", function (rec) { return !!(rec.tournament && rec.tournament.id != null); }]
+    ["standard", "Standard", function (rec) { return !isTournamentRecord(rec); }],
+    ["tournaments", "Tournament", function (rec) { return isTournamentRecord(rec); }]
   ];
   function renderHistoryFilterRow() {
     return el("div", { class:"stat-sort-row" }, HISTORY_FILTERS.map(function (f) {
@@ -7006,7 +7042,7 @@ window.SOMERSET_FB_CONFIG = {
   function buildHistoryGroups(records) {
     var groups = [], byKey = {};
     (records || gameHistory).forEach(function (rec) {
-      var isTournament = rec.tournament && rec.tournament.id != null;
+      var isTournament = isTournamentRecord(rec);
       var key = isTournament ? ("t:" + rec.tournament.id) : ("d:" + dateKey(rec.date));
       var g = byKey[key];
       if (!g) {
@@ -7150,7 +7186,7 @@ window.SOMERSET_FB_CONFIG = {
     var winTxt = historyWinnerText(rec);
     // Category drives the left spine (see .hist-entry[data-cat]) — a championship is a
     // kind of tournament match, distinguished from a plain match by its gold wash.
-    var cat = rec.tournament ? (isChamp ? "champ" : "tourney") : "standard";
+    var cat = isTournamentRecord(rec) ? (isChamp ? "champ" : "tourney") : "standard";
     // Winner-forward hierarchy: tag each score row so the winner reads bold and the
     // loser dims (see .hs-row.win/.lose). Ties stay even-weight.
     var rowClass = function (i) {
@@ -7177,7 +7213,7 @@ window.SOMERSET_FB_CONFIG = {
     var marginBar = histMarginBar(rec, manual);
     if (marginBar) summaryKids.push(marginBar);
     summaryKids.push(
-      el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (rec.tournament ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
+      el("div", { class:"hist-meta disp" }, [ fmtTime(rec.date) + " · " + (isTournamentRecord(rec) ? (isChamp ? "Tournament Championship" : "Tournament Match") : "Standard Game") + (manual ? "" : (": " + rec.deals.length + " Hands")) ])
     );
     var summary = el("div", { class:"hist-item", role:"button",
       onClick:function(){ ui.historyOpen = open ? null : rec.id; softRender(); } }, summaryKids);

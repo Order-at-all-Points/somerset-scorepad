@@ -79,9 +79,28 @@ async function importHistoryFile(page, filePath) {
   return infoModalText(page);
 }
 
+/** The data-cat spine category ("standard" | "tourney" | "champ") of a rendered entry. */
+async function entryCat(page, recId) {
+  return entryLocator(page, recId).getAttribute("data-cat");
+}
+
+/** The ".hist-meta" line text of a rendered entry (e.g. "3:14 PM · Standard Game: 6 Hands"). */
+async function entryMeta(page, recId) {
+  return (await entryLocator(page, recId).locator(".hist-meta").textContent()).trim();
+}
+
+/** Click a Log-view filter pill by its label ("All" | "Today" | "Standard" | "Tournament"). */
+async function setFilter(page, label) {
+  await page.locator(".stat-sort-chip", { hasText: new RegExp("^" + label + "$") }).click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(80);
+}
+
 module.exports = {
   groupHeaders,
   entryIds,
+  entryCat,
+  entryMeta,
+  setFilter,
   expandEntry,
   deleteEntry,
   undoToastVisible,
