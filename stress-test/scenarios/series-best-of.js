@@ -446,6 +446,24 @@ const sharedLogsWithoutContinue = {
           contextLabel: "guest",
         });
       }
+      // Game 1 logged as bestOf:1 the instant it was decided (a shared best-of-1),
+      // then the series escalated to Best of 3. The bestOf back-fill in
+      // syncMyHistoryFromTourney must have caught the guest's game-1 record up to
+      // bestOf:3 so the whole series stays one multi-game tournament (see
+      // isTournamentRecord) instead of the seed splitting off as a Standard game.
+      const seriesRecs = guestHist2.filter((g) => g.tournament && g.tournament.id);
+      const staleSeed = seriesRecs.filter((g) => g.tournament.bestOf !== 3);
+      if (staleSeed.length) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `After escalating a shared best-of-1 to Best of 3, ${staleSeed.length} of the guest's series records still carry the old bestOf (expected all === 3) -- regresses the escalation bestOf back-fill, splitting the seed game off as a Standard game`,
+          expected: "every series record bestOf === 3",
+          actual: JSON.stringify(seriesRecs.map((g) => g.tournament.bestOf)),
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
     } catch (e) {
       await logger.record({
         severity: "high",

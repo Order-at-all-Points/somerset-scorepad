@@ -251,4 +251,121 @@ const bestOf1LogsWithoutContinue = {
   },
 };
 
-module.exports = [shareGameHostGuest, bestOf1LogsWithoutContinue];
+// A lone shared game is wrapped internally as format:"series" bestOf:1 to reuse
+// the sync/lock machinery, but to the player it's just one game -- so its History
+// record must read and count as a *Standard* game, never a "Tournament Match".
+// Guards isTournamentRecord (a series is only a tournament when bestOf > 1).
+const loneSharedGameIsStandard = {
+  name: "casual-shared/lone-shared-game-is-standard",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/lone-shared-game-is-standard");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    try {
+      await seats.nameAllSeats(host.page, ["S1", "S2", "S3", "S4"]);
+      await sync.shareFromGameOptions(host.page); // wraps the solo game as format:"series" bestOf:1
+      await sync.identifyFromShareSheet(host.page, "S1");
+
+      logger.step("Play the shared game to completion, continue, decline the series offer");
+      await simulator.playDealsToCompletion(host.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 4242,
+        logger,
+        contextLabel: "host",
+      });
+      await newGame.continueSharedGame(host.page);
+      await newGame.dismissPlayAgainOffer(host.page); // keep it a lone 1-off, no escalation
+
+      await host.page.waitForTimeout(config.syncSettleMs);
+      const recs = ((await storage.readKey(host.page, storage.KEYS.history)).value || []).filter((g) => g.winner != null);
+      if (recs.length !== 1) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `Expected exactly one logged shared game, found ${recs.length}`,
+          expected: 1,
+          actual: recs.length,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+      const rec = recs[0];
+      // Internal representation is deliberately unchanged -- it's still a wrapped
+      // bestOf:1 series; only its *classification* should read as Standard.
+      if (!(rec.tournament && rec.tournament.format === "series" && rec.tournament.bestOf === 1)) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Shared lone game wasn't stored as the expected format:"series" bestOf:1 wrapper (got ${JSON.stringify(rec.tournament)})`,
+          actual: JSON.stringify(rec.tournament),
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+
+      logger.step("History must classify it as Standard, not a Tournament Match");
+      await nav.goto(host.page, "History");
+      await host.page.waitForTimeout(200);
+      const cat = await history.entryCat(host.page, rec.id);
+      const meta = await history.entryMeta(host.page, rec.id);
+      if (cat !== "standard") {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `A lone shared bestOf:1 game renders as a tournament entry (data-cat="${cat}", expected "standard") -- regresses "treat a single game as Standard, not a Best-of-1 tournament"`,
+          expected: "standard",
+          actual: cat,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+      if (!/Standard Game/.test(meta) || /Tournament/.test(meta)) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `A lone shared game's History meta line reads as a tournament ("${meta}"), expected "Standard Game"`,
+          expected: "…· Standard Game: N Hands",
+          actual: meta,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+
+      logger.step("Filter pills: 'Tournament' excludes it, 'Standard' includes it");
+      await history.setFilter(host.page, "Tournament");
+      if ((await history.entryIds(host.page)).includes(rec.id)) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: "The 'Tournament' History filter still shows a lone shared game",
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+      await history.setFilter(host.page, "Standard");
+      if (!(await history.entryIds(host.page)).includes(rec.id)) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: "The 'Standard' History filter hides a lone shared game that should be Standard",
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        page: host.page,
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+    }
+  },
+};
+
+module.exports = [shareGameHostGuest, bestOf1LogsWithoutContinue, loneSharedGameIsStandard];
