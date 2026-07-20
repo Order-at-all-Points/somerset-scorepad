@@ -9,7 +9,170 @@ const dealHistory = require("../lib/pageobjects/dealHistory");
 const newGame = require("../lib/pageobjects/newGame");
 const bracket = require("../lib/pageobjects/bracket");
 const storage = require("../lib/pageobjects/storage");
+const seriesSetup = require("../lib/pageobjects/seriesSetup");
+const simulator = require("../lib/simulator");
 const config = require("../config");
+
+// Deterministic 5-deal script: seat 0's team wins 10-0 each hand, reaching
+// exactly 50. Clinches a game on a known deal count without a random seed.
+const TEAM0_WIN_SCRIPT = Array.from({ length: 5 }, () => ({ bidder: { seat: 0 }, bid: 10, pointsTaken: 10 }));
+
+// Host shares a Game-tab game; guest joins and chooses to SPECTATE (name = null).
+// Returns the join code. Leaves the guest on the Game tab with the shared
+// session persisted (tourney + sync-code keys) so a reload exercises the
+// boot-time reconnect path.
+async function setUpSpectatedGame(host, guest) {
+  await seats.nameAllSeats(host.page, ["P1", "P2", "P3", "P4"]);
+  await sync.shareFromGameOptions(host.page);
+  const code = await sync.readJoinCode(host.page);
+  await sync.identifyFromShareSheet(host.page, "P1");
+  await nav.goto(guest.page, "Tournament");
+  await tSetup.openJoinSheet(guest.page);
+  await sync.joinWithCode(guest.page, code);
+  await sync.whoSheet(guest.page).waitFor({ state: "visible", timeout: 1500 }).catch(() => {});
+  if (await sync.whoSheet(guest.page).count()) {
+    await sync.spectate(guest.page);
+  }
+  await nav.goto(guest.page, "Game");
+  await guest.page.waitForTimeout(config.syncSettleMs);
+  return code;
+}
+
+async function reloadAndBoot(page) {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible" });
+}
+
+// A spectator whose watched game has finished must not have the old finished
+// game reappear as "in progress" the next time they open the app. Nobody hands
+// a spectator the Continue/New Game teardown, so the boot-time reconnect must
+// clear their stale session itself once the watched game/series is terminal.
+const spectatorClearsFinishedOnReload = {
+  name: "sync-cross-cutting/spectator-clears-finished-game-on-reload",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("sync-cross-cutting/spectator-clears-finished-game-on-reload");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      await setUpSpectatedGame(host, guest);
+
+      // Sanity: while the game is live, the spectator really is holding the
+      // shared session (otherwise the reload assertion below proves nothing).
+      const beforeCode = (await storage.readKey(guest.page, storage.KEYS.syncCode)).raw;
+      if (!beforeCode) {
+        await logger.record({
+          severity: "high",
+          category: "test-setup",
+          summary: "Spectator never persisted a sync code while watching a live game -- setup precondition failed",
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+
+      logger.step("Host finishes the shared game (no Continue tap)");
+      await simulator.playGameWithScriptedDeals(host.page, TEAM0_WIN_SCRIPT, { logger, contextLabel: "host" });
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      logger.step("Spectator reopens the app (reload) -- the finished game must NOT resume");
+      await reloadAndBoot(guest.page);
+      await guest.page.waitForTimeout(1500);
+
+      const tourneyAfter = (await storage.readKey(guest.page, storage.KEYS.tournament)).value;
+      const codeAfter = (await storage.readKey(guest.page, storage.KEYS.syncCode)).raw;
+      if (tourneyAfter !== null || codeAfter !== null) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `Spectator's finished shared game did not clear on reopen -- the old game resumes as "in progress" (tourney ${tourneyAfter === null ? "null" : "present"}, syncCode ${codeAfter === null ? "null" : JSON.stringify(codeAfter)}) -- regresses "clear a spectator's stale session at terminal state"`,
+          expected: "tourney and syncCode both cleared on reopen",
+          actual: { tourneyCleared: tourneyAfter === null, syncCode: codeAfter },
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+      // And the Game tab should show a fresh, empty pad -- no synced deals.
+      await nav.goto(guest.page, "Game");
+      const dealRows = await guest.page.locator(".deal-row:visible, .hist-hand:visible").count();
+      if (dealRows > 0) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `After reopening, the spectator's Game tab still shows ${dealRows} deal row(s) from the finished shared game instead of a fresh empty pad`,
+          expected: 0,
+          actual: dealRows,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+// The mirror-image guard: a spectator must NOT be cleared mid-series. Between
+// games of a multi-game series (one game done, the next queued, champion still
+// null) the session is very much alive, and an over-eager teardown would drop
+// the spectator out of a series still in progress.
+const spectatorResumesMidSeries = {
+  name: "sync-cross-cutting/spectator-resumes-mid-series-on-reload",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("sync-cross-cutting/spectator-resumes-mid-series-on-reload");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      await setUpSpectatedGame(host, guest);
+
+      logger.step("Host plays game 1, continues, escalates to Best of 3 (now 1-0, series still live)");
+      await simulator.playGameWithScriptedDeals(host.page, TEAM0_WIN_SCRIPT, { logger, contextLabel: "host" });
+      await newGame.continueSharedGame(host.page);
+      await newGame.acceptRematchEscalation(host.page);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      logger.step("Spectator reopens the app mid-series -- it must resume, not clear");
+      await reloadAndBoot(guest.page);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      const tourneyAfter = (await storage.readKey(guest.page, storage.KEYS.tournament)).value;
+      const codeAfter = (await storage.readKey(guest.page, storage.KEYS.syncCode)).raw;
+      const champion = tourneyAfter && tourneyAfter.champion;
+      if (tourneyAfter === null || codeAfter === null) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `Spectator was cleared MID-SERIES (between games of a Best of 3, champion=${champion}) -- an over-eager terminal-state check dropped them out of a live series (tourney ${tourneyAfter === null ? "null" : "present"}, syncCode ${codeAfter === null ? "null" : "present"})`,
+          expected: "tourney and syncCode both still present (series in progress)",
+          actual: { tourneyCleared: tourneyAfter === null, syncCodeCleared: codeAfter === null },
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
 
 const invalidJoinCode = {
   name: "sync-cross-cutting/invalid-join-code",
@@ -381,4 +544,12 @@ const offlineReconnect = {
   },
 };
 
-module.exports = [invalidJoinCode, concurrentDifferentHands, concurrentSameHand, concurrentDifferentMatches, offlineReconnect];
+module.exports = [
+  invalidJoinCode,
+  concurrentDifferentHands,
+  concurrentSameHand,
+  concurrentDifferentMatches,
+  offlineReconnect,
+  spectatorClearsFinishedOnReload,
+  spectatorResumesMidSeries,
+];

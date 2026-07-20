@@ -367,6 +367,100 @@ const sharedClinchLabelAndBadge = {
   },
 };
 
+// --- Regression 6: a shared series' completed game logs on OTHER participants'
+// devices the instant it's decided, even if nobody taps "Continue" -- and the
+// clinching game's championship badge back-fills once someone finally does. ---
+const sharedLogsWithoutContinue = {
+  name: "series-best-of/regression-shared-logs-without-continue",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("series-best-of/regression-shared-logs-without-continue");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      await seats.nameAllSeats(host.page, ["W1", "W2", "W3", "W4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "W1");
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(300);
+      if (await guest.page.locator('[role="dialog"][aria-label="Identify yourself"]').count()) {
+        await sync.chooseIdentity(guest.page, "W3"); // W1's teammate (seats 0 & 2)
+      }
+
+      logger.step("Host plays game 1, continues, escalates to Best of 3");
+      await simulator.playGameWithScriptedDeals(host.page, TEAM0_WIN_SCRIPT, { logger, contextLabel: "host" });
+      await newGame.continueSharedGame(host.page);
+      await newGame.acceptRematchEscalation(host.page);
+
+      logger.step("Host plays the clinching game 2 (2-0) but NOBODY taps Continue");
+      await simulator.playGameWithScriptedDeals(host.page, TEAM0_WIN_SCRIPT, { logger, contextLabel: "host" });
+
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const guestHist = (await storage.readKey(guest.page, "somerset:dev-history")).value || [];
+      const withDeals = guestHist.filter(
+        (g) => g.tournament && g.tournament.id && Array.isArray(g.deals) && g.deals.length > 0
+      );
+      // Before the fix, syncMyHistoryFromTourney deferred archiving until the
+      // Continue tap nulled `.game`, so the guest would have only game 1 here and
+      // the clinching game 2 would be missing entirely (and lost for good if
+      // nobody ever continued). Now both decided games log the instant they're won.
+      if (withDeals.length !== 2) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `Guest (a roster player who didn't record the deals) is missing a completed shared-series game because nobody tapped Continue -- found ${withDeals.length} logged games, expected 2 -- regresses "log completed matches without a Continue tap"`,
+          expected: 2,
+          actual: withDeals.length,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      } else if (withDeals.some((g) => g.winner !== 0)) {
+        await logger.record({
+          severity: "high",
+          category: "scoring-correctness",
+          summary: `Guest's auto-logged shared-series games recorded the wrong winner (team 0 won every game, got winners=${JSON.stringify(withDeals.map((g) => g.winner))})`,
+          expected: "[0, 0]",
+          actual: JSON.stringify(withDeals.map((g) => g.winner)),
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+
+      logger.step("Host finally taps Continue; the clinching game's championship badge should back-fill on the guest");
+      await newGame.continueSharedGame(host.page);
+      await newGame.dismissPlayAgainOffer(host.page);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const guestHist2 = (await storage.readKey(guest.page, "somerset:dev-history")).value || [];
+      if (!guestHist2.some((g) => g.tournament && g.tournament.championship === true)) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: "After the clinching game was logged early (no Continue) and then Continue was finally tapped, the guest's championship badge never back-filled -- regresses the championship back-badge pass in syncMyHistoryFromTourney",
+          expected: "a guest History entry with tournament.championship === true",
+          actual: JSON.stringify(guestHist2.map((g) => g.tournament && g.tournament.championship)),
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
 module.exports = [
   basicCase(3),
   basicCase(5),
@@ -377,4 +471,5 @@ module.exports = [
   persistAcrossReload,
   escalationAndUndoRollback,
   sharedClinchLabelAndBadge,
+  sharedLogsWithoutContinue,
 ];

@@ -71,6 +71,20 @@ async function clearIdentity(page) {
 }
 
 /**
+ * From the forced "Identify yourself" sheet a freshly-joined device sees, tag
+ * this device as a spectator (myIdentity.name = null). The forced sheet shows
+ * "I'm just spectating" rather than "Not playing / clear" (the latter only
+ * appears once a name decision already exists) -- both call clearIdentity() in
+ * the app, but the labels differ, so this is its own helper.
+ */
+async function spectate(page) {
+  await whoSheet(page)
+    .locator(".sheet-btn", { hasText: "I'm just spectating" })
+    .click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(80);
+}
+
+/**
  * From an open Share sheet, tag this device as `name`. Note: opening the
  * identity picker from the Share sheet closes the Share sheet itself
  * (`ui.shareSheetOpen = false`) -- picking a name returns straight to the
@@ -171,6 +185,7 @@ module.exports = {
   whoSheet,
   chooseIdentity,
   clearIdentity,
+  spectate,
   identifyFromShareSheet,
   closeShareSheet,
   joinWithCode,

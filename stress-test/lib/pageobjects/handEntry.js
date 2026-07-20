@@ -21,28 +21,37 @@ async function isNamedMode(page) {
   return (await entryScope(page).locator(".who.grid4").count()) > 0;
 }
 
+// Entry is a two-phase flow now: a new hand starts with "Record Bid" (place the
+// bid; broadcasts as game.pendingBid and closes the sheet so every device sees
+// it), then anyone records the result via a separate "Record Take" button on
+// the pad. (Editing an already-recorded deal still keeps both steps in one
+// on-device flow -- "Next: play the hand →" then "Save changes".)
+function newBidBtn(page) {
+  return page.locator("button.btn.btn-new:visible", { hasText: /^Record Bid$/ });
+}
+function recordTakeBtn(page) {
+  return page.locator("button.btn.btn-new:visible", { hasText: /^Record Take$/ });
+}
+
 /**
- * Info about the "Record Deal N" affordance in its current state:
- *  - { state: "ready", dealNo }        -- button present, can open a new deal
- *  - { state: "locked", text }         -- someone else holds this hand's lock (.view-only-bar)
- *  - { state: "unavailable" }          -- neither present (e.g. game already won)
+ * Info about the new-hand affordance in its current state:
+ *  - { state: "ready" }        -- "Record Bid" present, a new hand can be started
+ *  - { state: "take" }         -- a bid is placed; the pad shows "Record Take"
+ *  - { state: "locked", text } -- someone else holds this hand's lock (.view-only-bar)
+ *  - { state: "unavailable" }  -- none present (e.g. game already won)
  */
 async function recordDealState(page) {
-  const btn = page.locator("button.btn.btn-new:visible", { hasText: /Record Deal/ });
-  if (await btn.count()) {
-    const text = await btn.first().textContent();
-    const dealNo = parseInt(text.replace(/\D+/g, ""), 10);
-    return { state: "ready", dealNo };
-  }
-  const lockedBar = page.locator(".view-only-bar:visible", { hasText: "Someone else is currently entering this hand" });
+  if (await newBidBtn(page).count()) return { state: "ready" };
+  if (await recordTakeBtn(page).count()) return { state: "take" };
+  const lockedBar = page.locator(".view-only-bar:visible", {
+    hasText: /Someone else is currently entering|being edited on another device|playing the hand/,
+  });
   if (await lockedBar.count()) return { state: "locked", text: await lockedBar.first().textContent() };
   return { state: "unavailable" };
 }
 
 async function openNewDeal(page) {
-  await page
-    .locator("button.btn.btn-new:visible", { hasText: /Record Deal/ })
-    .click({ timeout: config.actionTimeoutMs });
+  await newBidBtn(page).click({ timeout: config.actionTimeoutMs });
   await entryScope(page).waitFor({ state: "visible", timeout: config.actionTimeoutMs });
 }
 
@@ -96,17 +105,33 @@ async function cancelEntry(page) {
   await page.waitForTimeout(60);
 }
 
-/** Full step1+step2 flow for one deal. `bidder` is either {seat} (named mode) or {teamIndex}. */
+/**
+ * Full two-phase flow for one new deal: place the bid, then record the take.
+ * `bidder` is either {seat} (named mode) or {teamIndex} (quick mode).
+ */
 async function playDeal(page, { bidder, bid, pointsTaken }) {
+  // --- Phase 1: bid ---
   await openNewDeal(page);
   if ("seat" in bidder) await pickBidderSeat(page, bidder.seat);
   else await pickBidderTeamIndex(page, bidder.teamIndex);
   await setBid(page, bid);
-  const warn = await goToStep2(page);
+  await entryScope(page)
+    .locator(".btn.btn-record", { hasText: /^Record Bid$/ })
+    .click({ timeout: config.actionTimeoutMs });
+  const warn = await bidderWarnText(page);
   if (warn) throw new Error(`Unexpected bidder warning: ${warn}`);
+  // The sheet closes on a successful bid; the pad now offers "Record Take".
+  await recordTakeBtn(page).waitFor({ state: "visible", timeout: config.actionTimeoutMs });
+
+  // --- Phase 2: take ---
+  await recordTakeBtn(page).click({ timeout: config.actionTimeoutMs });
+  await entryScope(page).waitFor({ state: "visible", timeout: config.actionTimeoutMs });
   await setPointsTaken(page, pointsTaken);
   const warnings = await resultWarnings(page);
-  await submitDeal(page);
+  await entryScope(page)
+    .locator(".btn.btn-record", { hasText: /^Record Take$/ })
+    .click({ timeout: config.actionTimeoutMs });
+  await page.waitForTimeout(120);
   return { warnings };
 }
 

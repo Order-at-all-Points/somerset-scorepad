@@ -162,4 +162,93 @@ const shareGameHostGuest = {
   },
 };
 
-module.exports = [shareGameHostGuest];
+// A shared best-of-1 game must log on BOTH devices the instant it's won, even
+// if nobody taps "Continue". This is the trickier archiving path: recordDeal
+// only stamps m.winner for bestOf>1, so a bestOf=1 game leaves m.winner null
+// until the (never-tapped) Continue, and the other device must derive the
+// winner from the live game itself (gameWinner(m.game)). It also guards against
+// the recording device double-logging its own game once it's decided.
+const bestOf1LogsWithoutContinue = {
+  name: "casual-shared/bestof1-logs-without-continue",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/bestof1-logs-without-continue");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    try {
+      await seats.nameAllSeats(host.page, ["N1", "N2", "N3", "N4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "N1");
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(300);
+      if (await sync.whoSheet(guest.page).count()) {
+        await sync.chooseIdentity(guest.page, "N3"); // N1's teammate (seats 0 & 2)
+      }
+
+      logger.step("Host plays the shared game to completion but NOBODY taps Continue");
+      await simulator.playDealsToCompletion(host.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 3131,
+        logger,
+        contextLabel: "host",
+      });
+      // Deliberately NOT tapping Continue.
+
+      logger.step("Wait for sync, then check both devices logged exactly one game");
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const hostHist = ((await storage.readKey(host.page, storage.KEYS.history)).value || [])
+        .filter((g) => g.winner != null);
+      const guestHist = ((await storage.readKey(guest.page, storage.KEYS.history)).value || [])
+        .filter((g) => g.winner != null);
+      if (guestHist.length !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `Guest never logged a completed shared best-of-1 game because nobody tapped Continue (found ${guestHist.length}, expected 1) -- regresses "log completed matches without a Continue tap" for the bestOf=1 gameWinner-derivation path`,
+          expected: 1,
+          actual: guestHist.length,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      } else if (guestHist[0].deals && guestHist[0].deals.length === 0) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: "Guest's early-logged shared game has an empty deals array -- buildHistoryRecordForMatch fell through to the manual branch instead of reading the live .game",
+          expected: "non-empty deals",
+          actual: "deals.length === 0",
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+      if (hostHist.length !== 1) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `Recording host logged its own shared game ${hostHist.length} times (expected 1) -- the recordDeal auto-archive and the decided-game sync path both fired without deduping`,
+          expected: 1,
+          actual: hostHist.length,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+module.exports = [shareGameHostGuest, bestOf1LogsWithoutContinue];
