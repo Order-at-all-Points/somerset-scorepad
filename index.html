@@ -1934,13 +1934,19 @@ window.SOMERSET_FB_CONFIG = {
   // formats coexist safely because ids are only ever compared record-to-record,
   // never parsed, ordered, or done arithmetic on.
   function genRecordId() { return Date.now() + "-" + genCode(); }
-  function buildHistoryRecordForMatch(t, am, m) {
+  function buildHistoryRecordForMatch(t, am, m, winnerOverride) {
     var A = t.teams[m.a], B = t.teams[m.b];
     if (!A || !B) return null;
     var ap = A.players || [], bp = B.players || [];
-    var winnerIdx = (m.winner === m.a) ? 0 : 1;
+    // winnerOverride lets callers archive a match decided by score before the
+    // continue/advance tap has stamped m.winner (see syncMyHistoryFromTourney).
+    var wv = (winnerOverride != null) ? winnerOverride : m.winner;
+    var winnerIdx = (wv === m.a) ? 0 : 1;
     var champ = isClinchingMatch(t, am);
-    var g = m.completedGame;
+    // Prefer completedGame (set by the advance tap), but fall back to the still-
+    // live .game so a decided-but-not-yet-advanced match archives with its real
+    // deals/totals instead of falling through to the empty manual:true branch.
+    var g = m.completedGame || m.game;
     // Every device that has identified as a player in a shared match archives its
     // own copy of this record independently, each with its own random id (below)
     // — so id alone can't dedup across devices. matchUid is stable across every
@@ -1985,30 +1991,57 @@ window.SOMERSET_FB_CONFIG = {
     var changed = false;
     allMatches(tourney).forEach(function (entry) {
       var am = entry.am, m = entry.m;
-      if (!m || m.a == null || m.b == null || m.winner == null) return;
-      // A shared series' Game-tab flow (see recordDeal's gameHasTourneyLink
-      // branch) sets .winner the instant the deciding deal is recorded, ahead of
-      // the explicit continue/advance tap that nulls .game and — for a clinching
-      // game — sets tourney.champion. Archiving here is a one-shot, locked-forever
-      // action (see archivedMatches below), so grabbing a "decided" match while
-      // .game is still populated would permanently miss the championship flag if
-      // this snapshot arrived before that tap. Every other flow (bracket play,
-      // manual wins) nulls .game in the same synchronous action that sets
-      // .winner, so this only ever defers the series/Game-tab case.
-      if (m.game) return;
+      if (!m || m.a == null || m.b == null) return;
+      // Archive a shared match for this device's player the instant it's decided,
+      // NOT only once .game goes null on the explicit continue/advance tap — so a
+      // completed game logs (and stats update) for every participant even if
+      // nobody ever taps Continue. A shared series' Game-tab flow sets .winner as
+      // soon as the deciding deal is recorded (see recordDeal's gameHasTourneyLink
+      // branch), but a plain best-of-1 shared game leaves .winner null until that
+      // tap, so derive the winner straight from the live game for the series case.
+      // Scoped to am.bracket==="series": bracket/round-robin formats null .game in
+      // the same synchronous action that sets .winner, so they're untouched.
+      // The championship flag can't be known yet (isClinchingMatch needs
+      // tourney.champion, only set on the advance tap) — buildHistoryRecordForMatch
+      // records it false here and the back-badge pass below flips it in place once
+      // any device advances and that state syncs in.
+      var effWinner = m.winner;
+      if (effWinner == null && am.bracket === "series" && m.game) {
+        var gw = gameWinner(m.game);
+        if (gw === 0 || gw === 1) effWinner = (gw === 0 ? m.a : m.b);
+      }
+      if (effWinner == null) return;   // truly undecided
       var uid = matchUid(am);
       if (archivedMatches[uid]) return;
       var A = tourney.teams[m.a], B = tourney.teams[m.b];
       if (!A || !B) return;
       var names = (A.players || []).concat(B.players || []).map(function (n) { return (n || "").trim().toLowerCase(); });
       if (names.indexOf(meLc) === -1) return;   // not a match this device's identified player was in
-      var rec = buildHistoryRecordForMatch(tourney, am, m);
+      var rec = buildHistoryRecordForMatch(tourney, am, m, effWinner);
       if (!rec) return;
       gameHistory.unshift(rec);
       archivedMatches[uid] = true;
       maybeHarvestPeers(rec);
       changed = true;
     });
+    // Back-badge championship on any record archived (above, or on an earlier
+    // snapshot) before tourney.champion was known. Removing the .game deferral
+    // means a clinching game gets logged with championship:false; once any device
+    // advances and sets tourney.champion, that state syncs in and we flip the flag
+    // in place — same pattern as advanceSharedGame/returnToBracket. Gated on
+    // archivedMatches so it only touches this device's own records.
+    if (tourney.champion != null) {
+      allMatches(tourney).forEach(function (entry) {
+        if (!isClinchingMatch(tourney, entry.am)) return;
+        var uid = matchUid(entry.am);
+        if (!archivedMatches[uid]) return;
+        gameHistory.forEach(function (h) {
+          if (h.matchUid === uid && h.tournament && !h.tournament.championship) {
+            h.tournament.championship = true; changed = true;
+          }
+        });
+      });
+    }
     if (changed) { saveHistory(); saveArchivedMatches(); }
   }
 
@@ -2098,6 +2131,11 @@ window.SOMERSET_FB_CONFIG = {
   var lastReestablishAt = 0;
   function reestablishTourney() {
     if (!fb || !tourney || !syncCode) return false;
+    // Never resurrect a dead server record for a spectator, or for any session
+    // whose watched game/series is already over — otherwise a spectator whose
+    // host has ended the session (its remote record deleted/expired) would keep
+    // re-creating it from stale local state. See isSpectatorFor/spectatorSessionOver.
+    if (isSpectatorFor(syncCode) || spectatorSessionOver(tourney)) return false;
     if (Date.now() - lastReestablishAt <= 5000) return false;
     lastReestablishAt = Date.now();
     lastSyncedTourney = null;
@@ -2106,6 +2144,29 @@ window.SOMERSET_FB_CONFIG = {
     saveTourney();
     syncRender();
     return true;
+  }
+  // A "spectator" is a synced user who chose not to play (clearIdentity leaves
+  // myIdentity.name null for the current session's code). They never see the
+  // end-of-game offer sheet or tap the Continue/New Game buttons that tear a
+  // session down, so their stale session must be cleared/blocked explicitly.
+  function isSpectatorFor(code) {
+    return !!myIdentity && myIdentity.code === code && myIdentity.name === null;
+  }
+  // True only when a watched session is TRULY finished — the whole series/
+  // tournament is clinched, or a lone best-of-1 shared game is decided with
+  // nothing queued after it. Deliberately false for the between-games state of a
+  // multi-game series (champion still null, the live slot holds a fresh undecided
+  // game re-attached by setSeriesWinner), so a spectator is never cleared
+  // mid-series, and false after the host taps "New Game" (which resets champion
+  // to null), so a resumed continuation isn't torn down.
+  function spectatorSessionOver(t) {
+    if (!t) return false;
+    if (t.champion != null) return true;
+    if (t.format === "series" && t.bestOf === 1) {
+      var slot = liveSeriesSlot(t);
+      if (slot && slot.game && gameWinner(slot.game) != null) return true;
+    }
+    return false;
   }
   function syncWriteDone(gen) {
     if (gen !== syncGen) return;   // late ack from a torn-down session
@@ -2121,6 +2182,16 @@ window.SOMERSET_FB_CONFIG = {
     var code = localStorage.getItem(SYNC_CODE_KEY);
     var role = localStorage.getItem(SYNC_ROLE_KEY);
     if (code && tourney && initFb()) {
+      // A spectator whose watched game/series already finished should NOT resume
+      // it (it would show the old finished game as though still in progress).
+      // Nobody hands a spectator a teardown, so do it here: set syncCode first
+      // (saveTourney's teardown branch only removes the sync keys when it's set),
+      // then null the tourney to clear TOURNEY_KEY + SYNC_CODE_KEY/SYNC_ROLE_KEY.
+      if (isSpectatorFor(code) && spectatorSessionOver(tourney)) {
+        syncCode = code; syncRole = role || "guest";
+        tourney = null; saveTourney();
+        return;
+      }
       syncCode = code; syncRole = role || "guest";
       subscribeToTourney(code);
     }
@@ -5747,6 +5818,14 @@ window.SOMERSET_FB_CONFIG = {
         } else if (gameHasTourneyLink()) {
           var seriesAm = { bracket:"series", gi: tourney.games.length - 1 };
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }, seriesAm) || null;
+          // This device just archived the game itself, so lock the match against
+          // its own syncMyHistoryFromTourney re-archiving it (that path now fires
+          // the instant a game is decided, no longer only once .game is null — see
+          // its comment). Idempotent with the later markMatchArchived in
+          // advanceSharedGame. Must be the LOCAL archivedMatches flag, not the
+          // synced game.archivedId, which rides the snapshot to every device and
+          // would wrongly re-suppress the other participants this now logs for.
+          markMatchArchived(seriesAm);
           // Record just the winner on the tourney's live slot right away so the
           // series tally is correct for the between-games screen the very next
           // render — advanceSharedGame still owns queuing the actual next game.
