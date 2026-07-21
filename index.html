@@ -6258,22 +6258,11 @@ window.SOMERSET_FB_CONFIG = {
         card.appendChild(el("p", { class:"empty disp" }, ["No games match this filter."]));
       } else {
         var groups = buildHistoryGroups(filtered);
-        if (groups.length > 1) {
-          // A single toggle instead of two competing links: it reflects the current
-          // state — "Collapse all" when every group is already open (matching the
-          // per-group open logic in renderHistoryGroup, where group 0 defaults open),
-          // otherwise "Expand all" — and one tap flips them all the other way.
-          var allGroupsOpen = groups.every(function (g, i) {
-            return ui.historyGroupOpen.hasOwnProperty(g.key) ? ui.historyGroupOpen[g.key] === true : i === 0;
-          });
-          card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
-            el("button", { class:"link-btn disp hist-expand-toggle" + (allGroupsOpen ? " all-open" : ""),
-              onClick:function(){ setAllHistoryGroupsOpen(groups, !allGroupsOpen); } }, [
-              el("span", { class:"disp" }, [ allGroupsOpen ? "Collapse all" : "Expand all" ]),
-              el("span", { class:"hist-expand-gl" }, ["▾"])
-            ])
-          ]));
-        }
+        // The whole-log "Expand all / Collapse all" toggle is hidden for now — it
+        // ate too much vertical space. Per-group headers still expand/collapse
+        // individually (and group 0 defaults open). To restore, re-render a
+        // .hist-expand-toggle here that flips setAllHistoryGroupsOpen(groups, ...)
+        // based on whether every group is currently open.
         // The most recent group (first in the list — gameHistory is maintained newest-first)
         // opens by default so returning users land on their last game instead of a wall of
         // collapsed headers; every other group still defaults closed. An explicit toggle
