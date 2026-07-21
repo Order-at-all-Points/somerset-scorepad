@@ -6718,11 +6718,20 @@ window.SOMERSET_FB_CONFIG = {
     // in YOUR history, and folding the two together would double-count every
     // shared match (each side archives its own copy).
     var followedPeer = peerForPlayerName(p.name);
-    if (followedPeer && statsSharingOn() && followedPeer.follow) {
-      var fpid = followedPeer.profileId;
-      var dc = digestCache[fpid];
-      var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
-        (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+    var fpid = followedPeer ? followedPeer.profileId : null;
+    var dc = fpid ? digestCache[fpid] : null;
+    var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
+      (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+    // When a fresh live digest merely echoes what your own History already
+    // shows — identical wins, losses, and total games — the section would just
+    // duplicate the numbers on the rest of this page, so suppress it entirely.
+    // Any divergence (they have games you don't), staleness, or a non-OK status
+    // still renders, since those all carry something the local page can't.
+    var digestMatchesLocal = !!(dc && dc.status === "ok" && dc.data && !digestStale &&
+      (dc.data.wins || 0) === p.wins &&
+      (dc.data.losses || 0) === p.losses &&
+      (dc.data.games || 0) === p.gamesPlayed);
+    if (followedPeer && statsSharingOn() && followedPeer.follow && !digestMatchesLocal) {
       var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
       var overallExplain = digestStale
         ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."

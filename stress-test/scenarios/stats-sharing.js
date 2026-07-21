@@ -612,6 +612,78 @@ const revocableAfterOwnerUnlink = guard("stats-sharing/revocable-after-owner-unl
   }
 });
 
+// ---------------------------------------------------------------------------
+// F7 -- a live digest identical to the follower's own History must not render
+//        as a duplicate "Overall record" section
+// ---------------------------------------------------------------------------
+const matchingDigestIsHidden = guard("stats-sharing/matching-digest-is-hidden", async ({ browser, logger, track }) => {
+  const { alice, bob, bobPid } = await establishMutualSharing(browser, logger, { seed: 51 });
+  track(alice); track(bob);
+
+  const stats = require("../lib/pageobjects/stats");
+  const putDigestField = (field, value) => fetch(
+    `${config.emulator.databaseUrl}/statsProfiles/${bobPid}/digest/${field}.json` +
+    `?ns=${config.emulator.namespace}&access_token=owner`,
+    { method: "PUT", body: JSON.stringify(value) });
+
+  // Bob's published totals after the shared game. By construction these equal
+  // what Alice's own History shows for him -- she archived that same one game --
+  // so this is exactly the "no discrepancy" case the section must suppress.
+  const base = await emulator.pollFor(async () => {
+    const d = await emulator.dbGet(`statsProfiles/${bobPid}/digest`);
+    return d && d.games != null ? d : null;
+  });
+  if (!base) {
+    await logger.record({ severity: "high", category: "fixture",
+      summary: "Baseline failed: Bob's digest never published", page: bob.page });
+    return;
+  }
+
+  const liveSectionCount = async () => {
+    await alice.page.reload();
+    await alice.page.waitForTimeout(config.syncSettleMs);
+    await stats.openStatsBoard(alice.page);
+    await stats.openPlayerDetail(alice.page, "Bob");
+    await alice.page.waitForTimeout(1200);
+    return alice.page.locator(".stats-section-title", { hasText: "Overall record" }).count();
+  };
+
+  // Phase A -- push Bob's live record past Alice's local view. The section MUST
+  // appear now; this doubles as proof that the digest actually reaches Alice's
+  // device, so a Phase-B absence means suppression rather than a delivery race.
+  await putDigestField("games", (base.games || 0) + 1);
+  await putDigestField("wins", (base.wins || 0) + 1);
+  const shownWhenDiverged = await emulator.pollFor(async () =>
+    (await liveSectionCount()) > 0 ? true : null, 6, 500);
+  if (!shownWhenDiverged) {
+    await logger.record({ severity: "high", category: "fixture",
+      summary: "Baseline failed: the Overall-record section never appeared even when Bob's live record diverged from Alice's History",
+      page: alice.page });
+    return;
+  }
+
+  // Phase B -- restore the digest to the values that match Alice's History. The
+  // section must now be gone. Poll for absence so we don't assert mid-update.
+  await putDigestField("games", base.games || 0);
+  await putDigestField("wins", base.wins || 0);
+  let stillShown = 1;
+  for (let i = 0; i < 6 && stillShown > 0; i++) stillShown = await liveSectionCount();
+  if (stillShown > 0) {
+    await logger.record({
+      severity: "low",
+      category: "correctness",
+      summary:
+        "A followed peer's live digest whose wins/losses/games exactly match the follower's own History is still " +
+        "rendered as a separate \"Overall record\" section, duplicating the numbers the rest of the stats page " +
+        "already shows. renderStatsPlayer() gates the section on !digestMatchesLocal (index.html) -- if this " +
+        "fires, that guard has regressed.",
+      expected: "no separate Overall-record section when the live digest equals the local numbers",
+      actual: "the Overall-record section is still shown despite an exact wins/losses/games match",
+      page: alice.page,
+    });
+  }
+});
+
 module.exports = [
   backupOffStopsSharing,
   unlinkSpareKeepsSharing,
@@ -620,4 +692,5 @@ module.exports = [
   idsSurviveBurst,
   staleDigestIsMarked,
   revocableAfterOwnerUnlink,
+  matchingDigestIsHidden,
 ];
