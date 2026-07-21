@@ -181,6 +181,28 @@ async function pollFor(fn, attempts = 15, delay = 1000) {
     }, 8);
     check("Alice granted Bob in allowed/", !!(aliceAllowed && aliceAllowed[bobProfile]), JSON.stringify(aliceAllowed));
 
+    // ---- Diverge Bob's live record from Alice's local view ----
+    // After the single shared game, Alice already holds every game Bob has, so
+    // his digest merely echoes her own History for him — and the app now
+    // suppresses the "Overall record" section in exactly that case (it would
+    // just duplicate the numbers on the rest of the page). Simulate Bob having
+    // recorded a game elsewhere that Alice never witnessed by bumping his
+    // published totals, so his live record exceeds what she has locally — which
+    // is precisely when the section is meant to appear. Highlights are left
+    // untouched so the highlight assertions below still stand.
+    const bobDigest0 = await pollFor(async () => {
+      const res = await fetch(`http://127.0.0.1:9000/statsProfiles/${bobProfile}/digest.json?ns=demo-somerset-default-rtdb&access_token=owner`);
+      const val = await res.json();
+      return val && val.games != null ? val : null;
+    }, 10);
+    check("Bob's digest published before divergence bump", !!bobDigest0,
+      bobDigest0 && JSON.stringify({ games: bobDigest0.games, wins: bobDigest0.wins }));
+    const bd0 = bobDigest0 || {};
+    for (const [field, value] of [["games", (bd0.games || 0) + 1], ["wins", (bd0.wins || 0) + 1]]) {
+      await fetch(`http://127.0.0.1:9000/statsProfiles/${bobProfile}/digest/${field}.json?ns=demo-somerset-default-rtdb&access_token=owner`,
+        { method: "PUT", body: JSON.stringify(value) });
+    }
+
     // ---- Alice's Stats detail for Bob shows his live digest ----
     await stats.openStatsBoard(alice.page);
     await stats.openPlayerDetail(alice.page, "Bob");

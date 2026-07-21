@@ -409,18 +409,33 @@
   .settings-toggle:active { opacity:.6; background:var(--felt-wash-strong); }
   .table-label { text-align:center; color:var(--ink-soft); font-size:13px; margin:12px 0 0; }
   .table-label b { font-weight:600; color:var(--brass-text); }
-  .table { position:relative; width:100%; max-width:300px; height:172px; margin:16px auto 16px; }
-  .seat { position:absolute; transform:translate(-50%,-50%); width:96px; max-width:42%; text-align:center;
+  /* Extra top margin (vs. the 16px below) clears room between the scoreboard's
+     divider line and the top seat, so a floating "Dealer" tag there (see
+     .dealer-tag) doesn't crowd the rule above it. */
+  .table { position:relative; width:100%; max-width:300px; height:172px; margin:32px auto 16px; }
+  /* .seat-wrap owns the table placement (absolute position + centering transform);
+     .seat owns the tile's own look and clips long names to an ellipsis via
+     overflow:hidden. Kept separate so the floating .dealer-tag (a sibling of .seat,
+     positioned above it) never gets clipped by that overflow:hidden. */
+  .seat-wrap { position:absolute; transform:translate(-50%,-50%); width:96px; max-width:42%; }
+  .seat { text-align:center;
     background:var(--control);
     border:1.5px solid var(--seat-rule); border-radius:var(--r-control); padding:6px 4px; cursor:pointer; overflow:hidden;
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease; }
-  .seat:active { transform:translate(-50%,-50%) scale(.93); box-shadow:none; }
+  .seat:active { transform:scale(.93); box-shadow:none; }
   .seat .pname { font-family:var(--font-text); font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .seat .pteam { font-family:var(--font-text); font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:clip; }   /* 11px = HIG minimum (was 10px) */
   .seat.dealer { border-color:var(--brass-text);
     background:var(--control);
     box-shadow:inset 0 0 0 2px var(--brass), 0 1px 2px rgba(0,0,0,.12); }
+  /* Plain-language backup for the arrow/ring: names the dealer outright so nobody
+     has to decode a symbol to find them. Floats above the tile rather than adding
+     a line inside it, so the tile's height/centering never shifts when the dealer
+     changes. */
+  .dealer-tag { position:absolute; left:50%; top:0; transform:translate(-50%, calc(-100% - 4px));
+    font-family:var(--font-text); font-size:10px; font-weight:700;
+    letter-spacing:.07em; text-transform:uppercase; color:var(--brass-text); white-space:nowrap; }
   /* A solid filled arrowhead (drawn as an SVG shape, not a font glyph) reads far more
      clearly at a glance than a thin-stroke text arrow — font arrow glyphs render at
      wildly different weights across platforms and are easy to miss on the felt. */
@@ -5496,14 +5511,18 @@ window.SOMERSET_FB_CONFIG = {
     var seats = order.map(function (i, viewPos) {
       var team = i % 2;
       var isMyTeam = myTeam == null ? (team === 0) : (team === myTeam);
-      return el("div", {
-        class:"seat" + (i === cur ? " dealer" : ""), style:pos[viewPos], role:"button",
-        "aria-label":"Options for " + seatName(i),
-        onClick:function(){ ui.seatMenu = i; ui.seatMenuMode = "menu"; render(); }
-      }, [
-        el("div", { class:"pname disp" }, [seatName(i)]),
-        el("div", { class:"pteam disp", style:"color:" + (isMyTeam ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(teamLabel(team).length, 1)))) + "px;" }, [teamLabel(team)])
-      ]);
+      var isDealerSeat = i === cur;
+      return el("div", { class:"seat-wrap", style:pos[viewPos] }, [
+        el("div", {
+          class:"seat" + (isDealerSeat ? " dealer" : ""), role:"button",
+          "aria-label":"Options for " + seatName(i) + (isDealerSeat ? ", dealer" : ""),
+          onClick:function(){ ui.seatMenu = i; ui.seatMenuMode = "menu"; render(); }
+        }, [
+          el("div", { class:"pname disp" }, [seatName(i)]),
+          el("div", { class:"pteam disp", style:"color:" + (isMyTeam ? "var(--brass-text)" : "var(--ink-soft)") + "; font-size:" + Math.max(9, Math.min(10, Math.floor(120 / Math.max(teamLabel(team).length, 1)))) + "px;" }, [teamLabel(team)])
+        ]),
+        isDealerSeat ? el("div", { class:"dealer-tag disp", "aria-hidden":"true" }, ["Dealer"]) : null
+      ].filter(Boolean));
     });
     var arrow = el("div", { class:"deal-arrow disp", "aria-hidden":"true",
       html:'<span class="deal-arrow-shadow">' + DEALER_ARROW_SVG + '</span><span class="deal-arrow-face">' + DEALER_ARROW_SVG + '</span>',
@@ -6258,22 +6277,11 @@ window.SOMERSET_FB_CONFIG = {
         card.appendChild(el("p", { class:"empty disp" }, ["No games match this filter."]));
       } else {
         var groups = buildHistoryGroups(filtered);
-        if (groups.length > 1) {
-          // A single toggle instead of two competing links: it reflects the current
-          // state — "Collapse all" when every group is already open (matching the
-          // per-group open logic in renderHistoryGroup, where group 0 defaults open),
-          // otherwise "Expand all" — and one tap flips them all the other way.
-          var allGroupsOpen = groups.every(function (g, i) {
-            return ui.historyGroupOpen.hasOwnProperty(g.key) ? ui.historyGroupOpen[g.key] === true : i === 0;
-          });
-          card.appendChild(el("div", { class:"sync-bar", style:"justify-content:flex-end;" }, [
-            el("button", { class:"link-btn disp hist-expand-toggle" + (allGroupsOpen ? " all-open" : ""),
-              onClick:function(){ setAllHistoryGroupsOpen(groups, !allGroupsOpen); } }, [
-              el("span", { class:"disp" }, [ allGroupsOpen ? "Collapse all" : "Expand all" ]),
-              el("span", { class:"hist-expand-gl" }, ["▾"])
-            ])
-          ]));
-        }
+        // The whole-log "Expand all / Collapse all" toggle is hidden for now — it
+        // ate too much vertical space. Per-group headers still expand/collapse
+        // individually (and group 0 defaults open). To restore, re-render a
+        // .hist-expand-toggle here that flips setAllHistoryGroupsOpen(groups, ...)
+        // based on whether every group is currently open.
         // The most recent group (first in the list — gameHistory is maintained newest-first)
         // opens by default so returning users land on their last game instead of a wall of
         // collapsed headers; every other group still defaults closed. An explicit toggle
@@ -6729,11 +6737,20 @@ window.SOMERSET_FB_CONFIG = {
     // in YOUR history, and folding the two together would double-count every
     // shared match (each side archives its own copy).
     var followedPeer = peerForPlayerName(p.name);
-    if (followedPeer && statsSharingOn() && followedPeer.follow) {
-      var fpid = followedPeer.profileId;
-      var dc = digestCache[fpid];
-      var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
-        (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+    var fpid = followedPeer ? followedPeer.profileId : null;
+    var dc = fpid ? digestCache[fpid] : null;
+    var digestStale = !!(dc && dc.status === "ok" && dc.data && dc.data.updatedAt &&
+      (Date.now() - dc.data.updatedAt) > DIGEST_STALE_MS);
+    // When a fresh live digest merely echoes what your own History already
+    // shows — identical wins, losses, and total games — the section would just
+    // duplicate the numbers on the rest of this page, so suppress it entirely.
+    // Any divergence (they have games you don't), staleness, or a non-OK status
+    // still renders, since those all carry something the local page can't.
+    var digestMatchesLocal = !!(dc && dc.status === "ok" && dc.data && !digestStale &&
+      (dc.data.wins || 0) === p.wins &&
+      (dc.data.losses || 0) === p.losses &&
+      (dc.data.games || 0) === p.gamesPlayed);
+    if (followedPeer && statsSharingOn() && followedPeer.follow && !digestMatchesLocal) {
       var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
       var overallExplain = digestStale
         ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."

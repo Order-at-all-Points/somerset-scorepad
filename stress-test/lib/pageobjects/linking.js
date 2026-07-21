@@ -27,7 +27,9 @@ async function openDisplaySheet(page) {
 }
 
 function displaySheet(page) {
-  return page.locator('[role="dialog"][aria-label="Display settings"]');
+  // The sheet #menuBtn opens was renamed "Display settings" -> "Settings" in
+  // c83483f (Appearance regrouped in); the app dialog is aria-label="Settings".
+  return page.locator('[role="dialog"][aria-label="Settings"]');
 }
 
 /**
