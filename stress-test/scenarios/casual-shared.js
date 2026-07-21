@@ -6,6 +6,7 @@ const history = require("../lib/pageobjects/history");
 const nav = require("../lib/pageobjects/nav");
 const newGame = require("../lib/pageobjects/newGame");
 const storage = require("../lib/pageobjects/storage");
+const stats = require("../lib/pageobjects/stats");
 const simulator = require("../lib/simulator");
 const tSetup = require("../lib/pageobjects/tournamentSetup");
 const config = require("../config");
@@ -350,6 +351,54 @@ const loneSharedGameIsStandard = {
           severity: "high",
           category: "regression-repro",
           summary: "The 'Standard' History filter hides a lone shared game that should be Standard",
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+
+      // Regression: a lone shared game always clinches its own wrapper "series"
+      // the instant it's decided (bestOf:1 -> the only game IS the last game),
+      // so isClinchingMatch/the Continue-tap handler used to stamp
+      // tournament.championship:true unconditionally on tourney.champion being
+      // set -- independent of isTournamentRecord(). That gave the winners a
+      // trophy despite History correctly labeling the game "Standard Game".
+      // Guards tourneyHasRealChampionship (a series only has a real title once
+      // bestOf > 1).
+      logger.step("The record must never be stamped championship:true -- a lone game has no real title to hand out");
+      if (rec.tournament.championship) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `A lone shared bestOf:1 game's own record was stamped tournament.championship:true (${JSON.stringify(rec.tournament)}), which shows a trophy for its winners despite reading as a Standard game`,
+          expected: "championship: falsy",
+          actual: JSON.stringify(rec.tournament),
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+
+      logger.step("The winning player's Stats must not credit a championship for this lone game");
+      const winnerName = rec.players[rec.winner];
+      await stats.openStatsBoard(host.page);
+      await stats.openPlayerDetail(host.page, winnerName);
+      await host.page.waitForTimeout(150);
+      const tiles = host.page.locator(".stats-tile-grid .stats-tile");
+      const tileCount = await tiles.count();
+      let championshipsTile = null;
+      for (let i = 0; i < tileCount; i++) {
+        const label = (await tiles.nth(i).innerText()).trim();
+        if (/Championships/i.test(label)) {
+          championshipsTile = Number((await tiles.nth(i).locator(".stats-tile-num").textContent()).trim());
+          break;
+        }
+      }
+      if (championshipsTile) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `${winnerName}'s Championships stat tile reads ${championshipsTile} after winning only a lone shared bestOf:1 game, expected 0`,
+          expected: 0,
+          actual: championshipsTile,
           page: host.page,
           contextLabel: "host",
         });

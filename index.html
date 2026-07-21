@@ -1917,13 +1917,21 @@ window.SOMERSET_FB_CONFIG = {
     }
     return out;
   }
+  // A series only has a real title to hand out if it's longer than one game — a
+  // lone shared game is wrapped internally as format:"series" bestOf:1 to reuse
+  // the series sync/lock machinery (see isTournamentRecord in the History/Stats
+  // layer, which applies the same rule on read). Brackets (single/double/round)
+  // always have a real champion once t.champion is set.
+  function tourneyHasRealChampionship(t) {
+    return t.format !== "series" || t.bestOf > 1;
+  }
   // Was this match the one that actually crowned the tournament/series champion?
   function isClinchingMatch(t, am) {
     if (t.champion == null) return false;
     if (!am.bracket) return am.ri === t.rounds.length - 1;
     if (am.bracket === "gf") return t.grandFinal.m2 ? am.match === 2 : am.match === 1;
     if (am.bracket === "rr") return !!am.isFinal;
-    if (am.bracket === "series") return am.gi === t.games.length - 1;
+    if (am.bracket === "series") return t.bestOf > 1 && am.gi === t.games.length - 1;
     return false;
   }
   // Build a History record for a completed match exactly like the in-app
@@ -4813,7 +4821,8 @@ window.SOMERSET_FB_CONFIG = {
       if (!gdRec) { ui.gameDetailRecId = null; ui.gameDetailShared = null; }
       else {
         var closeGameDetail = function(){ ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); };
-        var gdIsChamp = !!(gdRec.tournament && gdRec.tournament.championship);
+        // Gated on isTournamentRecord — see renderHistoryItem's isChamp for why.
+        var gdIsChamp = isTournamentRecord(gdRec) && !!(gdRec.tournament && gdRec.tournament.championship);
         var gdManual = !!(gdRec.tournament && gdRec.tournament.manual);
         var gdWinTxt = historyWinnerText(gdRec);
         var gdvo = scoreViewOrder(gdRec.players);   // own team's score on the left, matching the hands below
@@ -5986,7 +5995,7 @@ window.SOMERSET_FB_CONFIG = {
     // If this game just crowned the champion, the record archived above
     // predates that (recordDeal archives before champion is known), so
     // badge it now — same as returnToBracket does for the bracket flow.
-    if (tourney.champion != null && tourney.champion !== champBefore && archivedId) {
+    if (tourney.champion != null && tourney.champion !== champBefore && archivedId && tourneyHasRealChampionship(tourney)) {
       var justArchived = gameHistory.filter(function (h) { return h.id === archivedId; })[0];
       if (justArchived && justArchived.tournament) {
         justArchived.tournament.championship = true;
@@ -6411,7 +6420,10 @@ window.SOMERSET_FB_CONFIG = {
         var margin = rec.totals ? (rec.totals[team] - rec.totals[1 - team]) : null;
         p.games.push({
           recId: rec.id, date: rec.date, team: team, seat: seat, won: won, tie: tie,
-          champion: !!(rec.tournament && rec.tournament.championship && won),
+          // isT (isTournamentRecord) gates this — a lone shared best-of-1 game can
+          // carry a stray championship:true (see tourneyHasRealChampionship) and
+          // must not inflate a player's championships count.
+          champion: !!(isT && rec.tournament.championship && won),
           moons: moonsBySeat[seat], sets: setsBySeat[seat], moonAttempts: moonAttemptsBySeat[seat],
           hailMaryDeficit: hailMaryBySeat[seat] || null,
           bids: bidsBySeat[seat], bidPoints: bidPtsBySeat[seat],
@@ -7198,7 +7210,10 @@ window.SOMERSET_FB_CONFIG = {
 
   function renderHistoryItem(rec) {
     var open = ui.historyOpen === rec.id;
-    var isChamp = !!(rec.tournament && rec.tournament.championship);
+    // Gated on isTournamentRecord, not just the raw flag: a lone shared best-of-1
+    // game can carry a stray championship:true (see tourneyHasRealChampionship)
+    // and must never show a trophy despite that flag.
+    var isChamp = isTournamentRecord(rec) && !!(rec.tournament && rec.tournament.championship);
     var manual = !!(rec.tournament && rec.tournament.manual);   // winner picked by hand, no game
     var winTxt = historyWinnerText(rec);
     // Category drives the left spine (see .hist-entry[data-cat]) — a championship is a
@@ -7876,7 +7891,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (m) m.game = null;
     routeMatchWinner(am, teamIdx);
-    if (tourney.champion != null && tourney.champion !== champBefore && archived && archived.tournament) {
+    if (tourney.champion != null && tourney.champion !== champBefore && archived && archived.tournament && tourneyHasRealChampionship(tourney)) {
       archived.tournament.championship = true;
       saveHistory();
     }
@@ -7900,7 +7915,7 @@ window.SOMERSET_FB_CONFIG = {
     m.game = null;
     routeMatchWinner(am, tournTeam);
     // If this game crowned the tournament champion, mark its history record.
-    if (tourney.champion != null && tourney.champion !== champBefore && justArchived && justArchived.tournament) {
+    if (tourney.champion != null && tourney.champion !== champBefore && justArchived && justArchived.tournament && tourneyHasRealChampionship(tourney)) {
       justArchived.tournament.championship = true;
       saveHistory();
     }
