@@ -7332,11 +7332,16 @@ window.SOMERSET_FB_CONFIG = {
       // tag when made); it turns red for a set — the red hh-sc score marks the set
       // team's column too.
       var bidSuffix = " bid " + d.bid + (isMoonMade(d) ? " (moon)" : "");
+      // Their column reserves a leading space the width of a minus sign even when
+      // the value isn't negative, so the digits don't drift right of the divider
+      // on hands where a neighboring row happens to show a set's "-N".
+      var theirSc = delta[tvo[1]];
+      var theirScText = (theirSc < 0 ? "" : " ") + theirSc;
       handsWrap.appendChild(el("div", { class:"hist-hand" }, [
         el("span", { class:"hh-no mono" }, [ (idx + 1) + "." ]),
         el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[0] ? " red" : "") }, [ String(delta[tvo[0]]) ]),
         el("span", { class:"mono" }, ["|"]),
-        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[1] ? " red" : "") }, [ String(delta[tvo[1]]) ]),
+        el("span", { class:"hh-sc mono" + (isSet && d.bidTeam === tvo[1] ? " red" : "") }, [ theirScText ]),
         el("span", { class:"hh-bid disp" + (isSet ? " red" : "") }, [ bidderName + bidSuffix ]),
         el("span", { class:"hh-dlr disp" }, [ dName ])
       ]));
