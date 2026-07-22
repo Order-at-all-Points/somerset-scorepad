@@ -284,18 +284,15 @@
   .deal-head-score .dh-badge { display:inline-block; }   /* nudged in JS so its "&" sits over the score digits, see alignDealHead */
   .deal-head-bidder { flex:2 1 0; min-width:0; text-align:center; }
   .deal-head-dealer { flex:1 1 0; min-width:0; text-align:right; }
-  /* Mirrors .deal-row's own flex layout (same padding/gap and the same
-     none/2/1 column split) so each action lines up under the row's score,
-     bidder and dealer columns respectively. */
-  .deal-detail { display:flex; align-items:center; gap:8px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); }
-  .deal-detail-cell { flex:none; }
-  /* Width is pinned in JS (alignDealDetailLeft) to match a real row's own
-     score-block, so this centers "Edit Take" under the whole "we | they" block
-     rather than under just its first digit. */
-  .deal-detail-cell.l { text-align:center; }
-  .deal-detail-cell.c { flex:2 1 0; min-width:0; text-align:center; }
-  .deal-detail-cell.r { flex:1 1 0; min-width:0; text-align:right; }
-  .deal-detail-cell .link-btn { padding:4px; margin:0; font-size:13px; }
+  /* Edit/Delete as a full-width split button pair — same brass/red fills and
+     left/right placement as the swipe actions below (makeSwipeRow), so tapping
+     the row to reveal them reads as the same action grammar as swiping it. */
+  .deal-detail { display:flex; border-bottom:1px solid var(--cream-shade); overflow:hidden; }
+  .deal-detail-btn { flex:1; border:none; padding:10px 0; font-family:var(--font-text);
+    font-size:13px; font-weight:600; color:var(--cream); cursor:pointer; }
+  .deal-detail-btn.edit { background:var(--brass); border-right:1px solid rgba(0,0,0,.15); }
+  .deal-detail-btn.delete { background:var(--red); }
+  .deal-detail-btn:active { filter:brightness(.92); }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
   .deal-row-wrap { position:relative; overflow:hidden; }
@@ -4183,8 +4180,6 @@ window.SOMERSET_FB_CONFIG = {
     target.__dealHeadScoreEl = null;
     target.__dealRefScoreEl = null;
     target.__dealRefBidderEl = null;
-    target.__dealDetailLeftEl = null;
-    target.__dealDetailCenterEl = null;
     // Every Bidder cell (header, each row, the pending row) so alignBidderColumn
     // can nudge them all by the same amount — see that function for why.
     target.__dealBidderEls = [];
@@ -4262,25 +4257,14 @@ window.SOMERSET_FB_CONFIG = {
         // The collapsed row already shows the bidder, the bid and each team's score
         // (a set hand's own setMsg tooltip covers how many the bidder actually took),
         // so the expanded detail's only job is a second, more discoverable path to
-        // editing/deleting the deal — split into Edit Bid / Edit Take so each jumps
-        // straight to the relevant half of the sheet instead of always starting at
-        // step 1, and laid out under the same score/bidder/dealer columns as the
-        // row above. Nothing to show a read-only viewer, so it doesn't open for them.
+        // editing/deleting the deal — a full-width Edit/Delete split button, brass
+        // and red like the swipe actions and in the same left/right order, mirroring
+        // the same grammar as makeSwipeRow above. Nothing to show a read-only viewer,
+        // so it doesn't open for them.
         if (isOpen && !isReadOnly) {
-          var detailLeftEl = el("span", { class:"deal-detail-cell l" }, [
-            el("button", { class:"link-btn disp", onClick:function(e){ e.stopPropagation(); startEditDeal(d, 2); } }, ["Edit Take"])
-          ]);
-          var detailCenterEl = el("span", { class:"deal-detail-cell c" }, [
-            el("button", { class:"link-btn disp", onClick:function(e){ e.stopPropagation(); startEditDeal(d, 1); } }, ["Edit Bid"])
-          ]);
-          target.__dealDetailLeftEl = detailLeftEl;
-          target.__dealDetailCenterEl = detailCenterEl;
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
-            detailLeftEl,
-            detailCenterEl,
-            el("span", { class:"deal-detail-cell r" }, [
-              el("button", { class:"link-btn danger disp", onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Delete"])
-            ])
+            el("button", { class:"deal-detail-btn edit disp", onClick:function(e){ e.stopPropagation(); startEditDeal(d); } }, ["Edit"]),
+            el("button", { class:"deal-detail-btn delete disp", onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Delete"])
           ]));
         }
       });
@@ -4432,45 +4416,7 @@ window.SOMERSET_FB_CONFIG = {
     target.__teamNameEls = teamNameEls;
     if (target.isConnected) equalizeTeamNames(teamNameEls);
     if (target.isConnected) alignDealHead(target.__dealHeadScoreEl, target.__dealRefScoreEl);
-    if (target.isConnected) alignDealDetailActions(target.__dealDetailLeftEl, target.__dealDetailCenterEl, target.__dealRefScoreEl, target.__dealRefBidderEl);
     if (target.isConnected) alignBidderColumn(target.__dealTableEl, target.__dealBidderEls);
-  }
-
-  // The expanded row's Edit Take / Edit Bid links (see the isOpen block above)
-  // are pinned under the row's score/bidder columns using the same
-  // measure-a-real-row trick as alignDealHead.
-  //
-  // Edit Take: size its cell (text-align:center via CSS) so its center lands on
-  // the "|" that divides we/they, not just the block's bounding-box center. The
-  // left score cell mirrors its sign (for center-aligned digits) while the right
-  // one doesn't, so the block is wider left-of-divider than right-of-it —
-  // mirroring that same asymmetry here (width = 2x the divider's own offset
-  // from the block's left edge) is what puts the two centers on the same
-  // divider, not just the same block.
-  //
-  // Edit Bid: widening Edit Take's cell to hit the divider (above) throws off
-  // how much space is left over for Edit Bid's own flex:2 share, so nudge it
-  // directly to the real bidder column's measured center via transform — the
-  // same fix alignDealHead already uses to center a team badge over its score
-  // column.
-  function alignDealDetailActions(leftEl, centerEl, refScoreEl, refBidderEl) {
-    if (leftEl && refScoreEl) {
-      var dashEl = refScoreEl.querySelector(".dash");
-      var blockRect = refScoreEl.getBoundingClientRect();
-      if (!dashEl) {
-        leftEl.style.width = blockRect.width + "px";
-      } else {
-        var dashRect = dashEl.getBoundingClientRect();
-        var dashCenterOffset = (dashRect.left + dashRect.width / 2) - blockRect.left;
-        leftEl.style.width = (dashCenterOffset * 2) + "px";
-      }
-    }
-    if (centerEl && refBidderEl) {
-      centerEl.style.transform = "";
-      var cRect = centerEl.getBoundingClientRect(), bRect = refBidderEl.getBoundingClientRect();
-      var wantCenter = bRect.left + bRect.width / 2, curCenter = cRect.left + cRect.width / 2;
-      centerEl.style.transform = "translateX(" + (wantCenter - curCenter) + "px)";
-    }
   }
 
   // The Bidder column's flex:2 1 0 share (see .deal-bidder/.deal-head-bidder
@@ -7849,7 +7795,6 @@ window.SOMERSET_FB_CONFIG = {
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
     alignDealHead(card.__dealHeadScoreEl, card.__dealRefScoreEl);
-    alignDealDetailActions(card.__dealDetailLeftEl, card.__dealDetailCenterEl, card.__dealRefScoreEl, card.__dealRefBidderEl);
     alignBidderColumn(card.__dealTableEl, card.__dealBidderEls);
   }
 
