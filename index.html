@@ -1098,7 +1098,7 @@ window.SOMERSET_FB_CONFIG = {
     rematchOffer:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
-    linkDeviceSheet:null, backupPrompt:false, sharingSheet:false, gameDetailShared:null,
+    linkDeviceSheet:null, sharingSheet:false, gameDetailShared:null,
     ambiguousClaims:[], showMonthCounts:false
   };
 
@@ -1147,15 +1147,6 @@ window.SOMERSET_FB_CONFIG = {
       if (!ids[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
     });
     lastSyncedHistoryIds = ids;
-  }
-  // One-shot, fully-dismissable "back up your History?" nudge — exact mirror of
-  // maybeSuggestIdentity() above. Checked on every renderSyncBar pass (cheap,
-  // idempotent via BACKUP_NUDGE_SEEN_KEY) rather than wired into every archive
-  // call site, since the trigger condition is just "has any history at all."
-  function maybeSuggestBackup() {
-    if (cloudSyncEnabled || backupNudgeSeen() || !gameHistory.length) return;
-    markBackupNudgeSeen();
-    ui.backupPrompt = true;
   }
   // Flip cloud sync on for this device (first-time link, either generating or
   // redeeming a code) and immediately back-fill this device's existing History.
@@ -2243,7 +2234,11 @@ window.SOMERSET_FB_CONFIG = {
   var authUid = null;
 
   var CLOUD_SYNC_KEY = "somerset:dev-cloud-sync-enabled";
-  function loadCloudSyncEnabled() { try { return localStorage.getItem(CLOUD_SYNC_KEY) === "1"; } catch (e) { return false; } }
+  // On by default (a device that's never touched this — new or pre-existing —
+  // reads "1"/"0" as unset and defaults on) so backup doesn't depend on someone
+  // finding the toggle in the hamburger menu; "Turn off backup" still writes an
+  // explicit "0" that's respected forever after.
+  function loadCloudSyncEnabled() { try { var v = localStorage.getItem(CLOUD_SYNC_KEY); return v === null ? true : v === "1"; } catch (e) { return true; } }
   function saveCloudSyncEnabled(v) { try { localStorage.setItem(CLOUD_SYNC_KEY, v ? "1" : "0"); } catch (e) {} }
   var cloudSyncEnabled = loadCloudSyncEnabled();
 
@@ -2263,10 +2258,6 @@ window.SOMERSET_FB_CONFIG = {
   var linkedUidSubs = {};          // { uid: true } for each users/<uid>/history listener currently attached
   var linkedHistoryRetries = {};   // { uid: n } re-attach budget after a cancelled read (personOf-propagation race)
   var linkedListPid = null;        // personId whose linkedUids list is subscribed; re-link triggers teardown
-
-  var BACKUP_NUDGE_SEEN_KEY = "somerset:dev-backup-nudge-seen"; // one-shot, mirrors IDENTITY_NUDGE_SEEN_KEY
-  function backupNudgeSeen() { try { return localStorage.getItem(BACKUP_NUDGE_SEEN_KEY) === "1"; } catch (e) { return false; } }
-  function markBackupNudgeSeen() { try { localStorage.setItem(BACKUP_NUDGE_SEEN_KEY, "1"); } catch (e) {} }
 
   // Records this device has explicitly deleted, keyed the same way
   // mergedHistoryForStats dedups (matchUid if shared, else id) — without this,
@@ -2308,7 +2299,10 @@ window.SOMERSET_FB_CONFIG = {
   function loadMyProfileId() { try { return localStorage.getItem(PROFILE_ID_KEY); } catch (e) { return null; } }
   function saveMyProfileId(id) { try { localStorage.setItem(PROFILE_ID_KEY, id); } catch (e) {} }
   var myProfileId = loadMyProfileId();
-  function loadAutoShare() { try { return localStorage.getItem(AUTO_SHARE_KEY) === "1"; } catch (e) { return false; } }
+  // On by default for the same reason as CLOUD_SYNC_KEY above — gated by
+  // sharingReady()/cloudSyncEnabled regardless, so this only ever takes effect
+  // once backup itself is actually on.
+  function loadAutoShare() { try { var v = localStorage.getItem(AUTO_SHARE_KEY); return v === null ? true : v === "1"; } catch (e) { return true; } }
   function saveAutoShare(v) { try { localStorage.setItem(AUTO_SHARE_KEY, v ? "1" : "0"); } catch (e) {} }
   var autoShare = loadAutoShare();
   function loadShareGameNames() { try { return localStorage.getItem(SHARE_GAME_NAMES_KEY) === "1"; } catch (e) { return false; } }
@@ -4049,7 +4043,7 @@ window.SOMERSET_FB_CONFIG = {
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
-           ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
+           ui.linkDeviceSheet != null || ui.sharingSheet;
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -6133,22 +6127,6 @@ window.SOMERSET_FB_CONFIG = {
       renderHistoryViewToggle("log"),
       renderHistoryFilterRow()
     ]);
-    // One-shot "back up your History?" nudge (see maybeSuggestBackup) — checked
-    // only here, on the History tab itself, never on the Game/Tournament views:
-    // this used to live in the shared renderSyncBar (every view, every render
-    // pass) and could pop up mid-hand-entry during active tournament play,
-    // shifting layout under the simulator's clicks and corrupting the deal being
-    // entered — confirmed via the stress-test regression it caused on
-    // tournament-single-elim/sync-6p (a moon-shot deal landed as an ordinary
-    // bid because the banner appeared between deal 1 and deal 4 of match 2).
-    maybeSuggestBackup();
-    if (ui.backupPrompt) {
-      card.appendChild(el("div", { class:"sync-bar disp", style:"background:#f3fff3; border-bottom:1px solid #52a852;" }, [
-        el("span", { style:"font-size:13px; color:#2e7d32; flex:1;" }, ["Back up your game History to the cloud?"]),
-        el("button", { class:"link-btn disp", style:"flex:none; font-size:13px;", onClick:function(){ ui.backupPrompt = false; ui.linkDeviceSheet = { step:"menu" }; render(); } }, ["Set it up"]),
-        el("button", { class:"del", style:"flex:none;", "aria-label":"Dismiss", html:CLOSE_X_SVG, onClick:function(){ ui.backupPrompt = false; softRender(); } })
-      ]));
-    }
     if (!gameHistory.length) {
       card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
     } else {
@@ -8365,7 +8343,6 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
     if (ui.identityEditor) { ui.identityEditor = false; softRender(); return true; }
     if (ui.linkDeviceSheet) { closeLinkDeviceSheet(); softRender(); return true; }
-    if (ui.backupPrompt) { ui.backupPrompt = false; softRender(); return true; }
     if (ui.mergeSheet) {
       ui.mergeSheet = (ui.mergeSheet.step === 3) ? { step:2 }
         : (ui.mergeSheet.step === 2) ? { step:1 }
