@@ -651,8 +651,8 @@
   .tvalid { padding:0 12px; font-size:13px; color:var(--red); margin:4px 0; }
   .tvalid.ok { color:var(--ink-soft); }
   .chip.soon { opacity:.45; }
-  .tcount-q { text-align:center; font-size:17px; color:var(--ink); margin:16px 0 12px; }
-  .count-stepper { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:12px; }
+  .tcount-q { text-align:center; font-size:17px; color:var(--ink); margin:20px 0 16px; }
+  .count-stepper { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:18px; }
   .count-val { font-size:34px; font-weight:600; min-width:64px; text-align:center; color:var(--ink); }
   .draw-list { padding:8px 12px 4px; }
   .draw-team { font-size:15px; color:var(--ink); padding:4px 0; }
@@ -7894,7 +7894,7 @@ window.SOMERSET_FB_CONFIG = {
     ]));
     var teamsN = ui.tCount / 2;
     card.appendChild(el("p", { class:"tvalid disp ok", style:"text-align:center;" }, [ teamsN + " teams of 2" + (teamsN % 2 === 1 ? " · one team gets a bye" : "") ]));
-    card.appendChild(el("div", { style:"padding:6px 12px 14px;" }, [
+    card.appendChild(el("div", { style:"padding:16px 12px 14px;" }, [
       el("button", { class:"btn btn-new disp", onClick:function(){
         var arr = []; for (var i = 0; i < ui.tCount; i++) arr.push("");
         ui.tSetup = { players: arr, format: "single", drawn: null }; render();
