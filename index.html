@@ -4683,19 +4683,20 @@ window.SOMERSET_FB_CONFIG = {
       // deferredInstallPrompt branch is for, on Chromium) — this sheet only ever
       // shows for the "walk them through it manually" fallback path.
       var instStepStyle = "font-style:normal; text-align:left; margin:0 0 6px;";
+      var instNumStepStyle = instStepStyle + " margin-left:16px;";
       var instKids = [ el("h3", { class:"disp", style:"margin-bottom:14px;" }, ["Add to Home Screen"]) ];
       if (isIOSDevice()) {
-        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, [
+        instKids.push(el("p", { class:"sub disp", style:instNumStepStyle }, [
           "1. Open Some-R-Set Scorepad in Safari and tap ",
           el("span", { class:"step-icon", role:"img", "aria-label":"More options", html:MORE_DOTS_SVG }, []), "."
         ]));
-        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, [
+        instKids.push(el("p", { class:"sub disp", style:instNumStepStyle }, [
           "2. Tap ",
           el("span", { class:"step-icon", role:"img", "aria-label":"Share", html:SHARE_ICON_SVG }, []),
           " to open the share menu."
         ]));
-        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, ["3. Scroll down and tap “Add to Home Screen”."]));
-        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, ["4. Tap “Add” in the top-right corner."]));
+        instKids.push(el("p", { class:"sub disp", style:instNumStepStyle }, ["3. Scroll down and tap “Add to Home Screen”."]));
+        instKids.push(el("p", { class:"sub disp", style:instNumStepStyle }, ["4. Tap “Add” in the top-right corner."]));
       } else {
         instKids.push(el("p", { class:"sub disp", style:instStepStyle },
           ["Open your browser's menu, then tap “Add to Home Screen” or “Install App”."]));
