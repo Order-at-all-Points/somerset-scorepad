@@ -284,9 +284,18 @@
   .deal-head-score .dh-badge { display:inline-block; }   /* nudged in JS so its "&" sits over the score digits, see alignDealHead */
   .deal-head-bidder { flex:2 1 0; min-width:0; text-align:center; }
   .deal-head-dealer { flex:1 1 0; min-width:0; text-align:right; }
-  .deal-detail { display:flex; align-items:center; justify-content:center; gap:8px 12px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); font-size:13px; color:var(--ink-soft); }
-  .deal-took-line { text-align:center; }
-  .deal-took-line .took-set { color:var(--red); }
+  /* Mirrors .deal-row's own flex layout (same padding/gap and the same
+     none/2/1 column split) so each action lines up under the row's score,
+     bidder and dealer columns respectively. */
+  .deal-detail { display:flex; align-items:center; gap:8px; padding:0 12px 8px; border-bottom:1px solid var(--cream-shade); }
+  .deal-detail-cell { flex:none; }
+  /* Width is pinned in JS (alignDealDetailLeft) to match a real row's own
+     score-block, so this centers "Edit Take" under the whole "we | they" block
+     rather than under just its first digit. */
+  .deal-detail-cell.l { text-align:center; }
+  .deal-detail-cell.c { flex:2 1 0; min-width:0; text-align:center; }
+  .deal-detail-cell.r { flex:1 1 0; min-width:0; text-align:right; }
+  .deal-detail-cell .link-btn { padding:4px; margin:0; font-size:13px; }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
      (which owns .fade — see the note below) so our drag transform never collides with it. */
   .deal-row-wrap { position:relative; overflow:hidden; }
@@ -4172,6 +4181,9 @@ window.SOMERSET_FB_CONFIG = {
     // header down through every deal (see alignDealHead).
     target.__dealHeadScoreEl = null;
     target.__dealRefScoreEl = null;
+    target.__dealRefBidderEl = null;
+    target.__dealDetailLeftEl = null;
+    target.__dealDetailCenterEl = null;
     // A torn-down row's swipe (if any) no longer exists in the new DOM, so drop any
     // stale reference to it rather than let the global pointerdown listener above
     // try to close a detached row.
@@ -4222,6 +4234,7 @@ window.SOMERSET_FB_CONFIG = {
         ]);
         if (!target.__dealRefScoreEl) target.__dealRefScoreEl = scoreBlockEl;
         var bidderEl = el("span", { class:"deal-bidder disp" }, descKids);
+        if (!target.__dealRefBidderEl) target.__dealRefBidderEl = bidderEl;
         // Dealer column names the dealer outright (the rotated seat arrow it used to
         // show read as a near-identical stroke at 13px, and the name is what people
         // actually want to know at a glance).
@@ -4239,15 +4252,28 @@ window.SOMERSET_FB_CONFIG = {
         history.appendChild(isReadOnly ? rowEl : makeSwipeRow(rowEl,
           function(){ startEditDeal(d); },
           function(){ removeDealWithUndo(d, idx); }));
-        if (isOpen) {
-          // The collapsed row already shows the bidder, the bid and each team's
-          // score; the expanded detail adds the one thing it can't — how many the
-          // bidding team actually took (with a set flag when they fell short).
-          var takenPts = d.pts[d.bidTeam];
-          var tookKids = [ teamLabel(d.bidTeam) + " took " + takenPts + " of " + POINTS_PER_DEAL ];
-          if (isSet) tookKids.push(el("span", { class:"took-set" }, [" · set"]));
+        // The collapsed row already shows the bidder, the bid and each team's score
+        // (a set hand's own setMsg tooltip covers how many the bidder actually took),
+        // so the expanded detail's only job is a second, more discoverable path to
+        // editing/deleting the deal — split into Edit Bid / Edit Take so each jumps
+        // straight to the relevant half of the sheet instead of always starting at
+        // step 1, and laid out under the same score/bidder/dealer columns as the
+        // row above. Nothing to show a read-only viewer, so it doesn't open for them.
+        if (isOpen && !isReadOnly) {
+          var detailLeftEl = el("span", { class:"deal-detail-cell l" }, [
+            el("button", { class:"link-btn disp", onClick:function(e){ e.stopPropagation(); startEditDeal(d, 2); } }, ["Edit Take"])
+          ]);
+          var detailCenterEl = el("span", { class:"deal-detail-cell c" }, [
+            el("button", { class:"link-btn disp", onClick:function(e){ e.stopPropagation(); startEditDeal(d, 1); } }, ["Edit Bid"])
+          ]);
+          target.__dealDetailLeftEl = detailLeftEl;
+          target.__dealDetailCenterEl = detailCenterEl;
           history.appendChild(el("div", { class:"deal-detail disp" + (noFade ? "" : " fade") }, [
-            el("span", { class:"deal-took-line" }, tookKids)
+            detailLeftEl,
+            detailCenterEl,
+            el("span", { class:"deal-detail-cell r" }, [
+              el("button", { class:"link-btn danger disp", onClick:function(e){ e.stopPropagation(); removeDealWithUndo(d, idx); } }, ["Delete"])
+            ])
           ]));
         }
       });
@@ -4398,6 +4424,44 @@ window.SOMERSET_FB_CONFIG = {
     target.__teamNameEls = teamNameEls;
     if (target.isConnected) equalizeTeamNames(teamNameEls);
     if (target.isConnected) alignDealHead(target.__dealHeadScoreEl, target.__dealRefScoreEl);
+    if (target.isConnected) alignDealDetailActions(target.__dealDetailLeftEl, target.__dealDetailCenterEl, target.__dealRefScoreEl, target.__dealRefBidderEl);
+  }
+
+  // The expanded row's Edit Take / Edit Bid links (see the isOpen block above)
+  // are pinned under the row's score/bidder columns using the same
+  // measure-a-real-row trick as alignDealHead.
+  //
+  // Edit Take: size its cell (text-align:center via CSS) so its center lands on
+  // the "|" that divides we/they, not just the block's bounding-box center. The
+  // left score cell mirrors its sign (for center-aligned digits) while the right
+  // one doesn't, so the block is wider left-of-divider than right-of-it —
+  // mirroring that same asymmetry here (width = 2x the divider's own offset
+  // from the block's left edge) is what puts the two centers on the same
+  // divider, not just the same block.
+  //
+  // Edit Bid: widening Edit Take's cell to hit the divider (above) throws off
+  // how much space is left over for Edit Bid's own flex:2 share, so nudge it
+  // directly to the real bidder column's measured center via transform — the
+  // same fix alignDealHead already uses to center a team badge over its score
+  // column.
+  function alignDealDetailActions(leftEl, centerEl, refScoreEl, refBidderEl) {
+    if (leftEl && refScoreEl) {
+      var dashEl = refScoreEl.querySelector(".dash");
+      var blockRect = refScoreEl.getBoundingClientRect();
+      if (!dashEl) {
+        leftEl.style.width = blockRect.width + "px";
+      } else {
+        var dashRect = dashEl.getBoundingClientRect();
+        var dashCenterOffset = (dashRect.left + dashRect.width / 2) - blockRect.left;
+        leftEl.style.width = (dashCenterOffset * 2) + "px";
+      }
+    }
+    if (centerEl && refBidderEl) {
+      centerEl.style.transform = "";
+      var cRect = centerEl.getBoundingClientRect(), bRect = refBidderEl.getBoundingClientRect();
+      var wantCenter = bRect.left + bRect.width / 2, curCenter = cRect.left + cRect.width / 2;
+      centerEl.style.transform = "translateX(" + (wantCenter - curCenter) + "px)";
+    }
   }
 
   // The column-header row is small uppercase text, not the 17px mono score cells
@@ -5699,8 +5763,10 @@ window.SOMERSET_FB_CONFIG = {
 
   // Prefills the entry form from an existing deal and opens it in edit mode;
   // recordDeal() below checks ui.editingDeal to update that deal in place
-  // instead of pushing a new one.
-  function startEditDeal(d) {
+  // instead of pushing a new one. `step` picks which half of the sheet lands
+  // open — 1 for the bid (Edit Bid), 2 to jump straight to the take (Edit
+  // Take) since the bid itself isn't in question there.
+  function startEditDeal(d, step) {
     var am = currentGameAm();
     var openEditEntry = function(){
       ui.editingDeal = d.id;
@@ -5711,7 +5777,7 @@ window.SOMERSET_FB_CONFIG = {
       // ui.trump = d.trump || "";   // trump recording disabled for now
       ui.bidderPts = d.pts[d.bidTeam];
       ui.showEntry = true;
-      ui.entryStep = 1;
+      ui.entryStep = step === 2 ? 2 : 1;
       ui.openDeal = null;
       softRender();
       scrollEntryIntoView();
@@ -7742,6 +7808,7 @@ window.SOMERSET_FB_CONFIG = {
     viewRootEl.appendChild(card);
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
     alignDealHead(card.__dealHeadScoreEl, card.__dealRefScoreEl);
+    alignDealDetailActions(card.__dealDetailLeftEl, card.__dealDetailCenterEl, card.__dealRefScoreEl, card.__dealRefBidderEl);
   }
 
   function renderTournamentSetup() {
