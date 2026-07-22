@@ -817,7 +817,7 @@
     background:#fff; text-align:center; text-transform:uppercase; margin-bottom:12px; }
   .join-input:focus { border-color:var(--brass-text); outline:none; }
   .join-error { color:var(--red); font-size:13px; text-align:center; margin:0 0 10px; }
-  .join-divider { text-align:center; color:var(--ink-soft); font-size:13px; margin:6px 0 8px; border-top:1px solid var(--cream-shade); padding-top:10px; }
+  .join-divider { text-align:center; color:var(--ink-soft); font-size:13px; margin:6px 0 8px; padding-top:10px; }
 
   /* ---- double elimination / round robin ---- */
   .bracket-section { border-top:2px solid var(--rule); }
@@ -7844,7 +7844,7 @@ window.SOMERSET_FB_CONFIG = {
         ui.tSetup = { players: arr, format: "single", drawn: null }; render();
       } }, [ "Set up " + ui.tCount + " players" ])
     ]));
-    card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
+    card.appendChild(el("div", { style:"padding:0 12px 28px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
       el("p", { class:"join-divider disp" }, ["Already have a tournament?"]),
       el("button", { class:"btn btn-cancel disp", style:"padding:12px 24px;", onClick:function(){ ui.joinSheet = true; render(); } }, ["Join with code"])
     ]));
