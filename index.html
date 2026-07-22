@@ -5061,7 +5061,7 @@ window.SOMERSET_FB_CONFIG = {
           ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); exportHistory(); } }, ["Export Game History"]));
         }
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); if (historyFileInputEl) historyFileInputEl.click(); } },
-          [ gameHistory.length ? "Restore Game History" : "Restore a Game History Backup" ]));
+          [ gameHistory.length ? "Import Game History" : "Import a Game History Backup" ]));
         if (ui.historySub === "board") {
           var mergeCandidates = Object.keys(computePlayerStats()).length;
           if (mergeCandidates >= 2 || Object.keys(nameAliases).length) {
