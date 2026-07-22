@@ -845,12 +845,6 @@
   .series-dash { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:20px; color:var(--ink-soft); flex:none; }
   .series-sub { text-align:center; font-size:13px; color:var(--ink-soft); margin:2px 0 12px; }
   .series-game-label { flex:1; color:var(--ink); font-size:13px; }
-  /* Mid-game series pips — one dot per game in the series, filled as each team wins one,
-     sitting under that team's own progress bar. The dot count doubles as the "best of N"
-     label, so no separate text for it is needed. */
-  .series-pips-dots { display:flex; justify-content:center; gap:4px; margin-top:7px; }
-  .series-pip { width:9px; height:9px; border-radius:50%; border:1.5px solid var(--rule); background:transparent; flex:none; }
-  .series-pip.on { background:var(--brass); border-color:var(--brass); }
   .rr-row.series-next { background:color-mix(in srgb, var(--brass) 10%, transparent); }
   .rr-row.series-next .rr-result { color:var(--brass-text); }
   .rr-row.series-live { background:rgba(82,168,82,.12); }
@@ -1077,57 +1071,22 @@ window.SOMERSET_FB_CONFIG = {
     if (name === "We" || name === "They") return rosterLine(rec, teamIdx) || (teamIdx === vo[0] ? "We" : "They");
     return name;
   }
-  // ui.series/offerSeries/seriesResult track an in-progress (or just-decided)
-  // best-of-N series/offer — deliberately local-only, never written to the
-  // synced tourney object (see acceptSeriesOffer's `linked` comment). But
-  // "local-only" still needs to survive a page reload or the OS evicting the
-  // tab/PWA mid-series, or the running win tally (and the pips derived from
-  // it — see renderScorePad's seriesInfo) silently vanishes the moment the
-  // page comes back, even though the game in progress and its deals are still
-  // there. Persisted separately from soloGame/tourney since it's UI state, not
-  // game data. Declared ahead of `ui` itself so its initial-load restore below
-  // can run immediately (var hoisting only hoists the declaration, not the
-  // assignment, so SERIES_UI_KEY must already be assigned by the time that runs).
-  var SERIES_UI_KEY = "somerset:dev-series-ui";
-  function loadSeriesUi() { try { var r = localStorage.getItem(SERIES_UI_KEY); if (r) return JSON.parse(r); } catch (e) {} return null; }
-  var lastSavedSeriesUi = null;   // skip redundant writes — render() calls this on every pass
-  function saveSeriesUi() {
-    try {
-      var blob = { series: ui.series, offerSeries: ui.offerSeries, seriesResult: ui.seriesResult };
-      var json = (blob.series || blob.offerSeries || blob.seriesResult) ? JSON.stringify(blob) : null;
-      if (json === lastSavedSeriesUi) return;
-      lastSavedSeriesUi = json;
-      if (json) localStorage.setItem(SERIES_UI_KEY, json);
-      else localStorage.removeItem(SERIES_UI_KEY);
-    } catch (e) {}
-  }
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
-    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, confirmStartSeries:null, storageOk:true,
+    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", seatMenuError:null, info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
-    activeMatch:null, matchMenu:null, editNames:false, tCount:6, sSetup:null,
+    activeMatch:null, matchMenu:null, editNames:false, tCount:6,
     joinSheet:false, joinError:null, syncError:null, syncNotice:null, backConfirm:false,
     openDeal:null, whoSheet:false, editingDeal:null, identitySuggestion:null, identityEditor:false,
-    series:null, offerSeries:null, seriesResult:null,
+    rematchOffer:null,
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
     linkDeviceSheet:null, backupPrompt:false, sharingSheet:false, gameDetailShared:null,
     ambiguousClaims:[], showMonthCounts:false
   };
-  // Restore an in-progress local series/offer that survived a reload (see
-  // SERIES_UI_KEY above) — soloGame's own deals/history already persist, so
-  // without this the running win tally would silently reset to "no series"
-  // the moment the page reloads mid-series.
-  (function restoreSeriesUi() {
-    var saved = loadSeriesUi();
-    if (!saved) return;
-    ui.series = saved.series || null;
-    ui.offerSeries = saved.offerSeries || null;
-    ui.seriesResult = saved.seriesResult || null;
-  })();
 
   // ---- Display theme (light/dark/auto) ----
   var THEME_KEY = "somerset:theme-pref";
@@ -2074,9 +2033,18 @@ window.SOMERSET_FB_CONFIG = {
     // (see isTournamentRecord) instead of splitting off as stray Standard games.
     // Runs on every device from the synced snapshot, so it reaches participants
     // who never tapped the escalation offer themselves.
+    // A seed game's championship flag must be invalidated along with the bump --
+    // a lone bestOf:1 game always "clinches" the instant it's decided (or did,
+    // pre-tourneyHasRealChampionship: a stray flag can still be sitting on an
+    // older record from before that fix), and escalating already resets the live
+    // tourney.champion to null for the exact same reason. Leaving the archived
+    // flag set double-counts a championship once the real series later clinches
+    // for real on its own final game.
     gameHistory.forEach(function (h) {
       if (h.tournament && h.tournament.id === tourney.id && h.tournament.bestOf !== tourney.bestOf) {
-        h.tournament.bestOf = tourney.bestOf; changed = true;
+        h.tournament.bestOf = tourney.bestOf;
+        h.tournament.championship = false;
+        changed = true;
       }
     });
     if (changed) { saveHistory(); saveArchivedMatches(); }
@@ -3255,7 +3223,8 @@ window.SOMERSET_FB_CONFIG = {
       if (!t.schedule) t.schedule = [];
       if (t.final) normalizeFirebaseMatch(t.final);
     } else if (t.format === "series") {
-      // Best-of series — a flat list of games between the two teams
+      // Shared 2-team game — a flat list of games between the two teams (always
+      // just one, in practice; the shape supports more only for old data)
       t.games = t.games ? fbObjToArr(t.games).map(normalizeFirebaseMatch) : [];
       if (!t.games.length) t.games = [{ a: 0, b: 1, winner: null, game: null, completedGame: null }];
     } else {
@@ -3544,13 +3513,13 @@ window.SOMERSET_FB_CONFIG = {
       if (changed) syncRender();
   }
 
-  // Local-only creation — the default for every "Start Tournament/Series" button.
+  // Local-only creation — the default for every "Start Tournament" button.
   // Sharing is a separate, explicit opt-in (see shareSession below).
   function startLocalTourney(t) {
     tourney = t; saveTourney(); ui.tSetup = null; render();
   }
 
-  // Turns the current local tourney/series into a live shared session, minting a
+  // Turns the current local tourney into a live shared session, minting a
   // join code. Explicit opt-in from either tab (Tournament tab's Share button, or
   // the Game tab's Share button — the latter first wraps the solo game in a
   // series-shaped tourney via startGameShare, then calls this same function).
@@ -3590,34 +3559,20 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // Shared team-object shape used both here (wrapping an existing named team's
-  // players) and by the Series-setup screen (naming a freshly-drawn/chosen pair).
+  // players) and by the tournament setup screens (naming a freshly-drawn/chosen pair).
   function mkTeam(name, players) {
     return { id: "t" + Math.random().toString(36).slice(2, 7), name: name, players: players };
   }
 
-  // Wraps the current solo game (in progress or empty) into a series-shaped tourney,
-  // reusing the exact sync/lock/rematch machinery a tournament series already has
-  // (see makeSeries). If a local best-of-N series was already under way (ui.series),
-  // its target and running win tally carry over as synthetic decided game slots
-  // ahead of the live one, so the shared scoreboard isn't misleading about what's
-  // actually happened so far.
+  // Wraps the current solo game (in progress or empty) into a series-shaped tourney
+  // (see makeSeries) purely to reuse its join-code sync/lock machinery for a shared
+  // 2-team game — always a single game (bestOf 1), never a real best-of series.
   function startGameShare() {
     var teamA = mkTeam(soloGame.teams[0], [soloGame.players[0], soloGame.players[2]]);
     var teamB = mkTeam(soloGame.teams[1], [soloGame.players[1], soloGame.players[3]]);
-    var bestOf = ui.series ? ui.series.bestOf : 1;
-    var t = makeSeries([teamA, teamB], bestOf);
-    t.games = [];
-    if (ui.series) {
-      // Reuse the local series' id (rather than the fresh one makeSeries just minted)
-      // so games already archived under it stay grouped with the ones still to come
-      // instead of splitting into two separate history entries once this is shared.
-      t.id = ui.series.id;
-      var i;
-      for (i = 0; i < ui.series.wins[0]; i++) t.games.push({ a:0, b:1, winner:0, game:null, completedGame:null });
-      for (i = 0; i < ui.series.wins[1]; i++) t.games.push({ a:0, b:1, winner:1, game:null, completedGame:null });
-    }
-    t.games.push({ a:0, b:1, winner:null, game:soloGame, completedGame:null });
-    ui.series = null; ui.offerSeries = null; ui.seriesResult = null;   // superseded by the shared tourney now
+    var t = makeSeries([teamA, teamB], 1);
+    t.games = [{ a:0, b:1, winner:null, game:soloGame, completedGame:null }];
+    ui.rematchOffer = null;   // superseded by the shared tourney now
     startLocalTourney(t);
     shareSession();
   }
@@ -4068,7 +4023,7 @@ window.SOMERSET_FB_CONFIG = {
   // this to defer *incoming sync* re-renders until the sheet is closed.
   function sheetOpen() {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
-           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.confirmStartSeries != null || ui.showThemeSheet ||
+           ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
            ui.linkDeviceSheet != null || ui.backupPrompt || ui.sharingSheet;
@@ -4086,7 +4041,6 @@ window.SOMERSET_FB_CONFIG = {
     // it, so the modal layer can honor softRender() too (sheets otherwise replay
     // their fade-in animation on every in-sheet re-render — the name-edit judder).
     var modalNoFade = suppressFade;
-    saveSeriesUi();   // keep the local-series reload snapshot current on every pass (see SERIES_UI_KEY)
     renderNav();
     document.getElementById("storageWarn").style.display = ui.storageOk ? "none" : "block";
     // point the active game at the right context
@@ -4160,21 +4114,6 @@ window.SOMERSET_FB_CONFIG = {
       pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
     }
 
-    // Series win tracker \u2014 while a game is in progress, keep the running tally of
-    // games already won visible as a row of pips under each team's own progress bar
-    // (see the totals loop below), so it doesn't disappear the moment the next game
-    // starts. Once this game ends, the fuller series-score displays elsewhere (the
-    // "Play Game N" screen, or the bracket view) take over.
-    var seriesInfo = (win !== null) ? null : isMatch
-      ? (tourney && tourney.format === "series" ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null)
-      : (ui.series ? { wins:ui.series.wins, bestOf:ui.series.bestOf }
-          : (gameHasTourneyLink() && tourney.bestOf > 1 ? { wins:seriesWins(tourney), bestOf:tourney.bestOf } : null));
-    var seriesPips = function (n) {
-      var dots = [];
-      for (var i = 0; i < seriesInfo.bestOf; i++) dots.push(el("span", { class:"series-pip" + (i < n ? " on" : "") }));
-      return dots;
-    };
-
     // Totals — iterated in viewer-perspective order (teamViewOrder), so "my"
     // team always renders first/left regardless of its real underlying index.
     var totalsGrid = el("div", { class:"totals" });
@@ -4208,7 +4147,6 @@ window.SOMERSET_FB_CONFIG = {
         el("div", { class:"score mono", style:"color:"+scoreColor+";" }, [String(t[i])]),
         bar
       ];
-      if (seriesInfo) teamKids.push(el("div", { class:"series-pips-dots" }, seriesPips(seriesInfo.wins[i])));
       var team = el("div", { class:"team", style:"grid-column:"+(pos===0?1:3)+";" }, teamKids);
       totalsGrid.appendChild(team);
     });
@@ -4352,76 +4290,18 @@ window.SOMERSET_FB_CONFIG = {
           el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
         ]));
       } else if (gameHasTourneyLink()) {
-        if (tourney.champion != null) {
-          var champKids = [];
-          if (tourney.bestOf > 1) {
-            var cw = seriesWins(tourney);
-            champKids.push(el("p", { class:"series-sub disp" }, [
-              tourney.teams[tourney.champion].name + " win the series " + cw[tourney.champion] + "–" + cw[1 - tourney.champion] + "!"
-            ]));
-          }
-          champKids.push(el("button", { class:"btn btn-new disp", onClick:startNextSharedGame }, ["New Game"]));
-          pad.appendChild(el("div", { class:"add-wrap" }, champKids));
-        } else if (tourney.bestOf > 1) {
-          // tourney.champion is deliberately still null here for the clinching game
-          // itself (see recordDeal's comment) so this "Play Game N" button stays the
-          // one wired to advanceSharedGame, which is what actually finalizes the
-          // champion and offers the next-length escalation. But the score may
-          // already have reached the series target on THIS game, so check for that
-          // and show a "won the series" message + "Continue" instead of offering
-          // a phantom next game that will never be played.
-          var gsw = seriesWins(tourney), gTgt = seriesTarget(tourney);
-          var gNextNum = gsw[0] + gsw[1] + 1;
-          var gDecidedIdx = gsw[0] >= gTgt ? 0 : (gsw[1] >= gTgt ? 1 : null);
-          pad.appendChild(el("div", { class:"add-wrap" }, [
-            el("div", { class:"series-score" }, [
-              el("div", { class:"series-side" }, [
-                el("span", { class:"series-team-name" }, [game.teams[0]]),
-                el("span", { class:"series-wins" }, [String(gsw[0])])
-              ]),
-              el("div", { class:"series-dash" }, ["–"]),
-              el("div", { class:"series-side" }, [
-                el("span", { class:"series-wins" }, [String(gsw[1])]),
-                el("span", { class:"series-team-name" }, [game.teams[1]])
-              ])
-            ]),
-            gDecidedIdx != null
-              ? el("p", { class:"series-sub disp" }, [game.teams[gDecidedIdx] + " win the series " + gsw[gDecidedIdx] + "–" + gsw[1 - gDecidedIdx] + "!"])
-              : el("p", { class:"series-sub disp" }, ["Best of " + tourney.bestOf]),
-            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, [gDecidedIdx != null ? "Continue" : ("Play Game " + gNextNum)])
-          ]));
-        } else {
-          pad.appendChild(el("div", { class:"add-wrap" }, [
-            el("button", { class:"btn btn-new disp", onClick:advanceSharedGame }, ["Continue"])
-          ]));
-        }
-      } else if (ui.series) {
-        var sw = ui.series.wins, nextNum = sw[0] + sw[1] + 1;
+        // A shared game always clinches (tourney.champion gets set) the instant
+        // it's won — see setSeriesWinner/seriesTarget — so there's no in-between
+        // "Play Game N" state to show here, just "New Game" once it's continued
+        // past, otherwise "Continue".
         pad.appendChild(el("div", { class:"add-wrap" }, [
-          el("div", { class:"series-score" }, [
-            el("div", { class:"series-side" }, [
-              el("span", { class:"series-team-name" }, [game.teams[0]]),
-              el("span", { class:"series-wins" }, [String(sw[0])])
-            ]),
-            el("div", { class:"series-dash" }, ["–"]),
-            el("div", { class:"series-side" }, [
-              el("span", { class:"series-wins" }, [String(sw[1])]),
-              el("span", { class:"series-team-name" }, [game.teams[1]])
-            ])
-          ]),
-          el("p", { class:"series-sub disp" }, ["Best of " + ui.series.bestOf]),
-          el("button", { class:"btn btn-new disp", onClick:function(){ newGame(true); } }, ["Play Game " + nextNum])
+          el("button", { class:"btn btn-new disp", onClick: tourney.champion != null ? startNextSharedGame : advanceSharedGame },
+            [tourney.champion != null ? "New Game" : "Continue"])
         ]));
       } else {
-        var kids = [];
-        if (ui.seriesResult) {
-          var sr = ui.seriesResult;
-          kids.push(el("p", { class:"series-sub disp" }, [
-            game.teams[sr.winnerIdx] + " win the series " + sr.wins[sr.winnerIdx] + "–" + sr.wins[1 - sr.winnerIdx] + "!"
-          ]));
-        }
-        kids.push(el("button", { class:"btn btn-new disp", onClick:function(){ newGame(); } }, ["New Game"]));
-        pad.appendChild(el("div", { class:"add-wrap" }, kids));
+        pad.appendChild(el("div", { class:"add-wrap" }, [
+          el("button", { class:"btn btn-new disp", onClick:function(){ newGame(); } }, ["New Game"])
+        ]));
       }
     } else {
       var addAm = currentGameAm();
@@ -4570,34 +4450,15 @@ window.SOMERSET_FB_CONFIG = {
   function renderModal(noFade) {
     modalRoot.innerHTML = "";
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
-    if (ui.offerSeries) {
-      var os = ui.offerSeries;
-      if (os.bestOf === 3) {
-        var offerSheet3 = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
-          onClick:function(e){ e.stopPropagation(); } }, [
-          el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
-          el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Rematch? Best of 3?"]),
-          el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
-          el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
-        ]);
-        modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet3]));
-        return;
-      }
-      var offerMsgKids = [];
-      if (ui.seriesResult) {
-        offerMsgKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 0;" },
-          [game.teams[ui.seriesResult.winnerIdx] + " won the series " + ui.seriesResult.wins[ui.seriesResult.winnerIdx] + "–" + ui.seriesResult.wins[1 - ui.seriesResult.winnerIdx] + "."]));
-      }
-      offerMsgKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:" + (ui.seriesResult ? "2px 0 14px" : "8px 0 14px") + ";" },
-        ["Play a best-of-" + os.bestOf + (ui.seriesResult ? "" : " series") + "?"]));
-      var offerSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play Best of " + os.bestOf,
+    if (ui.rematchOffer) {
+      var rematchSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
         onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp" }, ["Play Best of " + os.bestOf + "?"])
-      ].concat(offerMsgKids).concat([
-        el("button", { class:"sheet-btn primary disp", onClick:acceptSeriesOffer }, ["Yes, Best of " + os.bestOf]),
-        el("button", { class:"sheet-btn ghost disp", onClick:declineSeriesOffer }, ["No thanks"])
-      ]));
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:declineSeriesOffer }, [offerSheet]));
+        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
+        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch, same teams?"]),
+        el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
+        el("button", { class:"sheet-btn ghost disp", onClick:declineRematchOffer }, ["No thanks"])
+      ]);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:declineRematchOffer }, [rematchSheet]));
       return;
     }
     if (ui.confirmReset) {
@@ -4611,25 +4472,6 @@ window.SOMERSET_FB_CONFIG = {
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; softRender(); } }, ["Keep playing"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
-      return;
-    }
-    if (ui.confirmStartSeries) {
-      var css = ui.confirmStartSeries;
-      var startSeriesSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Start a series",
-        onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp" }, ["Start a series?"]),
-        el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
-          ["Your current game in the Game tab hasn't been saved to History yet — starting a series will discard it."]),
-        el("button", { class:"sheet-btn primary disp", onClick:function(){
-          ui.confirmStartSeries = null;
-          rememberNames(css.players.map(function(p){ return p.trim(); }));
-          var t = makeTourney("series", css.teams, css.bestOf);
-          ui.sSetup = null;
-          startLocalTourney(t);
-        } }, ["Discard and start series"]),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, ["Cancel"])
-      ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmStartSeries = null; softRender(); } }, [startSeriesSheet]));
       return;
     }
     if (ui.showThemeSheet) {
@@ -5868,26 +5710,17 @@ window.SOMERSET_FB_CONFIG = {
           // synced game.archivedId, which rides the snapshot to every device and
           // would wrongly re-suppress the other participants this now logs for.
           markMatchArchived(seriesAm);
-          // Record just the winner on the tourney's live slot right away so the
-          // series tally is correct for the between-games screen the very next
-          // render — advanceSharedGame still owns queuing the actual next game.
-          // Scoped to an actual multi-game series: a plain best-of-1 shared game
-          // defers everything, including which rematch prompt to offer, to the
-          // explicit Continue tap (see advanceSharedGame's priorBestOf===1 branch).
           // Deliberately NOT recordSeriesResult here (that also sets t.champion):
           // once champion is non-null, the post-game screen's own champion check
-          // takes priority and shows "New Game" instead of "Play Game N"/"Continue"
-          // — which is the only button wired to advanceSharedGame, the one place a
-          // shared series' escalate-to-the-next-length offer gets made. Setting
-          // champion this early made that offer permanently unreachable for the
-          // clinching game of any shared bestOf>1 series. Leave it to the explicit
-          // advance tap, same as recordManualMatchWin/returnToBracket already do
-          // for the Tournament tab's own bracket flow.
-          if (tourney.format === "series" && tourney.bestOf > 1) tourney.games[tourney.games.length - 1].winner = win;
+          // takes priority and shows "New Game" instead of "Continue" — the only
+          // button wired to advanceSharedGame, the one place the rematch offer
+          // gets made. Setting champion this early would make that offer
+          // permanently unreachable. Leave it to the explicit advance tap, same
+          // as recordManualMatchWin/returnToBracket already do for the
+          // Tournament tab's own bracket flow.
         } else {
-          var seriesMeta = ui.series ? { format:"series", teams: game.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null;
-          game.archivedId = archiveCurrentGame(seriesMeta) || null;
-          handleGameCompleteForSeries(win);
+          game.archivedId = archiveCurrentGame(null) || null;
+          offerRematch(win);
         }
       }
     }
@@ -5933,17 +5766,15 @@ window.SOMERSET_FB_CONFIG = {
   function soloGameInProgress() {
     return soloGame.deals.length > 0 && !soloGame.archivedId;
   }
-  function newGame(keepSeries) {
+  function newGame() {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
-    if (!soloGame.archivedId) {   // safety net — normally already auto-archived on completion
-      archiveCurrentGame(ui.series ? { format:"series", teams: soloGame.teams.slice(), id: ui.series.id, bestOf: ui.series.bestOf } : null);
-    }
+    if (!soloGame.archivedId) archiveCurrentGame(null);   // safety net — normally already auto-archived on completion
     var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
     soloGame = freshGame();
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
     game = soloGame;
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
-    if (!keepSeries) { ui.series = null; ui.offerSeries = null; ui.seriesResult = null; }
+    ui.rematchOffer = null;
     persist();
   }
 
@@ -5962,9 +5793,7 @@ window.SOMERSET_FB_CONFIG = {
   // Shared-series counterpart to newGame(): decides the just-finished game's slot
   // (mirrors returnToBracket's explicit "Return to Bracket" step — there's no
   // separate navigation here, so the tap itself both decides the slot and moves
-  // on) then either queues the next game toward an already-set best-of-N target,
-  // or — for a plain shared single game — offers one, same prompts a local solo
-  // game shows (see handleGameCompleteForSeries).
+  // on) then offers a rematch, same prompt a local solo game shows (see offerRematch).
   function advanceSharedGame() {
     var gi = tourney.games.length - 1;
     var slot = tourney.games[gi];
@@ -5974,12 +5803,11 @@ window.SOMERSET_FB_CONFIG = {
     slot.game = null;
     // Keep soloGame pointed at the clone too — gameHasTourneyLink()'s disconnected-
     // orphan identity check needs it, and this is the one window (decided, but not
-    // yet advanced to the next game or clinched) where neither .game nor a fresh
-    // setLiveSeriesGame call would otherwise cover it.
+    // yet advanced or clinched) where neither .game nor a fresh setLiveSeriesGame
+    // call would otherwise cover it.
     soloGame = slot.completedGame;
-    var priorBestOf = tourney.bestOf;
     var champBefore = tourney.champion;
-    setSeriesWinner(tourney, gi, win);   // also attaches the next game now, if the series isn't over
+    setSeriesWinner(tourney, gi, win);   // a shared game always clinches immediately (seriesTarget of 1)
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     // This device already has its own History record for the game just
     // finished — recordDeal's gameHasTourneyLink branch auto-archives the
@@ -5988,9 +5816,7 @@ window.SOMERSET_FB_CONFIG = {
     // subscription re-delivering this snapshot doesn't have
     // syncMyHistoryFromTourney (which defers exactly until .game is null,
     // see its comment) push a second, duplicate record for a match this
-    // device already logged itself. Covers every game in the series, not
-    // just a clinching one, since a multi-game series calls this once per
-    // game.
+    // device already logged itself.
     markMatchArchived({ bracket: "series", gi: gi });
     // If this game just crowned the champion, the record archived above
     // predates that (recordDeal archives before champion is known), so
@@ -6002,116 +5828,36 @@ window.SOMERSET_FB_CONFIG = {
         saveHistory();
       }
     }
-    if (tourney.champion == null) {
-      // Nothing left to do — setSeriesWinner already queued and attached it.
-    } else if (priorBestOf === 1) {
-      ui.offerSeries = { bestOf:3, seedWinner:win, linked:true };
-    } else {
-      var w = seriesWins(tourney);
-      ui.seriesResult = { bestOf:priorBestOf, winnerIdx:win, wins:w.slice() };
-      var nextBO = nextSeriesEscalation(priorBestOf);
-      ui.offerSeries = nextBO ? { bestOf:nextBO, wins:w.slice(), linked:true } : null;
-    }
+    if (tourney.champion != null) ui.rematchOffer = { seedWinner:win, linked:true };
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
     render();
   }
 
-  // "New Game" after a shared series/plain game has clinched — keeps the same
-  // join code (no re-join needed) and starts a fresh best-of-1 shared game,
-  // mirroring newGame()'s default keepSeries:false: any completed target ends,
-  // play continues clean.
+  // "New Game" after a shared game has clinched — keeps the same join code (no
+  // re-join needed) and starts a fresh single shared game.
   function startNextSharedGame() {
-    tourney.bestOf = 1;
     tourney.champion = null;
     tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
     setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
-    ui.offerSeries = null; ui.seriesResult = null;
+    ui.rematchOffer = null;
     saveTourney();
     render();
   }
 
-  // Best-of-N follow-up for casual (non-tournament) games: offer a series once a
-  // standalone game is won, track wins across the games the player then chooses
-  // to play, and escalate best-of-3 -> best-of-5 -> best-of-7 on completion.
-  function handleGameCompleteForSeries(win) {
-    if (ui.series) {
-      ui.series.wins[win]++;
-      var target = Math.floor(ui.series.bestOf / 2) + 1;
-      if (ui.series.wins[win] >= target) {
-        var finished = ui.series;
-        ui.seriesResult = { bestOf:finished.bestOf, winnerIdx:win, wins:finished.wins.slice() };
-        ui.series = null;
-        // Carry the series id and wins-so-far forward on escalation so the next
-        // rung's games join the same history group as the ones that preceded
-        // them, and the win count picks up where they left off rather than
-        // restarting at 0-0.
-        var nextBO = nextSeriesEscalation(finished.bestOf);
-        ui.offerSeries = nextBO ? { bestOf:nextBO, id:finished.id, wins:finished.wins.slice() } : null;
-      }
-    } else if (!ui.offerSeries) {
-      ui.offerSeries = { bestOf:3, seedWinner:win };
-    }
+  // Offer a rematch once a standalone casual game is won — same-teams rematch,
+  // redraw teams, or decline. Never offered twice for the same finished game.
+  function offerRematch(win) {
+    if (!ui.rematchOffer) ui.rematchOffer = { seedWinner:win };
   }
 
-  function acceptSeriesOffer() {
-    var o = ui.offerSeries;
-    if (o.linked) {
-      // A real tourney-object offer (see offerSeriesEscalationOnBracketClinch /
-      // advanceSharedGame) — act on `tourney` directly rather than gating on
-      // gameHasTourneyLink(), which also requires ui.view === "game" and would
-      // otherwise misroute this into the local-casual-game branch below when the
-      // offer is answered from the Tournament tab (e.g. right after a bracket
-      // clinch). Bump the target and queue the next game under the *same* join
-      // code, no re-join needed for guests.
-      // Remember which game's clinch triggered this escalation, and what the
-      // length was before it, so clearing that game's result later (see
-      // clearSeriesWinner) can undo the escalation along with it — otherwise
-      // the series would be left claiming a longer length than anyone actually
-      // decided once its trigger is erased.
-      var clinchIdx = tourney.games.length - 1;
-      var fromBestOf = tourney.bestOf;
-      tourney.bestOf = o.bestOf;
-      tourney.champion = null;
-      if (liveSeriesSlot(tourney).winner != null) {
-        tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
-      }
-      if (!tourney.escalations) tourney.escalations = [];
-      tourney.escalations.push({ afterGameIndex: clinchIdx, from: fromBestOf, to: o.bestOf });
-      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
-      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
-      // The earlier game(s) of this series were already archived to history with
-      // the old bestOf (a shared best-of-1's seed game logs as bestOf:1 the
-      // instant it's decided). Bump every record sharing this tourney id to the
-      // new length so the seed joins the series instead of splitting off as a
-      // stray Standard game — mirrors the local escalation path's seedRec rewrite.
-      gameHistory.forEach(function (h) {
-        if (h.tournament && h.tournament.id === tourney.id) h.tournament.bestOf = o.bestOf;
-      });
-      saveHistory();
-      ui.offerSeries = null; ui.seriesResult = null;
-      saveTourney();
-      render();
-      return;
-    }
-    var wins = o.wins ? o.wins.slice() : [0, 0];
-    if (o.seedWinner === 0 || o.seedWinner === 1) wins[o.seedWinner] = 1;
-    var id = o.id || Date.now();
-    ui.series = { bestOf:o.bestOf, wins:wins, id:id };
-    if (!o.id && game.archivedId) {
-      // This is a brand-new series (not an escalation) — the standalone game that
-      // just prompted the offer becomes Game 1 of the series in history.
-      var seedRec = gameHistory.find(function (h) { return h.id === game.archivedId; });
-      if (seedRec) {
-        seedRec.tournament = { format:"series", teams: game.teams.slice(), id:id, bestOf:o.bestOf };
-        saveHistory();
-      }
-    }
-    ui.offerSeries = null;
-    ui.seriesResult = null;
-    newGame(true);
+  function acceptRematchOffer() {
+    var o = ui.rematchOffer;
+    ui.rematchOffer = null;
+    if (o.linked) { startNextSharedGame(); return; }   // shared game: same join code, fresh game
+    newGame();
   }
 
   // "No thanks" ends the just-finished game outright rather than leaving it
@@ -6121,8 +5867,8 @@ window.SOMERSET_FB_CONFIG = {
   // real seat 0 when nobody's identified — see seatViewOrder) is the one tile
   // that's really "you" holding the device, so its name carries over; every
   // other seat clears since those were this session's guests/opponents.
-  function declineSeriesOffer() {
-    var o = ui.offerSeries;
+  function declineRematchOffer() {
+    var o = ui.rematchOffer;
     if (o && o.linked && tourney) {
       // Answered from the Tournament tab, where the global `game` pointer isn't
       // kept in sync with the tourney's live slot (see render()'s view-gated
@@ -6140,30 +5886,23 @@ window.SOMERSET_FB_CONFIG = {
     soloGame = freshGame();
     soloGame.players[0] = keepName;
     game = soloGame;
-    ui.series = null;
-    ui.offerSeries = null;
-    ui.seriesResult = null;
+    ui.rematchOffer = null;
     persist();
   }
 
   // Scrambles who's paired with whom (keeping the same 4 seats/names), then
-  // starts a fresh standalone game — no series tracking, since a redraw
-  // breaks up the two teams that would otherwise be rematching.
+  // starts a fresh standalone game.
   function redrawSoloTeamsAndPlay() {
     if (gameHasTourneyLink()) {
       var lastGame = liveSeriesSlot(tourney).game || liveSeriesSlot(tourney).completedGame;
       var shuffled = shuffle(lastGame.players.slice());
       tourney.teams[0].players = [shuffled[0], shuffled[2]];
       tourney.teams[1].players = [shuffled[1], shuffled[3]];
-      // Redraw breaks up the pairing a series would keep rematching, so — like
-      // newGame()'s default keepSeries:false — it also ends any best-of-N target
-      // and starts a fresh single shared game under the same code.
-      tourney.bestOf = 1;
       tourney.champion = null;
       tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null }];
       setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
       if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
-      ui.offerSeries = null; ui.seriesResult = null;
+      ui.rematchOffer = null;
       saveTourney();
       render();
       return;
@@ -6331,7 +6070,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     return false;
   }
-  // Shared across every roster-setup wizard (Share, Tournament, Series) so the
+  // Shared across every roster-setup wizard (Share, Tournament) so the
   // wording can't drift between them.
   var DUP_NAME_WARNING = "Two players have the same name — add a nickname or initial to tell them apart.";
 
@@ -6526,7 +6265,7 @@ window.SOMERSET_FB_CONFIG = {
     p.shortestGame = (shortestGame && shortestGame.dealsCount !== (longestGame && longestGame.dealsCount)) ? shortestGame : null;
     p.bestPartner = bestOrWorstPairing(p.partners, true);
     p.nemesis = bestOrWorstPairing(p.opponents, false);
-    var formatOrder = ["casual", "single", "double", "round", "series"];
+    var formatOrder = ["casual", "single", "double", "round"];
     p.formatBreakdown = formatOrder.map(function (f) { return byFormat[f]; }).filter(Boolean).map(function (fb) {
       var decided = fb.wins + fb.losses;
       return { format: fb.format, wins: fb.wins, losses: fb.losses, games: fb.games, winPct: decided ? Math.round((fb.wins / decided) * 100) : null };
@@ -6683,7 +6422,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function statFormatLabel(f) {
-    return f === "casual" ? "Casual" : f === "series" ? "Best-of Series" : formatName(f);
+    return f === "casual" ? "Casual" : formatName(f);
   }
 
   // Label + value row used by the Best partner / Nemesis / Best win / Game length
@@ -7034,15 +6773,17 @@ window.SOMERSET_FB_CONFIG = {
     try { var d = new Date(iso); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); } catch (e) { return String(iso); }
   }
   // A record counts as a tournament only if it belongs to a genuine multi-game
-  // competition: any bracket (single/double/round), or a best-of series longer
-  // than one game. A lone shared game is wrapped internally as format:"series"
-  // bestOf:1 to reuse the series sync/lock machinery, but to the player it's just
-  // a Standard game — so it never reads as a tournament in labels, filters,
-  // grouping, or stats.
+  // bracket competition (single/double/round). A shared 2-team game is wrapped
+  // internally as format:"series" to reuse the join-code sync/lock machinery,
+  // but the best-of/series MODE itself is gone — to the player it's just a
+  // Standard game, whatever bestOf value an old record happens to carry — so it
+  // never reads as a tournament in labels, filters, grouping, or stats. This is
+  // also how existing best-of-series history/stats convert to Standard without
+  // touching stored records: classification is computed live from this check.
   function isTournamentRecord(rec) {
     var t = rec && rec.tournament;
     if (!t || t.id == null) return false;
-    if (t.format === "series") return t.bestOf > 1;
+    if (t.format === "series") return false;
     return true; // single / double / round brackets are always tournaments
   }
   // Log-view filter pills shown under the Log/Stats switcher — same predicate
@@ -7083,12 +6824,6 @@ window.SOMERSET_FB_CONFIG = {
       }
       g.records.push(rec);
     });
-    groups.forEach(function (g) {
-      if (g.isTournament && g.tournament.format === "series" && !g.tournament.bestOf) {
-        var withBestOf = g.records.find(function (rec) { return rec.tournament.bestOf; });
-        if (withBestOf) g.tournament = Object.assign({}, g.tournament, { bestOf: withBestOf.tournament.bestOf });
-      }
-    });
     return groups;
   }
   function setAllHistoryGroupsOpen(groups, openVal) {
@@ -7123,9 +6858,11 @@ window.SOMERSET_FB_CONFIG = {
     return records.length + (records.length === 1 ? " game" : " games")
       + ", " + teamCount + " team" + (teamCount === 1 ? "" : "s") + ", standard";
   }
-  // "Best of 5", "Double Elimination", etc. — short form for the group header title.
+  // "Double Elimination", "Round Robin", etc. — short form for the group header title.
+  // Never called for a "series"-format record: isTournamentRecord always reads
+  // those as Standard now, so they never form a tournament group (see buildHistoryGroups).
   function tournamentTitleLabel(t) {
-    return t.format === "series" ? ("Best of " + t.bestOf) : formatName(t.format);
+    return formatName(t.format);
   }
   function renderHistoryGroup(g, defaultOpen) {
     var recs = g.records;
@@ -7374,8 +7111,7 @@ window.SOMERSET_FB_CONFIG = {
 
   // ================= TOURNAMENT =================
   function formatName(f) {
-    return f === "single" ? "Single Elimination" : f === "double" ? "Double Elimination"
-         : f === "series" ? "Best-of Series" : "Round Robin";
+    return f === "single" ? "Single Elimination" : f === "double" ? "Double Elimination" : "Round Robin";
   }
   function shuffle(a) {
     a = a.slice();
@@ -7610,7 +7346,7 @@ window.SOMERSET_FB_CONFIG = {
     t.champion = winnerId;
   }
 
-  // ---- Best-of Series (4 players, 2 fixed teams) ----
+  // ---- Shared 2-team game (join-code sync wrapper; not a user-facing tournament format) ----
   function makeSeries(teams, bestOf) {
     return {
       id: Date.now(), createdAt: new Date().toISOString(), format: "series",
@@ -7665,13 +7401,7 @@ window.SOMERSET_FB_CONFIG = {
   function isGameShared() {
     return gameHasTourneyLink() && !!syncCode;
   }
-  function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch
-  // The next rung up the escalation ladder after a series of this length clinches
-  // (3 -> 5 -> 7), or null once there's nowhere further to go. Mirrors the lengths
-  // offered by the Tournament tab's own series-length picker (renderSeriesSetup).
-  function nextSeriesEscalation(bestOf) {
-    return bestOf === 3 ? 5 : bestOf === 5 ? 7 : null;
-  }
+  function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch — always 1, bestOf is always 1
   function seriesWins(t) {
     var w = [0, 0];
     t.games.forEach(function(g) { if (g.winner != null) w[g.winner]++; });
@@ -7719,13 +7449,6 @@ window.SOMERSET_FB_CONFIG = {
     t.games[gi].completedGame = null;
     t.games = t.games.slice(0, gi + 1);  // drop the now-orphaned pending slot, if any
     t.champion = null;
-    // If this game's clinch is what triggered the most recent best-of-N
-    // escalation (see acceptSeriesOffer), undo that decision along with it —
-    // otherwise the series would be left claiming a longer length than anyone
-    // actually agreed to once its trigger is erased.
-    if (t.escalations && t.escalations.length && t.escalations[t.escalations.length - 1].afterGameIndex === gi) {
-      t.bestOf = t.escalations.pop().from;
-    }
     // Re-attach a live game to the now-undecided slot — same reasoning as
     // setSeriesWinner: a connected guest's Game tab needs a real game to show.
     setLiveSeriesGame(t, freshGameForTourneyTeams(t));
@@ -7771,7 +7494,10 @@ window.SOMERSET_FB_CONFIG = {
     if (format === "double") return makeDoubleElim(teams);
     if (format === "round") return makeRoundRobin(teams);
     if (format === "series") {
-      var t = makeSeries(teams, bestOf);
+      // bestOf is always forced to 1 here — best-of series is no longer a mode
+      // a rematch/redraw can recreate, even if the tourney being replayed was
+      // an old multi-game series.
+      var t = makeSeries(teams, 1);
       // Attach a live game to the seeded first slot — same reasoning as
       // setSeriesWinner/clearSeriesWinner: a guest can land on the Game tab
       // (auto-routed there for any format:"series" tourney) before the host
@@ -7817,24 +7543,6 @@ window.SOMERSET_FB_CONFIG = {
   function matchScoreStr(m) {
     var s = gameTotals(m.game);
     return s[0] + "–" + s[1];
-  }
-
-  // After a bracket-driven action (recordManualMatchWin/returnToBracket) may have
-  // just crowned a series champion, offer the same best-of-N escalation the Game
-  // tab offers (see advanceSharedGame) — otherwise clinching a series purely
-  // through the bracket (Play in app / manual win) was a dead end: only "Rematch
-  // same teams" or "Redraw teams", both stuck at the same bestOf, ever appeared.
-  // linked:true marks this as a real tourney-object offer (as opposed to the
-  // local, untracked casual-game offer from handleGameCompleteForSeries) so
-  // acceptSeriesOffer/declineSeriesOffer know to act on `tourney` regardless of
-  // which tab is active when the user answers — see those functions' comments.
-  function offerSeriesEscalationOnBracketClinch(champBefore) {
-    if (tourney.format !== "series" || tourney.bestOf <= 1) return;
-    if (tourney.champion == null || tourney.champion === champBefore) return;
-    var w = seriesWins(tourney);
-    ui.seriesResult = { bestOf: tourney.bestOf, winnerIdx: tourney.champion, wins: w.slice() };
-    var nextBO = nextSeriesEscalation(tourney.bestOf);
-    ui.offerSeries = nextBO ? { bestOf: nextBO, wins: w.slice(), linked: true } : null;
   }
 
   // Record the winner into whichever bracket/series this match belongs to.
@@ -7895,7 +7603,6 @@ window.SOMERSET_FB_CONFIG = {
       archived.tournament.championship = true;
       saveHistory();
     }
-    offerSeriesEscalationOnBracketClinch(champBefore);
     markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
   }
 
@@ -7919,7 +7626,6 @@ window.SOMERSET_FB_CONFIG = {
       justArchived.tournament.championship = true;
       saveHistory();
     }
-    offerSeriesEscalationOnBracketClinch(champBefore);
     markMatchArchived(am);   // this device already has its own record — auto-sync shouldn't duplicate it
     ui.activeMatch = null; ui.showEntry = false;
     saveTourney(); render();
@@ -7954,7 +7660,7 @@ window.SOMERSET_FB_CONFIG = {
       : am.bracket === "wb" ? ("Winners · Round " + (am.ri + 1) + (isCompleted ? " complete" : " Match"))
       : am.bracket === "lb" ? ("Losers · Round " + (am.ri + 1) + (isCompleted ? " complete" : " Match"))
       : am.bracket === "gf" ? ("Grand Final" + (am.match === 2 ? " Reset" : "") + (isCompleted ? " complete" : ""))
-      : am.bracket === "series" ? ("Game " + (am.gi + 1) + " - Best of " + tourney.bestOf + (isCompleted ? " complete" : " Match"))
+      : am.bracket === "series" ? ("Shared Game" + (isCompleted ? " complete" : ""))
       : (am.bracket === "rr" && am.isFinal) ? ("Championship Final" + (isCompleted ? " complete" : ""))
       : ("Round Robin · Match " + (am.idx + 1) + (isCompleted ? " complete" : ""));
     var card = el("div", { class:"pad" }, [
@@ -7971,8 +7677,7 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   function renderTournamentSetup() {
-    if (ui.sSetup) renderSeriesSetup();
-    else if (!ui.tSetup) renderCountStep();
+    if (!ui.tSetup) renderCountStep();
     else renderNameStep();
   }
 
@@ -7992,12 +7697,6 @@ window.SOMERSET_FB_CONFIG = {
         var arr = []; for (var i = 0; i < ui.tCount; i++) arr.push("");
         ui.tSetup = { players: arr, format: "single", drawn: null }; render();
       } }, [ "Set up " + ui.tCount + " players" ])
-    ]));
-    card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
-      el("p", { class:"join-divider disp" }, ["Just 4 players? Play a best-of series:"]),
-      el("button", { class:"btn btn-add disp", style:"padding:12px 24px;", onClick:function(){
-        ui.sSetup = { players: ["", "", "", ""], mode: "random", bestOf: 5, teams: null, partner: null }; render();
-      } }, ["Best-of Series"])
     ]));
     card.appendChild(el("div", { style:"padding:0 12px 14px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
       el("p", { class:"join-divider disp" }, ["Already have a tournament?"]),
@@ -8118,157 +7817,6 @@ window.SOMERSET_FB_CONFIG = {
         } }, [ "Start " + formatName(s.format) ])
       ]));
     }
-
-    recompute();
-    viewRootEl.appendChild(card);
-    suppressFade = false;
-  }
-
-  function renderSeriesSetup() {
-    var s = ui.sSetup;
-    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, ["Best-of Series"]) ]);
-    card.appendChild(el("div", { style:"padding:6px 6px 0;" }, [
-      el("button", { class:"back-btn disp", "aria-label":"Back", onClick:function(){ ui.sSetup = null; ui.editNames = false; render(); } },
-        [ el("span", { class:"chev", "aria-hidden":"true", html:CHEVRON_LEFT_SVG }), "Back" ])
-    ]));
-
-    function namesFilled() { return s.players.every(function(p){ return p && p.trim(); }); }
-    function noDupNames() { return !rosterHasDuplicateNames(s.players); }
-    function invalidateTeams() { s.teams = null; s.partner = null; }
-
-    var startBtn, msgEl, drawBtn = null, partnerBtns = [], partnerLabelEl = null;
-    function recompute() {
-      var filled = namesFilled();
-      var dup = filled && !noDupNames();
-      var ok = filled && !dup && !!s.teams;
-      if (msgEl) {
-        msgEl.textContent = !filled ? "Enter all 4 player names"
-          : dup ? DUP_NAME_WARNING
-          : !s.teams ? (s.mode === "random" ? "Draw the teams to continue" : "Pick a partner to continue")
-          : ("Best of " + s.bestOf + " · " + s.teams[0].name + " vs " + s.teams[1].name);
-        msgEl.className = "tvalid disp" + (ok ? " ok" : "");
-      }
-      if (startBtn) startBtn.disabled = !ok;
-      // The Teams controls are always in the DOM; keep their enabled state and
-      // labels in sync as names are typed, without a focus-stealing re-render.
-      if (drawBtn) drawBtn.disabled = !filled || dup;
-      partnerBtns.forEach(function(b){
-        b.disabled = !filled || dup;
-        var v = s.players[b._pi] && s.players[b._pi].trim();
-        b.textContent = v || ("Player " + (b._pi + 1));
-      });
-      if (partnerLabelEl) {
-        var p0 = s.players[0] && s.players[0].trim();
-        partnerLabelEl.textContent = (p0 || "Player 1") + "'s partner:";
-      }
-      return ok;
-    }
-
-    // Name inputs (fixed at 4)
-    var inputs = [];
-    var pwrap = el("div", { class:"tplayers" });
-    s.players.forEach(function(nm, i) {
-      var input = el("input", {
-        class:"tinput disp", value:nm, placeholder:"Player " + (i + 1), "aria-label":"Player " + (i + 1) + " name",
-        autocomplete:"off", autocapitalize:"words", enterkeyhint:(i < 3 ? "next" : "done"),
-        onInput:function(e){ s.players[i] = e.target.value; if (s.teams) { invalidateTeams(); softRender(); } else recompute(); },
-        onKeydown:function(e){ if (e.key === "Enter") { e.preventDefault(); if (inputs[i + 1]) inputs[i + 1].focus(); else input.blur(); } }
-      });
-      inputs.push(input);
-      pwrap.appendChild(el("div", { class:"trow" }, [ el("span", { class:"tnum mono" }, [String(i + 1)]), input ]));
-    });
-    card.appendChild(pwrap);
-
-    // Quick add (only while there's an empty slot to fill)
-    var hasEmpty = s.players.some(function(p){ return !p || !p.trim(); });
-    if (nameBook.length && hasEmpty) {
-      var entered = s.players.map(function(p){ return (p || "").trim().toLowerCase(); });
-      var avail = nameBook.filter(function(nm){ return entered.indexOf(nm.toLowerCase()) === -1; });
-      if (avail.length) {
-        var qa = el("div", { class:"quick-add" }, [
-          el("div", { style:"margin:2px 0 6px;" }, [ el("span", { class:"label disp" }, ["Quick add"]) ])
-        ]);
-        qa.appendChild(el("div", { class:"chips" }, avail.slice(0, 40).map(function(nm){
-          return el("button", { class:"chip disp", onClick:function(){
-            for (var i = 0; i < 4; i++) { if (!s.players[i] || !s.players[i].trim()) { s.players[i] = nm; break; } }
-            invalidateTeams(); softRender();
-          } }, [nm]);
-        })));
-        card.appendChild(qa);
-      }
-    }
-
-    // Series length
-    card.appendChild(el("div", { style:"padding:0 12px 6px;" }, [
-      el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Series length"]),
-      el("div", { class:"chips" }, [3, 5, 7].map(function(n){
-        return el("button", { class:"chip disp" + (s.bestOf === n ? " on" : ""),
-          onClick:function(){ s.bestOf = n; softRender(); } }, ["Best of " + n]);
-      }))
-    ]));
-
-    // Teams: random draw vs manual partner pick
-    card.appendChild(el("div", { style:"padding:0 12px 6px;" }, [
-      el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Teams"]),
-      el("div", { class:"chips" }, [["random", "Random"], ["choose", "Choose"]].map(function(mo){
-        return el("button", { class:"chip disp" + (s.mode === mo[0] ? " on" : ""),
-          onClick:function(){ if (s.mode !== mo[0]) { s.mode = mo[0]; invalidateTeams(); softRender(); } } }, [mo[1]]);
-      }))
-    ]));
-
-    // Teams controls render unconditionally so the button is present from the
-    // start; recompute() enables them once all names are filled. (Building them
-    // only when namesFilled() left the button missing until the next full
-    // render, since typing a name runs recompute() rather than a re-render.)
-    var names = s.players.map(function(p){ return p.trim(); });
-    var filledNow = namesFilled();
-    if (s.mode === "random") {
-      drawBtn = el("button", { class:"btn btn-add disp", onClick:function(){
-        if (!namesFilled() || !noDupNames()) return;
-        s.teams = drawTeams(s.players.map(function(p){ return p.trim(); })); softRender();
-      } }, [ s.teams ? "Re-draw teams" : "Draw teams" ]);
-      drawBtn.disabled = !filledNow || !noDupNames();
-      card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [ drawBtn ]));
-    } else {
-      partnerLabelEl = el("span", { class:"label disp", style:"display:block; margin:4px 0 6px;" },
-        [ (names[0] || "Player 1") + "'s partner:" ]);
-      card.appendChild(el("div", { style:"padding:6px 12px 0;" }, [
-        partnerLabelEl,
-        el("div", { class:"chips" }, [1, 2, 3].map(function(pi){
-          var b = el("button", { class:"chip disp" + (s.partner === pi ? " on" : ""), onClick:function(){
-            if (!namesFilled() || !noDupNames()) return;
-            var nm = s.players.map(function(p){ return p.trim(); });
-            s.partner = pi;
-            var rest = [1, 2, 3].filter(function(x){ return x !== pi; });
-            s.teams = [ mkTeam(nm[0] + " & " + nm[pi], [nm[0], nm[pi]]), mkTeam(nm[rest[0]] + " & " + nm[rest[1]], [nm[rest[0]], nm[rest[1]]]) ];
-            softRender();
-          } }, [ names[pi] || ("Player " + (pi + 1)) ]);
-          b._pi = pi;
-          b.disabled = !filledNow || !noDupNames();
-          partnerBtns.push(b);
-          return b;
-        }))
-      ]));
-    }
-    if (s.teams) {
-      card.appendChild(el("div", { class:"draw-list" }, [
-        el("div", { class:"draw-team disp" }, [ "Team 1: ", el("b", {}, [s.teams[0].players[0]]), " & ", el("b", {}, [s.teams[0].players[1]]) ]),
-        el("div", { class:"draw-team disp" }, [ "Team 2: ", el("b", {}, [s.teams[1].players[0]]), " & ", el("b", {}, [s.teams[1].players[1]]) ])
-      ]));
-    }
-
-    msgEl = el("p", { class:"tvalid disp" }, [""]);
-    card.appendChild(msgEl);
-
-    startBtn = el("button", { class:"btn btn-new disp", onClick:function(){
-      if (!recompute()) return;
-      if (soloGameInProgress()) { ui.confirmStartSeries = { players: s.players.slice(), teams: s.teams, bestOf: s.bestOf }; render(); return; }
-      rememberNames(s.players.map(function(p){ return p.trim(); }));
-      var t = makeTourney("series", s.teams, s.bestOf);
-      ui.sSetup = null;
-      startLocalTourney(t);
-    } }, ["Start series"]);
-    card.appendChild(el("div", { style:"padding:8px 12px 16px;" }, [ startBtn ]));
 
     recompute();
     viewRootEl.appendChild(card);
@@ -8403,9 +7951,9 @@ window.SOMERSET_FB_CONFIG = {
     var decided = lastDecidedSeriesGame(t) + 1;
     // The clinching game intentionally leaves t.champion null until the Game
     // tab's explicit Continue tap (see recordDeal/advanceSharedGame's comments),
-    // so derive "is this series actually over" from the score itself too — else
-    // this view shows a stale "Best of N · first to X game wins" (and highlights
-    // neither team) during that brief window.
+    // so derive "is this game actually over" from the score itself too — else
+    // this view shows a stale "in progress" state (and highlights neither team)
+    // during that brief window.
     var decidedWinnerIdx = t.champion != null ? t.champion : (wins[0] >= tgt ? 0 : (wins[1] >= tgt ? 1 : null));
 
     // Scoreboard
@@ -8421,10 +7969,10 @@ window.SOMERSET_FB_CONFIG = {
       ])
     ]);
     var sub = decidedWinnerIdx != null
-      ? ("Series over · " + decided + " game" + (decided === 1 ? "" : "s") + " played")
-      : ("Best of " + t.bestOf + " · first to " + tgt + " game wins");
+      ? ("Game over · " + decided + " game" + (decided === 1 ? "" : "s") + " played")
+      : "In progress";
     var scoreSection = el("div", { class:"bracket-section" }, [
-      el("div", { class:"bracket-section-head" }, ["Series"]),
+      el("div", { class:"bracket-section-head" }, ["Game"]),
       scoreWrap,
       el("p", { class:"series-sub disp" }, [sub])
     ]);
@@ -8545,14 +8093,14 @@ window.SOMERSET_FB_CONFIG = {
 
   function renderBracket() {
     var t = tourney;
-    var headTitle = t.format === "series" ? ("Best of " + t.bestOf + " Series") : ("Tournament · " + formatName(t.format));
+    var headTitle = t.format === "series" ? "Shared Game" : ("Tournament · " + formatName(t.format));
     var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [ el("div", { class:"view-head disp" }, [headTitle]) ]);
 
     renderSyncBar(card);
     if (!syncCode) {
       card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
         el("button", { class:"link-btn disp", onClick:shareSession },
-          [ "Share this " + (t.format === "series" ? "series" : "tournament") + " →" ])
+          [ "Share this " + (t.format === "series" ? "game" : "tournament") + " →" ])
       ]));
     } else {
       card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
@@ -8562,7 +8110,7 @@ window.SOMERSET_FB_CONFIG = {
 
     if (t.champion != null) {
       var champMsg = t.format === "series"
-        ? (t.teams[t.champion].name + " win the series " + seriesWins(t)[t.champion] + "–" + seriesWins(t)[1 - t.champion] + "!")
+        ? (t.teams[t.champion].name + " win!")
         : ("Champions: " + t.teams[t.champion].name);
       card.appendChild(el("div", { class:"banner disp" }, [champMsg]));
       // In a shared tournament only the host can restart it (it spins up a new synced
@@ -8698,7 +8246,6 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.info != null) { ui.info = null; softRender(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
-    if (ui.confirmStartSeries) { ui.confirmStartSeries = null; softRender(); return true; }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
     if (ui.whoSheet) { if (!whoSheetForced()) { ui.whoSheet = false; softRender(); } return true; }
     if (ui.shareSheetOpen) { closeShareSheet(); return true; }
