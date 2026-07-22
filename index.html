@@ -4665,9 +4665,9 @@ window.SOMERSET_FB_CONFIG = {
       // Hidden once already installed (running in the standalone display-mode) —
       // there's nothing left for this row to do at that point.
       if (!isStandaloneDisplay()) {
-        themeKids.push(el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Add to Home Screen",
+        themeKids.push(el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Add App to Home Screen",
           onClick:function(){ promptInstall(); } }, [
-          el("span", { class:"settings-row-label disp" }, ["Add to Home Screen"]),
+          el("span", { class:"settings-row-label disp" }, ["Add App to Home Screen"]),
           el("span", { class:"rank-chevron disp", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, [])
         ]));
       }
