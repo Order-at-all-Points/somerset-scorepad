@@ -5058,14 +5058,14 @@ window.SOMERSET_FB_CONFIG = {
       var ogKids = [ el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Options"]) ];
       if (onHistoryTab) {
         if (gameHistory.length) {
-          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); exportHistory(); } }, ["Back up"]));
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); exportHistory(); } }, ["Export Game History"]));
         }
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); if (historyFileInputEl) historyFileInputEl.click(); } },
-          [ gameHistory.length ? "Restore" : "Restore a backup" ]));
+          [ gameHistory.length ? "Restore Game History" : "Restore a Game History Backup" ]));
         if (ui.historySub === "board") {
           var mergeCandidates = Object.keys(computePlayerStats()).length;
           if (mergeCandidates >= 2 || Object.keys(nameAliases).length) {
-            ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.mergeSheet = { step:1 }; render(); } }, ["Merge names…"]));
+            ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.mergeSheet = { step:1 }; render(); } }, ["Merge/Split Names"]));
           }
         }
       } else {
