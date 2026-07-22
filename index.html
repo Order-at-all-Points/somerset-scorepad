@@ -3839,6 +3839,15 @@ window.SOMERSET_FB_CONFIG = {
       swipeCoord.current(true);
     }
   }, true);
+  // Closes a tap-expanded deal row (ui.openDeal) on any click that isn't the tap
+  // that opened/toggled it. The row's own toggle click and the expanded detail's
+  // Edit/Delete buttons all stopPropagation, so this only ever fires for clicks
+  // elsewhere — Record Bid, the seat diagram, blank space, or any other control —
+  // and by the time it runs (bubble phase, after those other handlers), it's safe
+  // to always close: a genuine toggle/edit/delete never reaches here at all.
+  document.addEventListener("click", function (e) {
+    if (ui.openDeal != null) { ui.openDeal = null; softRender(); }
+  });
   function makeSwipeRow(rowEl, onEdit, onDelete) {
     // tabindex:-1 — these sit off-screen until swiped into view, so keep them out of tab order.
     var editBtn = el("button", { class:"swipe-action-btn edit disp", "aria-label":"Edit deal", tabindex:"-1",
@@ -4245,7 +4254,7 @@ window.SOMERSET_FB_CONFIG = {
           class:"deal-row" + (isOpen ? " open" : "") + (noFade ? "" : " fade"),
           role:"button", tabindex:"0", "aria-expanded": isOpen ? "true" : "false",
           "aria-label":"Deal " + (idx+1) + ", show dealer and options",
-          onClick:function(){ ui.openDeal = isOpen ? null : d.id; softRender(); }
+          onClick:function(e){ e.stopPropagation(); ui.openDeal = isOpen ? null : d.id; softRender(); }
         }, [
           scoreBlockEl,
           bidderEl,
