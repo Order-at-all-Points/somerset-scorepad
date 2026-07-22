@@ -5533,6 +5533,9 @@ window.SOMERSET_FB_CONFIG = {
             persist();
           } }, [ui.editingDeal != null ? "Next: play the hand \u2192" : (editingPendingBid ? "Update Bid" : "Record Bid")])
         ]),
+        /* "Remove Bid" (withdraw the placed bid entirely) is hidden for now,
+           pending a decision on its placement. Editing can fix any wrong bid;
+           withdrawing one outright has no UI until this returns.
         editingPendingBid
           ? el("div", { style:"text-align:center; margin-top:10px;" }, [
               el("button", { class:"link-btn danger disp", onClick:function(){
@@ -5543,6 +5546,8 @@ window.SOMERSET_FB_CONFIG = {
               } }, ["Remove Bid"])
             ])
           : null
+        */
+        null
       ]);
       return el("div", { class:"entry" }, kids1);
     }
