@@ -709,6 +709,8 @@
   .rank-metric small { display:block; font-size:11px; font-weight:500; color:var(--ink-soft); }
   .rank-chevron { flex:none; color:var(--ink-soft); display:inline-block; width:12px; height:12px; }
   .rank-chevron svg { display:block; width:100%; height:100%; }
+  .step-icon { display:inline-block; width:15px; height:15px; vertical-align:-3px; }
+  .step-icon svg { display:block; width:100%; height:100%; }
 
   .stats-player-head { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:14px 12px 12px; background:var(--cream); border-bottom:3px double var(--brass); }
   .stats-player-head .back-btn { grid-column:1; justify-self:start; }
@@ -959,6 +961,10 @@ window.SOMERSET_FB_CONFIG = {
   var CHEVRON_LEFT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
   var CHEVRON_RIGHT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
   var CLOSE_X_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>';
+  // Mirrors Safari's own toolbar glyphs (not this app's line-weight family) so the
+  // Add to Home Screen steps show the exact icon the user is looking for on screen.
+  var MORE_DOTS_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>';
+  var SHARE_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
   // Trump recording disabled for now — see renderEntry()/recordDeal() below.
   // var TRUMP_CHIPS = ["0","1","2","3","4","5","6"];
 
@@ -1099,7 +1105,7 @@ window.SOMERSET_FB_CONFIG = {
     historySub:null, statsPlayer:null, statsSort:"wins", mergeSheet:null, historyFilter:"all",
     gameDetailRecId:null, shareSheetOpen:false, myLockKey:null, gameOptionsOpen:false, shareNamesSetup:null,
     linkDeviceSheet:null, sharingSheet:false, gameDetailShared:null,
-    ambiguousClaims:[], showMonthCounts:false
+    ambiguousClaims:[], showMonthCounts:false, installSheet:false
   };
 
   // ---- Display theme (light/dark/auto) ----
@@ -4043,7 +4049,47 @@ window.SOMERSET_FB_CONFIG = {
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
            ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
-           ui.linkDeviceSheet != null || ui.sharingSheet;
+           ui.linkDeviceSheet != null || ui.sharingSheet || ui.installSheet;
+  }
+
+  // ---- Share app / Add to Home Screen ----
+  // Captured once (Chromium fires it unprompted when install criteria are met) so
+  // "Add to Home Screen" can trigger the real native prompt there instead of always
+  // falling back to manual instructions. Each captured event is usable only once.
+  var deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+  });
+  function isStandaloneDisplay() {
+    return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      window.navigator.standalone === true;
+  }
+  function isIOSDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+  function shareApp() {
+    var url = location.origin + location.pathname;
+    var shareData = { title:"Some-R-Set Scorepad", text:"Play along and keep score with Some-R-Set.", url:url };
+    if (navigator.share) {
+      navigator.share(shareData).catch(function(){});
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){ showInfoToast("Link copied"); });
+    }
+  }
+  // Chromium browsers get the real one-tap install prompt when it's been captured;
+  // everyone else (notably iOS Safari, which has no programmatic install API) falls
+  // back to a manual-steps sheet.
+  function promptInstall() {
+    if (deferredInstallPrompt) {
+      var promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      promptEvent.prompt();
+    } else {
+      ui.showThemeSheet = false;
+      ui.installSheet = true;
+      render();
+    }
   }
   // Re-render driven by a remote Firebase update. Skipped while a sheet is open
   // so live updates from other devices never eat the local user's taps; the data
@@ -4563,8 +4609,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.showThemeSheet) {
       var curThemePref = loadThemePref();
-      var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Settings",
-        onClick:function(e){ e.stopPropagation(); } }, [
+      var themeKids = [
         el("h3", { class:"disp" }, ["Settings"]),
         el("div", { class:"sheet-rule" }, []),
         el("div", { class:"appearance-row" }, [
@@ -4611,9 +4656,56 @@ window.SOMERSET_FB_CONFIG = {
           el("span", { class:"settings-row-state disp" }, [(autoShare && cloudSyncEnabled) ? "On" : "Off"])
         ]),
         el("div", { class:"sheet-rule" }, []),
-        el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"])
-      ]);
+        el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Share app",
+          onClick:function(){ shareApp(); } }, [
+          el("span", { class:"settings-row-label disp" }, ["Share App"]),
+          el("span", { class:"rank-chevron disp", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, [])
+        ])
+      ];
+      // Hidden once already installed (running in the standalone display-mode) —
+      // there's nothing left for this row to do at that point.
+      if (!isStandaloneDisplay()) {
+        themeKids.push(el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Add to Home Screen",
+          onClick:function(){ promptInstall(); } }, [
+          el("span", { class:"settings-row-label disp" }, ["Add to Home Screen"]),
+          el("span", { class:"rank-chevron disp", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, [])
+        ]));
+      }
+      themeKids.push(el("div", { class:"sheet-rule" }, []));
+      themeKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, ["Done"]));
+      var themeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Settings",
+        onClick:function(e){ e.stopPropagation(); } }, themeKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.showThemeSheet = false; softRender(); } }, [themeSheet]));
+      return;
+    }
+    if (ui.installSheet) {
+      // iOS Safari has no programmatic install API (that's what promptInstall's
+      // deferredInstallPrompt branch is for, on Chromium) — this sheet only ever
+      // shows for the "walk them through it manually" fallback path.
+      var instStepStyle = "font-style:normal; text-align:left; margin:0 0 6px;";
+      var instKids = [ el("h3", { class:"disp", style:"margin-bottom:14px;" }, ["Add to Home Screen"]) ];
+      if (isIOSDevice()) {
+        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, [
+          "1. Open Some-R-Set Scorepad in Safari and tap ",
+          el("span", { class:"step-icon", role:"img", "aria-label":"More options", html:MORE_DOTS_SVG }, []), "."
+        ]));
+        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, [
+          "2. Tap ",
+          el("span", { class:"step-icon", role:"img", "aria-label":"Share", html:SHARE_ICON_SVG }, []),
+          " to open the share menu."
+        ]));
+        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, ["3. Scroll down and tap “Add to Home Screen”."]));
+        instKids.push(el("p", { class:"sub disp", style:instStepStyle }, ["4. Tap “Add” in the top-right corner."]));
+      } else {
+        instKids.push(el("p", { class:"sub disp", style:instStepStyle },
+          ["Open your browser's menu, then tap “Add to Home Screen” or “Install App”."]));
+      }
+      instKids.push(el("p", { class:"sub disp", style:"font-style:normal; text-align:left; margin-top:10px;" },
+        ["Some-R-Set then opens right from your Home Screen — no browser bar, just the scorepad."]));
+      instKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.installSheet = false; softRender(); } }, ["Done"]));
+      var instSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Add to Home Screen",
+        onClick:function(e){ e.stopPropagation(); } }, instKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.installSheet = false; softRender(); } }, [instSheet]));
       return;
     }
     if (ui.identityEditor) {
@@ -8341,6 +8433,7 @@ window.SOMERSET_FB_CONFIG = {
   function closeTopLayer() {
     if (ui.gameDetailRecId != null || ui.gameDetailShared != null) { ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); return true; }
     if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); return true; }
+    if (ui.installSheet) { ui.installSheet = false; softRender(); return true; }
     if (ui.identityEditor) { ui.identityEditor = false; softRender(); return true; }
     if (ui.linkDeviceSheet) { closeLinkDeviceSheet(); softRender(); return true; }
     if (ui.mergeSheet) {
@@ -8393,6 +8486,7 @@ window.SOMERSET_FB_CONFIG = {
     if (e.key !== "Escape") return;
     if (ui.gameDetailRecId != null || ui.gameDetailShared != null) { ui.gameDetailRecId = null; ui.gameDetailShared = null; softRender(); }
     else if (ui.showThemeSheet) { ui.showThemeSheet = false; softRender(); }
+    else if (ui.installSheet) { ui.installSheet = false; softRender(); }
     else if (ui.identityEditor) { ui.identityEditor = false; softRender(); }
     else if (ui.mergeSheet) { ui.mergeSheet = null; softRender(); }
     else if (ui.info) { ui.info = null; softRender(); }
