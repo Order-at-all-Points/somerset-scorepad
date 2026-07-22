@@ -687,7 +687,6 @@
 
   /* ---- sync / join code ---- */
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
-  .history-footer { text-align:center; padding:12px; border-top:1px solid var(--cream-shade); }
 
   /* ---- personal stats (History → Stats) ---- */
   .stat-sort-row { display:flex; justify-content:safe center; gap:8px; padding:10px 12px 12px; overflow-x:auto; border-bottom:1px solid var(--rule); }
@@ -5047,12 +5046,13 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.gameOptionsOpen) {
       // Reachable from all three tabs (Game tab's Options pill, Tournament tab's
-      // Options link once shared, History tab's Options pill) — the set of
-      // actions offered adapts to which one triggered it, since "New Game" /
-      // "Share Join Code" / "Join With Code" are Game-tab concepts, the
-      // Tournament tab is always already looking at a specific tourney (no
-      // "linked vs. unrelated" ambiguity there), and the History tab only ever
-      // offers backup/restore (see historyFileInputEl).
+      // Options link once shared, History tab's Options pill on both the Log and
+      // Stats sub-views) — the set of actions offered adapts to which one
+      // triggered it, since "New Game" / "Share Join Code" / "Join With Code"
+      // are Game-tab concepts, the Tournament tab is always already looking at a
+      // specific tourney (no "linked vs. unrelated" ambiguity there), the History
+      // tab always offers backup/restore (see historyFileInputEl), and "Merge
+      // names…" only makes sense once there's a Stats board to fold names on.
       var onGameTab = ui.view === "game";
       var onHistoryTab = ui.view === "history";
       var ogKids = [ el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Options"]) ];
@@ -5062,6 +5062,12 @@ window.SOMERSET_FB_CONFIG = {
         }
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); if (historyFileInputEl) historyFileInputEl.click(); } },
           [ gameHistory.length ? "Restore" : "Restore a backup" ]));
+        if (ui.historySub === "board") {
+          var mergeCandidates = Object.keys(computePlayerStats()).length;
+          if (mergeCandidates >= 2 || Object.keys(nameAliases).length) {
+            ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.mergeSheet = { step:1 }; render(); } }, ["Merge names…"]));
+          }
+        }
       } else {
         var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
         var connected = onGameTab ? isGameShared() : !!syncCode;
@@ -6586,12 +6592,10 @@ window.SOMERSET_FB_CONFIG = {
     } else {
       players.forEach(function (p, idx) { card.appendChild(renderRankRow(p, idx, sortDef, maxMetric)); });
     }
-    if (players.length >= 2 || Object.keys(nameAliases).length) {
-      card.appendChild(el("div", { class:"history-footer" }, [
-        el("button", { class:"link-btn disp", onClick:function(){ ui.mergeSheet = { step:1 }; render(); } }, ["Merge names…"])
-      ]));
-    }
     viewRootEl.appendChild(card);
+    viewRootEl.appendChild(el("div", { style:"text-align:center; margin-top:14px; display:flex; justify-content:center; gap:10px;" }, [
+      el("button", { class:"settings-toggle disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
+    ]));
     suppressFade = false;
   }
 
