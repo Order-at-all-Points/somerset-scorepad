@@ -4962,7 +4962,7 @@ window.SOMERSET_FB_CONFIG = {
       // Reachable from all three tabs (Game tab's Options pill, Tournament tab's
       // Options link once shared, History tab's Options pill) — the set of
       // actions offered adapts to which one triggered it, since "New Game" /
-      // "Share Join Code" / "Join with code" are Game-tab concepts, the
+      // "Share Join Code" / "Join With Code" are Game-tab concepts, the
       // Tournament tab is always already looking at a specific tourney (no
       // "linked vs. unrelated" ambiguity there), and the History tab only ever
       // offers backup/restore (see historyFileInputEl).
@@ -4994,7 +4994,7 @@ window.SOMERSET_FB_CONFIG = {
             ui.shareNamesSetup = { players: soloGame.players.slice() };
             softRender();
           } }, ["Share Join Code"]));
-          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join With Code"]));
           ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
             [ myDeviceName ? ("Playing as: " + myDeviceName) : "Playing as…" ]));
         } else if (linked) {
@@ -5057,7 +5057,7 @@ window.SOMERSET_FB_CONFIG = {
         joinTournament(code, function(msg){ ui.joinError = msg; softRender(); });
       } }, ["Join →"]));
       jKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, ["Cancel"]));
-      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join with code",
+      var jSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Join With Code",
         onClick:function(e){ e.stopPropagation(); } }, jKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.joinSheet = false; ui.joinError = null; softRender(); } }, [jSheet]));
       setTimeout(function(){ try { joinInput.focus(); } catch(e){} }, 50);
@@ -7831,7 +7831,7 @@ window.SOMERSET_FB_CONFIG = {
     ]));
     card.appendChild(el("div", { style:"padding:0 12px 28px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
       el("p", { class:"join-divider disp" }, ["Already have a tournament?"]),
-      el("button", { class:"btn btn-cancel disp", style:"padding:12px 24px;", onClick:function(){ ui.joinSheet = true; render(); } }, ["Join with code"])
+      el("button", { class:"btn btn-cancel disp", style:"padding:12px 24px;", onClick:function(){ ui.joinSheet = true; render(); } }, ["Join With Code"])
     ]));
     viewRootEl.appendChild(card);
     suppressFade = false;
