@@ -242,10 +242,19 @@
   .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
   .deal-row.open { border-bottom-color:transparent; }
   /* The bid's been confirmed but the hand hasn't been recorded yet (game.pendingBid) —
-     not clickable (there's no deal id to open) and its score slot is a placeholder,
-     not a real 0, so it's dimmed and tinted to read as "in progress" rather than final. */
+     its score slot is a placeholder, not a real 0, so it's dimmed and tinted to read
+     as "in progress" rather than final. When this viewer may edit the bid (see
+     renderScorePad's pending-row branch), the placeholder slot holds an "Edit" link
+     instead of the dashes and the whole row opens the bid editor. */
   .deal-row.pending { cursor:default; background:var(--cream-shade); }
+  .deal-row.pending.editable { cursor:pointer; }
   .pending-score .score-digits { color:var(--ink-soft); font-weight:400; }
+  /* Sized to sit where the score block does, so the Bidder/Dealer columns keep
+     (roughly) their alignment with the recorded rows above. */
+  .deal-edit-bid { flex:none; width:86px; background:none; border:none; padding:4px 0; margin:-4px 0;
+    font-family:var(--font-text); font-size:13px; font-weight:600; color:var(--brass-text);
+    text-align:center; cursor:pointer; }
+  .deal-edit-bid:active { color:var(--ink); }
   /* The score/dash/score block is fixed-width (ch-based cells, one glyph dash); the
      column header pins its own cells to this block's measured width so the divider
      lines up (see alignDealHead). */
@@ -4253,12 +4262,44 @@ window.SOMERSET_FB_CONFIG = {
       var pb = game.pendingBid;
       var pbBidderLabel = (pb.bidderSeat != null) ? seatName(pb.bidderSeat) : teamLabel(pb.bidTeam);
       var pbDlr = dealerSeat();
-      var pbScoreBlockEl = el("span", { class:"deal-score-block" }, [
-        pendingScoreCell(true),
-        el("span", { class:"dash" }, ["|"]),
-        pendingScoreCell()
-      ]);
-      if (!target.__dealRefScoreEl) target.__dealRefScoreEl = pbScoreBlockEl;
+      // The bid stays editable until the take lands. When this viewer is allowed
+      // to edit (not a spectator, game not over, hand not locked by someone
+      // else), the empty score slot carries an "Edit" link and the whole row
+      // opens the bid editor — same tap-the-row grammar as the recorded deals
+      // above it. Otherwise the slot keeps its "– | –" placeholder.
+      var pbAm = currentGameAm();
+      var pbKey = pbAm ? handLockKey(pbAm, null, dealNo) : null;
+      var pbCanEdit = !isReadOnly && win === null && !(pbKey && !isMineOrUnlocked(pbKey));
+      var pbOpenEdit = function(e){
+        if (e) e.stopPropagation();
+        var open = function(){
+          var cur = game.pendingBid;
+          if (!cur) return;   // withdrawn on another device between render and tap
+          ui.bidTeam = cur.bidTeam; ui.bid = cur.bid; ui.bidderSeat = cur.bidderSeat;
+          ui.bidderPts = cur.bid; ui.bidderWarn = false;
+          ui.showEntry = true; ui.entryStep = 1; ui.editingDeal = null;
+          softRender(); scrollEntryIntoView();
+        };
+        if (!pbKey) { open(); return; }
+        claimLock(pbKey, function(won){
+          if (!won) { ui.info = "Someone else just started editing this hand."; softRender(); return; }
+          ui.myLockKey = pbKey;
+          open();
+        });
+      };
+      var pbScoreBlockEl;
+      if (pbCanEdit) {
+        pbScoreBlockEl = el("button", { class:"deal-edit-bid disp", "aria-label":"Edit the bid", onClick:pbOpenEdit }, ["Edit"]);
+        // Deliberately NOT set as __dealRefScoreEl — the header aligns to real
+        // score cells, and this slot holds a link instead.
+      } else {
+        pbScoreBlockEl = el("span", { class:"deal-score-block" }, [
+          pendingScoreCell(true),
+          el("span", { class:"dash" }, ["|"]),
+          pendingScoreCell()
+        ]);
+        if (!target.__dealRefScoreEl) target.__dealRefScoreEl = pbScoreBlockEl;
+      }
       // Outcome isn't known yet (points not recorded), so a moon bid stays untinted
       // — no accent/red until the take lands.
       var pbDescKids = (pb.bid === POINTS_PER_DEAL)
@@ -4266,10 +4307,12 @@ window.SOMERSET_FB_CONFIG = {
         : [ pbBidderLabel + " bid " + pb.bid ];
       var pbBidderEl = el("span", { class:"deal-bidder disp" }, pbDescKids);
       var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(pbDlr) ]);
-      history.appendChild(el("div", {
-        class:"deal-row pending" + (noFade ? "" : " fade"),
-        "aria-label":"Deal " + dealNo + " in progress, points not yet recorded"
-      }, [ pbScoreBlockEl, pbBidderEl, pbDealerLabelEl ]));
+      var pbRowProps = {
+        class:"deal-row pending" + (pbCanEdit ? " editable" : "") + (noFade ? "" : " fade"),
+        "aria-label":"Deal " + dealNo + " in progress, points not yet recorded" + (pbCanEdit ? ". Tap to edit the bid" : "")
+      };
+      if (pbCanEdit) { pbRowProps.role = "button"; pbRowProps.tabindex = "0"; pbRowProps.onClick = pbOpenEdit; }
+      history.appendChild(el("div", pbRowProps, [ pbScoreBlockEl, pbBidderEl, pbDealerLabelEl ]));
     }
     pad.appendChild(history);
 
@@ -4312,6 +4355,8 @@ window.SOMERSET_FB_CONFIG = {
         // The bid's been placed and broadcast to everyone (game.pendingBid); the
         // hand is being played. Any device can now record what the bidding team
         // took — this reopens the sheet straight at step 2, prefilled from the bid.
+        // (The bid itself is edited from the pending deal row above — its "Edit"
+        // slot/row tap reopens step 1 under this same per-hand lock.)
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick:function(){
             var openTake = function(){
@@ -5443,6 +5488,13 @@ window.SOMERSET_FB_CONFIG = {
                 [ teamLabel(i) + " bid" ]);
             }))
           ];
+      // A placed-but-untaken bid (game.pendingBid) reopens this step as an EDIT
+      // of that bid \u2014 via the scoreboard's "Edit Bid" button or step 2's
+      // bid-summary tap. Cancel keeps the placed bid untouched (it's a
+      // committed, broadcast bid \u2014 same rule closeTopLayer's back/escape path
+      // already follows); withdrawing it entirely is its own explicit "Remove
+      // Bid" action below, not a side effect of backing out.
+      var editingPendingBid = ui.editingDeal == null && !!game.pendingBid;
       var kids1 = header.concat([
         el("p", { class:"phase-label disp" }, ["Step 1 \u00b7 before the hand"])
       ]).concat(whoKids).concat([
@@ -5459,7 +5511,7 @@ window.SOMERSET_FB_CONFIG = {
           el("button", { class:"btn btn-cancel disp", onClick:function(){
             ui.showEntry=false; ui.entryStep=1; ui.editingDeal=null;
             releaseMyHandLock();
-            if (game.pendingBid) { game.pendingBid = null; persist(); } else softRender();
+            softRender();
           } }, ["Cancel"]),
           el("button", { class:"btn btn-record disp", onClick:function(){
             if (named && ui.bidderSeat == null) { ui.bidderWarn = true; softRender(); return; }
@@ -5469,17 +5521,28 @@ window.SOMERSET_FB_CONFIG = {
               ui.bidderPts = ui.bid; ui.entryStep = 2; softRender();
               return;
             }
-            // New deal: lock in the bid, broadcast it (game.pendingBid), and close
-            // the sheet so every spectator sees the bid land on the scoreboard. The
-            // take is recorded separately, by anyone, via the "Record Take" button.
-            // Release the hand lock so whoever plays the hand can pick the take up.
+            // New or updated bid: lock it in, broadcast it (game.pendingBid), and
+            // close the sheet so every spectator sees the bid land on the
+            // scoreboard. The take is recorded separately, by anyone, via the
+            // "Record Take" button. Release the hand lock so whoever plays the
+            // hand can pick the take up.
             game.pendingBid = { bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat };
             ui.bidderPts = ui.bid;
             ui.showEntry = false; ui.entryStep = 1;
             releaseMyHandLock();
             persist();
-          } }, [ui.editingDeal != null ? "Next: play the hand \u2192" : "Record Bid"])
-        ])
+          } }, [ui.editingDeal != null ? "Next: play the hand \u2192" : (editingPendingBid ? "Update Bid" : "Record Bid")])
+        ]),
+        editingPendingBid
+          ? el("div", { style:"text-align:center; margin-top:10px;" }, [
+              el("button", { class:"link-btn danger disp", onClick:function(){
+                game.pendingBid = null;
+                ui.showEntry = false; ui.entryStep = 1;
+                releaseMyHandLock();
+                persist();
+              } }, ["Remove Bid"])
+            ])
+          : null
       ]);
       return el("div", { class:"entry" }, kids1);
     }
