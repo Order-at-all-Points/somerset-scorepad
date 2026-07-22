@@ -51,15 +51,17 @@ async function dismissInfoModal(page) {
 }
 
 /**
- * Click "Back up" and capture the exported JSON via Playwright's download
- * event (navigator.share is neutralized in browser.js so this always takes
- * the deterministic <a download> blob path). Returns the parsed
- * { exportedAt, games } object plus the raw download path.
+ * Open the History tab's Options sheet, click "Back up", and capture the
+ * exported JSON via Playwright's download event (navigator.share is
+ * neutralized in browser.js so this always takes the deterministic
+ * <a download> blob path). Returns the parsed { exportedAt, games } object
+ * plus the raw download path.
  */
 async function exportHistory(page) {
+  await page.locator("#viewRoot .settings-toggle", { hasText: "Options" }).click({ timeout: config.actionTimeoutMs });
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: config.actionTimeoutMs }),
-    page.locator(".history-footer .link-btn", { hasText: "Back up" }).click(),
+    page.locator('[role="dialog"][aria-label="Options"] .sheet-btn', { hasText: "Back up" }).click({ timeout: config.actionTimeoutMs }),
   ]);
   const stream = await download.createReadStream();
   const chunks = [];

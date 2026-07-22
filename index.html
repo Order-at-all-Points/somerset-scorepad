@@ -691,7 +691,6 @@
   /* ---- sync / join code ---- */
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
   .history-footer { text-align:center; padding:12px; border-top:1px solid var(--cream-shade); }
-  .history-footer .dot-sep { color:var(--ink-soft); margin:0 10px; }
 
   /* ---- personal stats (History → Stats) ---- */
   .stat-sort-row { display:flex; justify-content:safe center; gap:8px; padding:10px 12px 12px; overflow-x:auto; border-bottom:1px solid var(--rule); }
@@ -4975,45 +4974,56 @@ window.SOMERSET_FB_CONFIG = {
       return;
     }
     if (ui.gameOptionsOpen) {
-      // Reachable from both tabs (Game tab's Options pill, Tournament tab's
-      // Options link once shared) — the set of actions offered adapts to which
-      // one triggered it, since "New Game" / "Share Join Code" / "Join with
-      // code" are Game-tab concepts, while the Tournament tab is always already
-      // looking at a specific tourney (no "linked vs. unrelated" ambiguity there).
+      // Reachable from all three tabs (Game tab's Options pill, Tournament tab's
+      // Options link once shared, History tab's Options pill) — the set of
+      // actions offered adapts to which one triggered it, since "New Game" /
+      // "Share Join Code" / "Join with code" are Game-tab concepts, the
+      // Tournament tab is always already looking at a specific tourney (no
+      // "linked vs. unrelated" ambiguity there), and the History tab only ever
+      // offers backup/restore (see historyFileInputEl).
       var onGameTab = ui.view === "game";
-      var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
-      var connected = onGameTab ? isGameShared() : !!syncCode;
-      var blocked = onGameTab && !linked && !!tourney;   // an unrelated tourney/tournament is already active
+      var onHistoryTab = ui.view === "history";
       var ogKids = [ el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Options"]) ];
-      if (onGameTab && game.deals.length > 0) {
-        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
-          ui.gameOptionsOpen = false;
-          ui.confirmReset = true; softRender();
-        } }, ["New Game"]));
-      }
-      if (blocked) {
-        ogKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink-soft); margin:2px 0 4px;" },
-          [ "You're already in a shared " + (tourney.format === "series" ? "game" : "tournament") + ".", el("br", {}, []), "Leave it from the Tournament tab to share or join a different one." ]));
-      } else if (onGameTab && !linked) {
-        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
-          ui.gameOptionsOpen = false;
-          ui.shareNamesSetup = { players: soloGame.players.slice() };
-          softRender();
-        } }, ["Share Join Code"]));
-        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
-        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
-          [ myDeviceName ? ("Playing as: " + myDeviceName) : "Playing as…" ]));
-      } else if (linked) {
-        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
-          ui.gameOptionsOpen = false;
-          if (connected) ui.shareSheetOpen = true; else shareSession();
-          render();
-        } }, [ connected ? "Share code" : "Retry sharing" ]));
-        if (connected) {
-          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.whoSheet = true; render(); } }, ["Playing as…"]));
+      if (onHistoryTab) {
+        if (gameHistory.length) {
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); exportHistory(); } }, ["Back up"]));
         }
-        ogKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ ui.gameOptionsOpen = false; ui.confirmEndT = true; softRender(); } },
-          [ endOrLeaveLabel(tourney) ]));
+        ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); if (historyFileInputEl) historyFileInputEl.click(); } },
+          [ gameHistory.length ? "Restore" : "Restore a backup" ]));
+      } else {
+        var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
+        var connected = onGameTab ? isGameShared() : !!syncCode;
+        var blocked = onGameTab && !linked && !!tourney;   // an unrelated tourney/tournament is already active
+        if (onGameTab && game.deals.length > 0) {
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+            ui.gameOptionsOpen = false;
+            ui.confirmReset = true; softRender();
+          } }, ["New Game"]));
+        }
+        if (blocked) {
+          ogKids.push(el("p", { class:"sub disp", style:"font-style:normal; font-size:14px; color:var(--ink-soft); margin:2px 0 4px;" },
+            [ "You're already in a shared " + (tourney.format === "series" ? "game" : "tournament") + ".", el("br", {}, []), "Leave it from the Tournament tab to share or join a different one." ]));
+        } else if (onGameTab && !linked) {
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+            ui.gameOptionsOpen = false;
+            ui.shareNamesSetup = { players: soloGame.players.slice() };
+            softRender();
+          } }, ["Share Join Code"]));
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
+            [ myDeviceName ? ("Playing as: " + myDeviceName) : "Playing as…" ]));
+        } else if (linked) {
+          ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
+            ui.gameOptionsOpen = false;
+            if (connected) ui.shareSheetOpen = true; else shareSession();
+            render();
+          } }, [ connected ? "Share code" : "Retry sharing" ]));
+          if (connected) {
+            ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.whoSheet = true; render(); } }, ["Playing as…"]));
+          }
+          ogKids.push(el("button", { class:"sheet-btn disp", style:"color:var(--red); border-color:var(--red);", onClick:function(){ ui.gameOptionsOpen = false; ui.confirmEndT = true; softRender(); } },
+            [ endOrLeaveLabel(tourney) ]));
+        }
       }
       ogKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.gameOptionsOpen = false; softRender(); } }, ["Cancel"]));
       var ogSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Options",
@@ -6124,6 +6134,10 @@ window.SOMERSET_FB_CONFIG = {
     ]);
   }
 
+  // Set by renderHistory() to its current file-picker <input> so the Options
+  // sheet's Restore button (built by the separate renderModal function) can
+  // trigger the OS file picker without needing markup of its own.
+  var historyFileInputEl = null;
   function renderHistory() {
     viewRootEl.innerHTML = "";
     var fileInput = el("input", { type:"file", accept:"application/json", style:"display:none;", onChange:function () {
@@ -6171,15 +6185,12 @@ window.SOMERSET_FB_CONFIG = {
         groups.forEach(function (g, i) { card.appendChild(renderHistoryGroup(g, i === 0)); });
       }
     }
-    var footerLinks = [];
-    if (gameHistory.length) {
-      footerLinks.push(el("button", { class:"link-btn disp", onClick:exportHistory }, ["Back up"]));
-      footerLinks.push(el("span", { class:"dot-sep disp" }, ["·"]));
-    }
-    footerLinks.push(el("button", { class:"link-btn disp", onClick:function(){ fileInput.click(); } }, [gameHistory.length ? "Restore" : "Restore a backup"]));
-    card.appendChild(el("div", { class:"history-footer" }, footerLinks));
+    historyFileInputEl = fileInput;
     card.appendChild(fileInput);
     viewRootEl.appendChild(card);
+    viewRootEl.appendChild(el("div", { style:"text-align:center; margin-top:14px; display:flex; justify-content:center; gap:10px;" }, [
+      el("button", { class:"settings-toggle disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
+    ]));
     suppressFade = false;
     var afterHistoryPaint = function(){ applyScoreWrap(); };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(afterHistoryPaint);
@@ -8426,6 +8437,24 @@ window.SOMERSET_FB_CONFIG = {
     else if (ui.matchMenu) { ui.matchMenu = null; softRender(); }
     else if (ui.seatMenu !== null) { ui.seatMenu = null; ui.seatMenuMode = "menu"; softRender(); }
     else if (ui.pendingDealer !== null) { ui.pendingDealer = null; softRender(); }
+  });
+
+  // Safari-only paint bug: the .pad card's dashed "stitched seam" outline (see the
+  // .pad rule's outline/outline-offset) can mis-render right after the .fade entrance
+  // animation finishes -- the rounded corners fail to close and the dashed sides run
+  // straight down past the card, sometimes clear to the bottom of the page, until
+  // *anything* forces a repaint (confirmed: tapping the page fixes it instantly). Cards
+  // that get torn down and rebuilt from scratch every render (History, Stats, Tournament
+  // setup/bracket -- see the "pad" + (suppressFade ? "" : " fade") call sites) retrigger
+  // the animation, and with it the bug, on every visit. Forcing a real repaint the moment
+  // the animation ends -- toggling outline-style off and back on -- is enough to make
+  // Safari recompute the outline correctly, without waiting for a user tap.
+  document.addEventListener("animationend", function (e) {
+    if (e.animationName !== "fade" || !e.target.classList || !e.target.classList.contains("pad")) return;
+    var cardEl = e.target;
+    cardEl.style.outlineStyle = "none";
+    void cardEl.offsetHeight;
+    cardEl.style.outlineStyle = "";
   });
 
   render();
