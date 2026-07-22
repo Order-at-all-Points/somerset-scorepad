@@ -4171,7 +4171,9 @@ window.SOMERSET_FB_CONFIG = {
     pad.appendChild(totalsGrid);
 
     // Dealer table
-    pad.appendChild(renderTable());
+    var tableEl = renderTable();
+    pad.appendChild(tableEl);
+    target.__dealTableEl = tableEl;
 
     // Deal history
     var history = el("div", { style:"padding:4px 0;" });
@@ -4183,6 +4185,9 @@ window.SOMERSET_FB_CONFIG = {
     target.__dealRefBidderEl = null;
     target.__dealDetailLeftEl = null;
     target.__dealDetailCenterEl = null;
+    // Every Bidder cell (header, each row, the pending row) so alignBidderColumn
+    // can nudge them all by the same amount — see that function for why.
+    target.__dealBidderEls = [];
     // A torn-down row's swipe (if any) no longer exists in the new DOM, so drop any
     // stale reference to it rather than let the global pointerdown listener above
     // try to close a detached row.
@@ -4200,9 +4205,11 @@ window.SOMERSET_FB_CONFIG = {
         el("span", { class:"dh-cell r" }, [ el("span", { class:"dh-badge" }, [ teamBadge(game.teams, game.players, tvo[1]) ]) ])
       ]);
       target.__dealHeadScoreEl = headScoreEl;
+      var headBidderEl = el("span", { class:"deal-head-bidder" }, ["Bidder"]);
+      target.__dealBidderEls.push(headBidderEl);
       history.appendChild(el("div", { class:"deal-head disp", "aria-hidden":"true" }, [
         headScoreEl,
-        el("span", { class:"deal-head-bidder" }, ["Bidder"]),
+        headBidderEl,
         el("span", { class:"deal-head-dealer" }, ["Dealer"])
       ]));
     }
@@ -4234,6 +4241,7 @@ window.SOMERSET_FB_CONFIG = {
         if (!target.__dealRefScoreEl) target.__dealRefScoreEl = scoreBlockEl;
         var bidderEl = el("span", { class:"deal-bidder disp" }, descKids);
         if (!target.__dealRefBidderEl) target.__dealRefBidderEl = bidderEl;
+        target.__dealBidderEls.push(bidderEl);
         // Dealer column names the dealer outright (the rotated seat arrow it used to
         // show read as a near-identical stroke at 13px, and the name is what people
         // actually want to know at a glance).
@@ -4331,6 +4339,7 @@ window.SOMERSET_FB_CONFIG = {
         ? [ pbBidderLabel + " shot the", el("strong", { class:"set-flag disp" }, ["MOON"]) ]
         : [ pbBidderLabel + " bid " + pb.bid ];
       var pbBidderEl = el("span", { class:"deal-bidder disp" }, pbDescKids);
+      target.__dealBidderEls.push(pbBidderEl);
       var pbDealerLabelEl = el("span", { class:"deal-dealer disp" }, [ seatName(pbDlr) ]);
       var pbRowProps = {
         class:"deal-row pending" + (pbCanEdit ? " editable" : "") + (noFade ? "" : " fade"),
@@ -4424,6 +4433,7 @@ window.SOMERSET_FB_CONFIG = {
     if (target.isConnected) equalizeTeamNames(teamNameEls);
     if (target.isConnected) alignDealHead(target.__dealHeadScoreEl, target.__dealRefScoreEl);
     if (target.isConnected) alignDealDetailActions(target.__dealDetailLeftEl, target.__dealDetailCenterEl, target.__dealRefScoreEl, target.__dealRefBidderEl);
+    if (target.isConnected) alignBidderColumn(target.__dealTableEl, target.__dealBidderEls);
   }
 
   // The expanded row's Edit Take / Edit Bid links (see the isOpen block above)
@@ -4461,6 +4471,26 @@ window.SOMERSET_FB_CONFIG = {
       var wantCenter = bRect.left + bRect.width / 2, curCenter = cRect.left + cRect.width / 2;
       centerEl.style.transform = "translateX(" + (wantCenter - curCenter) + "px)";
     }
+  }
+
+  // The Bidder column's flex:2 1 0 share (see .deal-bidder/.deal-head-bidder
+  // above) keeps every row and the header mutually centered on each other, but
+  // that shared center isn't the row's true midpoint — the fixed-width score
+  // block plus gap eats a constant chunk off the left before the 2:1 split
+  // even starts, so the Bidder cell's center sits left of the row's actual
+  // middle by an amount that shrinks as the row widens. The seat table above
+  // it, meanwhile, is capped at max-width:300px and centers on that same true
+  // midpoint regardless of screen width — so on a wide-enough screen the two
+  // centers visibly part ways. Since every Bidder cell already shares one
+  // center (that's the point of the 2:1 split), measuring the drift once and
+  // nudging all of them by the same transform lands the whole column under
+  // Seat 1 / Seat 3 without disturbing their alignment with each other.
+  function alignBidderColumn(tableEl, bidderEls) {
+    if (!tableEl || !bidderEls || !bidderEls.length) return;
+    var anchor = bidderEls[0];
+    var tRect = tableEl.getBoundingClientRect(), aRect = anchor.getBoundingClientRect();
+    var delta = (tRect.left + tRect.width / 2) - (aRect.left + aRect.width / 2);
+    bidderEls.forEach(function (bEl) { bEl.style.transform = "translateX(" + delta + "px)"; });
   }
 
   // The column-header row is small uppercase text, not the 17px mono score cells
@@ -7820,6 +7850,7 @@ window.SOMERSET_FB_CONFIG = {
     equalizeTeamNames(card.__teamNameEls);   // now attached — heights measure correctly
     alignDealHead(card.__dealHeadScoreEl, card.__dealRefScoreEl);
     alignDealDetailActions(card.__dealDetailLeftEl, card.__dealDetailCenterEl, card.__dealRefScoreEl, card.__dealRefBidderEl);
+    alignBidderColumn(card.__dealTableEl, card.__dealBidderEls);
   }
 
   function renderTournamentSetup() {
