@@ -4868,7 +4868,7 @@ window.SOMERSET_FB_CONFIG = {
     if (ui.gameOptionsOpen) {
       // Reachable from both tabs (Game tab's Options pill, Tournament tab's
       // Options link once shared) — the set of actions offered adapts to which
-      // one triggered it, since "New Game" / "Share this game" / "Join with
+      // one triggered it, since "New Game" / "Share Join Code" / "Join with
       // code" are Game-tab concepts, while the Tournament tab is always already
       // looking at a specific tourney (no "linked vs. unrelated" ambiguity there).
       var onGameTab = ui.view === "game";
@@ -4890,7 +4890,7 @@ window.SOMERSET_FB_CONFIG = {
           ui.gameOptionsOpen = false;
           ui.shareNamesSetup = { players: soloGame.players.slice() };
           softRender();
-        } }, ["Share this game"]));
+        } }, ["Share Join Code"]));
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.joinSheet = true; softRender(); } }, ["Join with code"]));
         ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){ ui.gameOptionsOpen = false; ui.identityEditor = true; render(); } },
           [ myDeviceName ? ("Playing as: " + myDeviceName) : "Playing as…" ]));
@@ -8100,7 +8100,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!syncCode) {
       card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
         el("button", { class:"link-btn disp", onClick:shareSession },
-          [ "Share this " + (t.format === "series" ? "game" : "tournament") + " →" ])
+          [ t.format === "series" ? "Share Join Code →" : "Share this tournament →" ])
       ]));
     } else {
       card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [

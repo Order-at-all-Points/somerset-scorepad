@@ -12,7 +12,7 @@ async function shareFromBracket(page) {
 }
 
 /**
- * Game tab Options sheet's "Share this game" entry (wraps the solo game into
+ * Game tab Options sheet's "Share Join Code" entry (wraps the solo game into
  * a 1-off series). Even when all 4 seats are already named, this routes
  * through a "Who's playing?" confirm sheet (`ui.shareNamesSetup`, pre-filled
  * from the current seat names) before the actual share -- the "Share →"
@@ -20,7 +20,7 @@ async function shareFromBracket(page) {
  */
 async function shareFromGameOptions(page) {
   await page.locator("#gameOptionsToggle:visible").click();
-  await page.locator(".sheet-btn", { hasText: "Share this game" }).click();
+  await page.locator(".sheet-btn", { hasText: "Share Join Code" }).click();
   await page.waitForTimeout(80);
   const confirmSheet = page.locator('[role="dialog"][aria-label="Who\'s playing"]');
   if (await confirmSheet.count()) {
