@@ -973,6 +973,18 @@ window.SOMERSET_FB_CONFIG = {
   }
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
+  // dealerStart for the game that FOLLOWS g at the same table: the deal keeps
+  // rotating clockwise across games, so the next game starts with whoever was up
+  // to deal when g ended — which is exactly g's own dealerSeat() (a mid-game
+  // dealer change rewrites dealerStart to keep that identity true, see the
+  // dealer-confirm handler). With no deals played it degrades to g's dealerStart,
+  // so restarting an untouched game keeps the dealer someone just picked.
+  // Only meaningful when the next game keeps the same seating — a redraw
+  // reshuffles who sits where, so those paths start the rotation over at 0.
+  function nextGameDealerStart(g) {
+    if (!g || typeof g.dealerStart !== "number") return 0;
+    return ((g.dealerStart + (g.deals ? g.deals.length : 0)) % 4 + 4) % 4;
+  }
   function seatName(i) { return (game.players[i] && game.players[i].trim()) ? game.players[i] : ("Seat " + (i + 1)); }
   // Gates the seat-level bid picker: quick games (no one named) only ever record
   // bidTeam, matching the pre-bidder-tracking deal shape the stats/history code
@@ -6065,10 +6077,16 @@ window.SOMERSET_FB_CONFIG = {
   function soloGameInProgress() {
     return soloGame.deals.length > 0 && !soloGame.archivedId;
   }
-  function newGame() {
+  // dealerStartOverride: seat the new game's rotation starts from. Defaults to
+  // continuing the finished game's rotation (see nextGameDealerStart) since the
+  // same four names carry over into the same seats; only redrawSoloTeamsAndPlay
+  // passes a value, because reshuffling the seats makes the carried seat someone
+  // else entirely.
+  function newGame(dealerStartOverride) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) archiveCurrentGame(null);   // safety net — normally already auto-archived on completion
-    var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:soloGame.dealerStart, target:soloGame.target };
+    var nextDealerStart = (typeof dealerStartOverride === "number") ? dealerStartOverride : nextGameDealerStart(soloGame);
+    var keep = { teams:soloGame.teams.slice(), players:soloGame.players.slice(), dealerStart:nextDealerStart, target:soloGame.target };
     soloGame = freshGame();
     soloGame.teams = keep.teams; soloGame.players = keep.players; soloGame.dealerStart = keep.dealerStart; soloGame.target = keep.target;
     game = soloGame;
@@ -6207,7 +6225,7 @@ window.SOMERSET_FB_CONFIG = {
       return;
     }
     soloGame.players = shuffle(soloGame.players.slice());
-    newGame();
+    newGame(0);   // seats just changed hands — carrying the rotation would be meaningless
   }
 
   function renderSettings() {
@@ -7642,11 +7660,28 @@ window.SOMERSET_FB_CONFIG = {
   // when the just-decided game didn't clinch it. The Game tab's shared-game view
   // (see isGameShared) leans on this invariant instead of tracking its own pointer.
   function liveSeriesSlot(t) { return t.games[t.games.length - 1]; }
+  // Most recent game object in the series, live or completed — the one whose
+  // dealer rotation a newly-built game carries on from. Walks backwards so a
+  // just-pushed empty slot (setSeriesWinner/startNextSharedGame) or a slot whose
+  // result was just undone (clearSeriesWinner) doesn't hide the real predecessor.
+  function lastSeriesGame(t) {
+    for (var i = t.games.length - 1; i >= 0; i--) {
+      var g = t.games[i].completedGame || t.games[i].game;
+      if (g) return g;
+    }
+    return null;
+  }
   function freshGameForTourneyTeams(t) {
     var A = t.teams[0], B = t.teams[1];
     var g = freshGame();
     g.teams = [A.name, B.name];
     g.players = [A.players[0] || "", B.players[0] || "", A.players[1] || "", B.players[1] || ""];
+    // Every game in a series seats the same four people in the same order (the
+    // line above is deterministic from t.teams), so the deal keeps rotating
+    // across games in the session rather than resetting to seat 0 each time.
+    // A redraw rebuilds t.games from scratch before calling here, so there's no
+    // predecessor to inherit from and the rotation correctly starts over.
+    g.dealerStart = nextGameDealerStart(lastSeriesGame(t));
     return g;
   }
   // Points the tourney's live slot at a (usually freshly-built) game object, and
