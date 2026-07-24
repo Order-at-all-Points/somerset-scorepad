@@ -1137,22 +1137,41 @@ window.SOMERSET_FB_CONFIG = {
     publishMyDigestSoon();   // stats-sharing digest tracks every history change (no-op unless sharing is on)
   }
   // Push any not-yet-synced History records to users/<authUid>/history and prune
-  // ones deleted locally. Records are immutable once archived and single-writer
-  // (only their own device ever writes them), so plain per-id set()/remove() is
-  // enough — no transaction/diff machinery needed the way saveTourney() requires.
+  // ones deleted locally. Records are single-writer (only their own device ever
+  // writes them), so plain per-id set()/remove() is enough — no transaction/diff
+  // machinery needed the way saveTourney() requires.
+  //
+  // Records are also *almost* immutable once archived, which is why this only
+  // pushes ids it hasn't pushed before. The one exception is a shared match
+  // whose deciding deal was corrected after this device archived it: the
+  // reconcile in syncMyHistoryFromTourney rewrites that record in place and
+  // flags it here (see markHistoryRecordDirty) so this pass re-pushes it
+  // instead of leaving a stale copy in the cloud for linked devices to read.
   function syncHistoryToCloud() {
     if (!cloudSyncEnabled || !authUid || !fb) return;
     var ids = {};
     gameHistory.forEach(function (r) { ids[r.id] = true; });
     gameHistory.forEach(function (r) {
-      if (lastSyncedHistoryIds[r.id]) return;
+      if (lastSyncedHistoryIds[r.id] && !dirtyHistoryIds[r.id]) return;
       fb.ref("users/" + authUid + "/history/" + r.id).set(r);
+      delete dirtyHistoryIds[r.id];   // cleared only once the write is actually issued
     });
     Object.keys(lastSyncedHistoryIds).forEach(function (id) {
       if (!ids[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
     });
     lastSyncedHistoryIds = ids;
   }
+  // Flag an already-pushed record as needing a re-push, for the one case where
+  // an archived record's contents change (reconcileArchivedRecord).
+  //
+  // Deliberately a SEPARATE map rather than just deleting the id from
+  // lastSyncedHistoryIds: subscribeMyHistory rebuilds that map from scratch on
+  // every users/<uid>/history snapshot, so a plain delete is silently undone if
+  // a snapshot lands before the push goes out (which is exactly what happens
+  // when a reconcile runs before auth/fb are ready — syncHistoryToCloud bails
+  // early, then the first history snapshot re-marks the id as synced and the
+  // stale cloud copy is never corrected). This survives that rebuild.
+  function markHistoryRecordDirty(id) { dirtyHistoryIds[id] = true; }
   // Flip cloud sync on for this device (first-time link, either generating or
   // redeeming a code) and immediately back-fill this device's existing History.
   // Single owner of ALL subscription wiring — callers (boot, generateLinkCode,
@@ -1928,38 +1947,57 @@ window.SOMERSET_FB_CONFIG = {
   // formats coexist safely because ids are only ever compared record-to-record,
   // never parsed, ordered, or done arithmetic on.
   function genRecordId() { return Date.now() + "-" + genCode(); }
-  function buildHistoryRecordForMatch(t, am, m, winnerOverride) {
+  // winnerOverride lets callers resolve a match decided by score before the
+  // continue/advance tap has stamped m.winner (see syncMyHistoryFromTourney).
+  function matchWinnerIdx(m, winnerOverride) {
+    var wv = (winnerOverride != null) ? winnerOverride : m.winner;
+    return (wv === m.a) ? 0 : 1;
+  }
+  // Everything in an archived record that's derived from the live match state,
+  // split out from the id/date/tournament wrapper so the first-archive path
+  // (buildHistoryRecordForMatch) and the re-sync path (reconcileArchivedRecord)
+  // can't drift apart. Null when the match has no deals to score — callers treat
+  // that as "nothing to write" rather than an empty result.
+  function historyBodyFromMatch(t, m, winnerIdx) {
     var A = t.teams[m.a], B = t.teams[m.b];
     if (!A || !B) return null;
     var ap = A.players || [], bp = B.players || [];
-    // winnerOverride lets callers archive a match decided by score before the
-    // continue/advance tap has stamped m.winner (see syncMyHistoryFromTourney).
-    var wv = (winnerOverride != null) ? winnerOverride : m.winner;
-    var winnerIdx = (wv === m.a) ? 0 : 1;
-    var champ = isClinchingMatch(t, am);
     // Prefer completedGame (set by the advance tap), but fall back to the still-
     // live .game so a decided-but-not-yet-advanced match archives with its real
     // deals/totals instead of falling through to the empty manual:true branch.
     var g = m.completedGame || m.game;
+    if (!g || !g.deals || !g.deals.length) return null;
+    return {
+      teams: [A.name, B.name],
+      players: (g.players && g.players.length) ? g.players.slice() : [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
+      dealerStart: g.dealerStart || 0,
+      target: g.target || 50,
+      totals: gameTotals(g),
+      winner: winnerIdx,
+      deals: JSON.parse(JSON.stringify(g.deals))
+    };
+  }
+  function buildHistoryRecordForMatch(t, am, m, winnerOverride) {
+    var A = t.teams[m.a], B = t.teams[m.b];
+    if (!A || !B) return null;
+    var ap = A.players || [], bp = B.players || [];
+    var winnerIdx = matchWinnerIdx(m, winnerOverride);
+    var champ = isClinchingMatch(t, am);
     // Every device that has identified as a player in a shared match archives its
     // own copy of this record independently, each with its own random id (below)
     // — so id alone can't dedup across devices. matchUid is stable across every
     // device that archives this same match (it's already used for archivedMatches,
     // 1409), so mergedHistoryForStats() can dedup on it instead.
-    if (g && g.deals && g.deals.length) {
-      return {
+    var body = historyBodyFromMatch(t, m, winnerIdx);
+    if (body) {
+      var rec = {
         id: genRecordId(),
         matchUid: matchUid(am),
-        date: new Date().toISOString(),
-        teams: [A.name, B.name],
-        players: (g.players && g.players.length) ? g.players.slice() : [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
-        dealerStart: g.dealerStart || 0,
-        target: g.target || 50,
-        totals: gameTotals(g),
-        winner: winnerIdx,
-        deals: JSON.parse(JSON.stringify(g.deals)),
-        tournament: { format: t.format, teams: [A.name, B.name], championship: champ, id: t.id, bestOf: t.bestOf }
+        date: new Date().toISOString()
       };
+      Object.keys(body).forEach(function (k) { rec[k] = body[k]; });
+      rec.tournament = { format: t.format, teams: [A.name, B.name], championship: champ, id: t.id, bestOf: t.bestOf };
+      return rec;
     }
     return {
       id: genRecordId(),
@@ -1974,6 +2012,39 @@ window.SOMERSET_FB_CONFIG = {
       deals: [],
       tournament: { format: t.format, teams: [A.name, B.name], manual:true, championship: champ, id: t.id, bestOf: t.bestOf }
     };
+  }
+  // A shared match is archived the instant it's decided (see below), but the deal
+  // that decided it can still be corrected afterward on whichever device is
+  // scoring. A device that had already archived would otherwise keep the
+  // pre-correction deals/totals/winner forever — permanently disagreeing with
+  // both the live tourney node and every other participant's copy of the same
+  // matchUid, which is exactly how two devices end up showing different career
+  // W/L for the same games. So re-derive the scoring body from each synced
+  // snapshot and adopt it whenever it differs.
+  //
+  // Safe to overwrite: nothing in the app ever edits an archived record's deals
+  // locally — History only deletes (deleteHistoryRecordWithUndo) — so there is no
+  // local edit to clobber, and the live tourney node is the shared source of
+  // truth. A match with no deals yields no body at all, so a manual/empty match
+  // can never blank out a real record.
+  function reconcileArchivedRecord(t, m, winnerIdx, uid) {
+    var body = historyBodyFromMatch(t, m, winnerIdx);
+    if (!body) return false;
+    var keys = Object.keys(body);
+    for (var i = 0; i < gameHistory.length; i++) {
+      var h = gameHistory[i];
+      if (h.matchUid !== uid) continue;
+      var differs = keys.some(function (k) { return JSON.stringify(h[k]) !== JSON.stringify(body[k]); });
+      if (!differs) return false;
+      keys.forEach(function (k) { h[k] = body[k]; });
+      // syncHistoryToCloud() skips ids it has already pushed (archived records
+      // are otherwise immutable), so without this the corrected record would
+      // stay stale in the cloud — and a linked device reading it would keep
+      // showing the pre-correction result.
+      markHistoryRecordDirty(h.id);
+      return true;   // one record per matchUid per device (archivedMatches guarantees it)
+    }
+    return false;
   }
   // Scan the synced tournament for completed matches that include "me" (the
   // identified roster name) and aren't archived to this device's History yet.
@@ -2006,9 +2077,14 @@ window.SOMERSET_FB_CONFIG = {
       }
       if (effWinner == null) return;   // truly undecided
       var uid = matchUid(am);
-      if (archivedMatches[uid]) return;
       var A = tourney.teams[m.a], B = tourney.teams[m.b];
       if (!A || !B) return;
+      if (archivedMatches[uid]) {
+        // Already logged on this device — never add a second copy, but do adopt
+        // any post-archive correction to the deals (see reconcileArchivedRecord).
+        if (reconcileArchivedRecord(tourney, m, matchWinnerIdx(m, effWinner), uid)) changed = true;
+        return;
+      }
       var names = (A.players || []).concat(B.players || []).map(function (n) { return (n || "").trim().toLowerCase(); });
       if (names.indexOf(meLc) === -1) return;   // not a match this device's identified player was in
       var rec = buildHistoryRecordForMatch(tourney, am, m, effWinner);
@@ -2258,6 +2334,7 @@ window.SOMERSET_FB_CONFIG = {
   var linkedUids = loadLinkedUids();
 
   var lastSyncedHistoryIds = {};   // in-memory baseline for syncHistoryToCloud() diffing, seeded by subscribeMyHistory()
+  var dirtyHistoryIds = {};        // { recordId: true } archived records whose contents changed and must be re-pushed (markHistoryRecordDirty)
   var linkedHistoryCache = {};     // in-memory { uid: [rec,...] }, populated by subscribeLinkedHistories()
   var myHistorySubscribed = false; // subscribeMyHistory() idempotence (enableCloudSync may be re-entered on re-link)
   var linkedUidSubs = {};          // { uid: true } for each users/<uid>/history listener currently attached

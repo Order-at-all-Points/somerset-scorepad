@@ -9,6 +9,10 @@ const storage = require("../lib/pageobjects/storage");
 const stats = require("../lib/pageobjects/stats");
 const simulator = require("../lib/simulator");
 const tSetup = require("../lib/pageobjects/tournamentSetup");
+const handEntry = require("../lib/pageobjects/handEntry");
+const dealHistory = require("../lib/pageobjects/dealHistory");
+const bracket = require("../lib/pageobjects/bracket");
+const emulator = require("../lib/emulator");
 const config = require("../config");
 
 const NAME = "casual-shared/share-game-host-guest-identity-autoarchive";
@@ -417,4 +421,606 @@ const loneSharedGameIsStandard = {
   },
 };
 
-module.exports = [shareGameHostGuest, bestOf1LogsWithoutContinue, loneSharedGameIsStandard];
+// A shared match auto-archives on every participant's device the instant it's
+// decided -- but the deal that decided it can still be corrected afterward on
+// whichever device is scoring, and that correction can flip the winner. A
+// device that had already archived must adopt the correction; otherwise its
+// copy of that matchUid disagrees with everyone else's forever, and the two
+// devices show different career W/L for the same games.
+//
+// This is a repro of a real production divergence (2026-07-21): a deciding deal
+// was entered as bid 7 / took 6 (a set -> the OTHER team crossed 50 and won),
+// two devices auto-archived within 0.3s, the deal was then corrected to bid 6 /
+// took 14 (made -> the bidding team crossed 50 instead), and only the devices
+// that hadn't archived yet ever saw the fix. Guards reconcileArchivedRecord.
+const decidingDealCorrectionPropagates = {
+  name: "casual-shared/deciding-deal-correction-propagates",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/deciding-deal-correction-propagates");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    // Seats 0/2 are one team, 1/3 the other. Host is C1 (seat 0, team 0) and
+    // guest is C2 (seat 1, team 1) so the correction flips the guest from a
+    // win to a loss -- the divergence has to be visible in the guest's own
+    // record, not just in the shared deal list.
+    const readRec = async (page) =>
+      ((await storage.readKey(page, storage.KEYS.history)).value || []).filter((g) => g.winner != null);
+    try {
+      await seats.nameAllSeats(host.page, ["C1", "C2", "C3", "C4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "C1");
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(300);
+      if (await sync.whoSheet(guest.page).count()) await sync.chooseIdentity(guest.page, "C2");
+
+      // Walks team 0 to 39 and team 1 to 45 (target 50, nothing decided yet),
+      // then the 7th deal decides it. Mirrors the production game exactly.
+      logger.step("Host plays 6 deals to 39-45, then a 7th that sets team 0 and hands team 1 the win");
+      const leadUp = [
+        { bidder: { seat: 1 }, bid: 7, pointsTaken: 9 },
+        { bidder: { seat: 1 }, bid: 7, pointsTaken: 13 },
+        { bidder: { seat: 0 }, bid: 7, pointsTaken: 7 },
+        { bidder: { seat: 1 }, bid: 6, pointsTaken: 11 },
+        { bidder: { seat: 0 }, bid: 7, pointsTaken: 9 },
+        { bidder: { seat: 2 }, bid: 7, pointsTaken: 14 },
+      ];
+      for (const d of leadUp) await handEntry.playDeal(host.page, d);
+      const preTotals = await newGame.readTeamTotals(host.page);
+      if (preTotals[0] !== 39 || preTotals[1] !== 45) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Lead-up deals didn't reach the intended 39-45 (got [${preTotals}]) -- the rest of this scenario's assertions assume it`,
+          expected: [39, 45],
+          actual: preTotals,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+      // bid 7, took 6 -> set -> team 0 drops to 32, team 1 takes the other 8 to 53.
+      await handEntry.playDeal(host.page, { bidder: { seat: 0 }, bid: 7, pointsTaken: 6 });
+
+      logger.step("Both devices auto-archive the decided match");
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const guestBefore = await readRec(guest.page);
+      if (guestBefore.length !== 1 || guestBefore[0].winner !== 1) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Guest should have auto-archived exactly one record won by team 1 before the correction (got ${guestBefore.length} record(s), winner=${guestBefore[0] && guestBefore[0].winner})`,
+          expected: "1 record, winner 1",
+          actual: `${guestBefore.length} record(s), winner ${guestBefore[0] && guestBefore[0].winner}`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+
+      // The cloud copy has to exist BEFORE the correction, or the later
+      // "was it re-pushed?" assertion is vacuous -- syncHistoryToCloud only
+      // skips ids it has already pushed, so a record that was never pushed
+      // would get written afterward regardless of the reconcile.
+      const guestUidEarly = (await storage.readKey(guest.page, storage.KEYS.authUid)).raw;
+      const cloudBefore = guestUidEarly
+        ? await emulator.pollFor(async () => {
+            const v = await emulator.dbGet(`users/${guestUidEarly}/history/${guestBefore[0].id}`);
+            return v && v.winner === 1 ? v : null;
+          })
+        : null;
+      if (!cloudBefore) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: "Guest's auto-archived record never reached the cloud before the correction, so this scenario can't tell a re-push apart from a first push",
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+
+      logger.step("Host corrects the deciding deal to bid 6 / took 14, flipping the winner to team 0");
+      await dealHistory.editDeal(host.page, 7);
+      await handEntry.setBid(host.page, 6);
+      await handEntry.goToStep2(host.page);
+      await handEntry.setPointsTaken(host.page, 14);
+      await handEntry.submitDeal(host.page);
+      const postTotals = await newGame.readTeamTotals(host.page);
+      if (postTotals[0] !== 53 || postTotals[1] !== 45) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Correcting the deciding deal didn't produce the intended 53-45 (got [${postTotals}])`,
+          expected: [53, 45],
+          actual: postTotals,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+
+      logger.step("Guest's already-archived record must converge on the correction");
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const guestAfter = await readRec(guest.page);
+      const hostAfter = await readRec(host.page);
+      if (guestAfter.length !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Reconciling a corrected deal changed the guest's record count to ${guestAfter.length} (expected 1) -- a correction must update the archived record in place, never add a second copy`,
+          expected: 1,
+          actual: guestAfter.length,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      const g = guestAfter[0];
+      if (g.winner !== 0) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Guest's archived record still shows winner ${g.winner} after the host corrected the deciding deal (expected 0) -- the device keeps its pre-correction copy forever, so the two devices report different career W/L for the same game`,
+          expected: 0,
+          actual: g.winner,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+      if (JSON.stringify(g.totals) !== JSON.stringify([53, 45])) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Guest's archived record kept its pre-correction totals [${g.totals}] (expected [53,45])`,
+          expected: [53, 45],
+          actual: g.totals,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+      if (hostAfter.length === 1 && JSON.stringify(g.deals) !== JSON.stringify(hostAfter[0].deals)) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: "Host and guest archived copies of the same matchUid hold different deals after a post-archive correction",
+          expected: JSON.stringify(hostAfter[0].deals),
+          actual: JSON.stringify(g.deals),
+          pages: { host: host.page, guest: guest.page },
+        });
+      }
+      // The record is updated in place: it keeps the identity it was archived
+      // with (its own id, and that device's own archive time), so anything
+      // holding a reference to it -- highlights, the cloud copy's key -- stays
+      // valid instead of being orphaned by a delete-and-re-add.
+      if (g.id !== guestBefore[0].id || g.date !== guestBefore[0].date) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Reconciling replaced the guest's record identity instead of updating it in place (id ${guestBefore[0].id} -> ${g.id}, date ${guestBefore[0].date} -> ${g.date})`,
+          expected: `id ${guestBefore[0].id}, date ${guestBefore[0].date}`,
+          actual: `id ${g.id}, date ${g.date}`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+
+      // syncHistoryToCloud() only pushes ids it hasn't pushed before, so a
+      // corrected record needs its id explicitly forgotten or the cloud keeps
+      // the stale copy -- which is what any LINKED device of the same person
+      // reads (linkedHistoryCache), so they'd go on showing the old result.
+      logger.step("The cloud copy of the corrected record must be re-pushed, not left stale");
+      const guestUid = (await storage.readKey(guest.page, storage.KEYS.authUid)).raw;
+      if (guestUid) {
+        // pollFor keeps going until its fn returns something truthy, so only
+        // hand back the record once it has actually converged; on give-up,
+        // re-read it plainly so the finding can report what's really stored.
+        const converged = await emulator.pollFor(async () => {
+          const v = await emulator.dbGet(`users/${guestUid}/history/${g.id}`);
+          return v && v.winner === 0 ? v : null;
+        });
+        const cloud = converged || (await emulator.dbGet(`users/${guestUid}/history/${g.id}`));
+        if (!cloud) {
+          await logger.record({
+            severity: "high",
+            category: "sync-divergence",
+            summary: `Guest's corrected record (${g.id}) is missing from the cloud entirely`,
+            page: guest.page,
+            contextLabel: "guest",
+          });
+        } else if (cloud.winner !== 0 || JSON.stringify(cloud.totals) !== JSON.stringify([53, 45])) {
+          await logger.record({
+            severity: "high",
+            category: "sync-divergence",
+            summary: `Guest's cloud history copy kept the pre-correction result (winner ${cloud.winner}, totals [${cloud.totals}]) even though the local record was reconciled -- a linked device would keep reading the stale game`,
+            expected: "winner 0, totals [53,45]",
+            actual: `winner ${cloud.winner}, totals [${cloud.totals}]`,
+            page: guest.page,
+            contextLabel: "guest",
+          });
+        }
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+// The repair path for a device that was already offline when the correction
+// happened: it has to converge when the player later REJOINS the old code, with
+// no extra taps. Same divergence as decidingDealCorrectionPropagates, but the
+// guest misses the correction entirely, reloads (fresh JS state, localStorage
+// intact), and rejoins by code -- and its saved per-session identity points at a
+// DIFFERENT code by then (they've played elsewhere since), so convergence has to
+// come from autoIdentifyFromDeviceName matching the persistent device name
+// against the roster, not from a retained identity decision.
+const decidingDealCorrectionRepairsOnRejoin = {
+  name: "casual-shared/deciding-deal-correction-repairs-on-rejoin",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/deciding-deal-correction-repairs-on-rejoin");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    const readRec = async (page) =>
+      ((await storage.readKey(page, storage.KEYS.history)).value || []).filter((g) => g.winner != null);
+    try {
+      await seats.nameAllSeats(host.page, ["R1", "R2", "R3", "R4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "R1");
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(300);
+      if (await sync.whoSheet(guest.page).count()) await sync.chooseIdentity(guest.page, "R2");
+
+      const leadUp = [
+        { bidder: { seat: 1 }, bid: 7, pointsTaken: 9 },
+        { bidder: { seat: 1 }, bid: 7, pointsTaken: 13 },
+        { bidder: { seat: 0 }, bid: 7, pointsTaken: 7 },
+        { bidder: { seat: 1 }, bid: 6, pointsTaken: 11 },
+        { bidder: { seat: 0 }, bid: 7, pointsTaken: 9 },
+        { bidder: { seat: 2 }, bid: 7, pointsTaken: 14 },
+      ];
+      for (const d of leadUp) await handEntry.playDeal(host.page, d);
+      await handEntry.playDeal(host.page, { bidder: { seat: 0 }, bid: 7, pointsTaken: 6 });
+
+      logger.step("Guest auto-archives the (wrong) result, then goes away");
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      const guestBefore = await readRec(guest.page);
+      if (guestBefore.length !== 1 || guestBefore[0].winner !== 1) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Guest should have auto-archived one record won by team 1 before going offline (got ${guestBefore.length} record(s), winner=${guestBefore[0] && guestBefore[0].winner})`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      await guest.context.setOffline(true);
+
+      logger.step("Host corrects the deciding deal while the guest is away");
+      await dealHistory.editDeal(host.page, 7);
+      await handEntry.setBid(host.page, 6);
+      await handEntry.goToStep2(host.page);
+      await handEntry.setPointsTaken(host.page, 14);
+      await handEntry.submitDeal(host.page);
+      await host.page.waitForTimeout(config.syncSettleMs);
+
+      // Stand in for "has played other shared games since, and isn't in this
+      // session any more": drop the persisted sync code so the reload boots
+      // unsynced and the rejoin is a real join (otherwise the app just resumes
+      // this same session on reload and never shows the join sheet), and bind
+      // the saved per-session identity to some other code so rejoining is an
+      // undecided session again. The device-wide name (R2) survives, which is
+      // what autoIdentifyFromDeviceName has to match against the roster.
+      await guest.page.evaluate(() => {
+        window.localStorage.setItem("somerset:dev-my-name", JSON.stringify({ code: "ZZZZZZ", name: "R2" }));
+        window.localStorage.removeItem("somerset:dev-sync-code");
+        window.localStorage.removeItem("somerset:dev-sync-role");
+      });
+
+      logger.step("Guest comes back, reloads, clears the stale local session, and rejoins the old code");
+      await guest.context.setOffline(false);
+      await guest.page.reload({ waitUntil: "domcontentloaded" });
+      await guest.page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible" });
+      await nav.goto(guest.page, "Tournament");
+      // The Tournament tab has no "Join with code" affordance while a
+      // tournament is already loaded, so rejoining an older code means leaving
+      // the current one first. Worth asserting as part of the repair path: it's
+      // a step the player has to take, not something the app does for them.
+      await bracket.endTournament(guest.page);
+      await guest.page.waitForTimeout(200);
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      if (await sync.whoSheet(guest.page).count()) {
+        await logger.record({
+          severity: "medium",
+          category: "ui-stuck",
+          summary: "Rejoining prompted the identify sheet even though the device name still matches a roster seat -- the repair would need an extra tap",
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        await sync.chooseIdentity(guest.page, "R2");
+        await guest.page.waitForTimeout(config.syncSettleMs);
+      }
+
+      const guestAfter = await readRec(guest.page);
+      if (guestAfter.length !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Rejoining left the guest with ${guestAfter.length} records (expected 1) -- the repair must fix the existing record, not add another`,
+          expected: 1,
+          actual: guestAfter.length,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      const g = guestAfter[0];
+      if (g.winner !== 0 || JSON.stringify(g.totals) !== JSON.stringify([53, 45])) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Rejoining the old code didn't repair the stale record (winner ${g.winner}, totals [${g.totals}]) -- a player who was away when the deal was corrected can never fix their own history`,
+          expected: "winner 0, totals [53,45]",
+          actual: `winner ${g.winner}, totals [${g.totals}]`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+      if (g.id !== guestBefore[0].id) {
+        await logger.record({
+          severity: "high",
+          category: "sync-divergence",
+          summary: `Rejoining replaced the record's identity (${guestBefore[0].id} -> ${g.id}) instead of repairing it in place`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+
+      logger.step("The cloud copy must be repaired too, not just the local one");
+      const guestUid = (await storage.readKey(guest.page, storage.KEYS.authUid)).raw;
+      if (guestUid) {
+        const converged = await emulator.pollFor(async () => {
+          const v = await emulator.dbGet(`users/${guestUid}/history/${g.id}`);
+          return v && v.winner === 0 ? v : null;
+        });
+        const cloud = converged || (await emulator.dbGet(`users/${guestUid}/history/${g.id}`));
+        if (!cloud || cloud.winner !== 0) {
+          await logger.record({
+            severity: "high",
+            category: "sync-divergence",
+            summary: `Guest's cloud history copy still holds the pre-correction result after the rejoin repair (${cloud ? "winner " + cloud.winner : "missing"}) -- their linked devices and their published stats digest stay wrong`,
+            expected: "winner 0",
+            actual: cloud ? `winner ${cloud.winner}` : "missing",
+            page: guest.page,
+            contextLabel: "guest",
+          });
+        }
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+// The other way a participant's History ends up out of step: they were simply
+// away while a game was played, so they never archived it at all. Rejoining the
+// old code has to back-fill it -- this is the pre-existing catch-up path in
+// syncMyHistoryFromTourney (an unarchived decided match), not the reconcile, and
+// it must keep working alongside it. Also pins down what the back-filled record
+// is dated: catch-up stamps the archive time, NOT when the game was played.
+const missedGamesBackfillOnRejoin = {
+  name: "casual-shared/missed-games-backfill-on-rejoin",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/missed-games-backfill-on-rejoin");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    const guest = await browserLib.createDevice(browser, { label: "guest", scenarioLogger: logger });
+    const readRec = async (page) =>
+      ((await storage.readKey(page, storage.KEYS.history)).value || []).filter((g) => g.winner != null);
+    try {
+      await seats.nameAllSeats(host.page, ["B1", "B2", "B3", "B4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "B1");
+
+      await nav.goto(guest.page, "Tournament");
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(300);
+      if (await sync.whoSheet(guest.page).count()) await sync.chooseIdentity(guest.page, "B2");
+      await guest.page.waitForTimeout(config.syncSettleMs);
+
+      logger.step("Guest goes away BEFORE the game is played, and misses it entirely");
+      await guest.context.setOffline(true);
+      const guestBefore = await readRec(guest.page);
+      if (guestBefore.length !== 0) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Guest should have no archived records before going away (found ${guestBefore.length})`,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+
+      await simulator.playDealsToCompletion(host.page, {
+        bidderFor: simulator.namedBidderFor,
+        seed: 8181,
+        logger,
+        contextLabel: "host",
+      });
+      await host.page.waitForTimeout(config.syncSettleMs);
+      const hostRecs = await readRec(host.page);
+      if (!hostRecs.length) {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: "Host never archived the completed game, so there is nothing for the guest to back-fill",
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+      const played = hostRecs[0];
+
+      // Same "played elsewhere since" setup as the rejoin-repair scenario: boot
+      // unsynced with the per-session identity bound to another code, so the
+      // back-fill has to come from autoIdentifyFromDeviceName.
+      await guest.page.evaluate(() => {
+        window.localStorage.setItem("somerset:dev-my-name", JSON.stringify({ code: "ZZZZZZ", name: "B2" }));
+        window.localStorage.removeItem("somerset:dev-sync-code");
+        window.localStorage.removeItem("somerset:dev-sync-role");
+      });
+
+      logger.step("Guest returns, clears the stale local session, rejoins -- the missed game must back-fill");
+      const rejoinedAt = Date.now();
+      await guest.context.setOffline(false);
+      await guest.page.reload({ waitUntil: "domcontentloaded" });
+      await guest.page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible" });
+      await nav.goto(guest.page, "Tournament");
+      if ((await guest.page.locator(".btn.btn-cancel:visible", { hasText: /End Tournament|Leave Tournament|End Game|Leave Game/ }).count()) > 0) {
+        await bracket.endTournament(guest.page);
+        await guest.page.waitForTimeout(200);
+      }
+      await tSetup.openJoinSheet(guest.page);
+      await sync.joinWithCode(guest.page, code);
+      await guest.page.waitForTimeout(config.syncSettleMs);
+      if (await sync.whoSheet(guest.page).count()) {
+        await logger.record({
+          severity: "medium",
+          category: "ui-stuck",
+          summary: "Rejoining prompted the identify sheet even though the device name still matches a roster seat -- the back-fill would need an extra tap",
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        await sync.chooseIdentity(guest.page, "B2");
+        await guest.page.waitForTimeout(config.syncSettleMs);
+      }
+
+      const guestAfter = await readRec(guest.page);
+      if (guestAfter.length !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Rejoining didn't back-fill the game the guest missed while away (found ${guestAfter.length} record(s), expected 1)`,
+          expected: 1,
+          actual: guestAfter.length,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+        return;
+      }
+      const g = guestAfter[0];
+      // Compare deals field-by-field rather than by JSON string: a record that
+      // came back through Firebase has its object keys in sorted order, so
+      // stringify would flag a pure key-order difference as a divergence.
+      const dealsDiffer = (a, b) => {
+        if (!a || !b || a.length !== b.length) return `deal count ${a && a.length} vs ${b && b.length}`;
+        for (let i = 0; i < a.length; i++) {
+          for (const k of ["bid", "bidTeam", "bidderSeat", "dealer", "id"]) {
+            if (a[i][k] !== b[i][k]) return `deal ${i} ${k}: ${a[i][k]} vs ${b[i][k]}`;
+          }
+          if (JSON.stringify(a[i].pts) !== JSON.stringify(b[i].pts)) {
+            return `deal ${i} pts: [${a[i].pts}] vs [${b[i].pts}]`;
+          }
+        }
+        return null;
+      };
+      const dealDiff = dealsDiffer(g.deals, played.deals);
+      if (g.matchUid !== played.matchUid || g.winner !== played.winner || dealDiff) {
+        await logger.record({
+          severity: "critical",
+          category: "sync-divergence",
+          summary: `Back-filled record doesn't match the host's copy of the same match (${dealDiff || "matchUid/winner"})`,
+          expected: `matchUid ${played.matchUid}, winner ${played.winner}, ${played.deals.length} deals`,
+          actual: `matchUid ${g.matchUid}, winner ${g.winner}, ${g.deals.length} deals`,
+          pages: { host: host.page, guest: guest.page },
+        });
+      }
+      // Documents a real, accepted consequence rather than a bug: a back-filled
+      // record carries the time it was ARCHIVED, so a game caught up days later
+      // shows up in History dated the day of the catch-up, not the day it was
+      // played. Fails only if that ever silently changes.
+      if (new Date(g.date).getTime() < rejoinedAt) {
+        await logger.record({
+          severity: "medium",
+          category: "sync-divergence",
+          summary: `Back-filled record is dated ${g.date}, before the rejoin -- catch-up archiving is expected to stamp the archive time, so this scenario's documented behaviour has changed`,
+          expected: `>= ${new Date(rejoinedAt).toISOString()}`,
+          actual: g.date,
+          page: guest.page,
+          contextLabel: "guest",
+        });
+      }
+
+      logger.step("The back-filled record must reach the cloud too");
+      const guestUid = (await storage.readKey(guest.page, storage.KEYS.authUid)).raw;
+      if (guestUid) {
+        const cloud = await emulator.pollFor(async () => {
+          const v = await emulator.dbGet(`users/${guestUid}/history/${g.id}`);
+          return v && v.winner != null ? v : null;
+        });
+        if (!cloud) {
+          await logger.record({
+            severity: "high",
+            category: "sync-divergence",
+            summary: `Back-filled record (${g.id}) never reached the guest's cloud history`,
+            page: guest.page,
+            contextLabel: "guest",
+          });
+        }
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        pages: { host: host.page, guest: guest.page },
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+      await browserLib.closeDevice(guest);
+    }
+  },
+};
+
+module.exports = [
+  shareGameHostGuest,
+  bestOf1LogsWithoutContinue,
+  loneSharedGameIsStandard,
+  decidingDealCorrectionPropagates,
+  decidingDealCorrectionRepairsOnRejoin,
+  missedGamesBackfillOnRejoin,
+];
