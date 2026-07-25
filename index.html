@@ -5201,7 +5201,16 @@ window.SOMERSET_FB_CONFIG = {
               ["Current winner: " + curName + "."])
           ].concat(actionBtns);
         } else {
-          var doneMsgLines = mm.bracket
+          // A later series game that's been WON but not yet continued past blocks
+          // this undo (see seriesSlotSettled) — but it has no result to "undo"
+          // yet, so the generic wording would send the user looking for something
+          // that isn't there. Name the actual next step instead.
+          var blockerGi = (mm.bracket === "series") ? lastSettledSeriesGame(tourney) : -1;
+          var blockedByUnadvanced = blockerGi > mm.gi && tourney.games[blockerGi].winner == null;
+          var doneMsgLines = blockedByUnadvanced
+            ? ["Game " + (blockerGi + 1) + " has already been played and is saved in History.",
+               "Tap Continue on it and undo that result first."]
+            : mm.bracket
             ? ["Match complete: " + curName + " advanced.", "Undo subsequent results first to clear this one."]
             : ["Can't change: " + curName + " has already played in the next round.", "Undo that result first."];
           mkids = [
@@ -7998,10 +8007,33 @@ window.SOMERSET_FB_CONFIG = {
     for (var i = 0; i < t.games.length; i++) if (t.games[i].winner != null) last = i;
     return last;
   }
-  // Only the most recent decided game can be undone (mirrors the bracket "undo
+  // A slot counts as SETTLED the moment its game is won — not only once the
+  // Continue tap has stamped .winner. The History record is archived at the win
+  // itself (see recordDeal's gameHasTourneyLink branch), so a later slot sitting
+  // in the won-but-not-advanced state already has records on every participant's
+  // device. lastDecidedSeriesGame only looks at .winner, so it skips such a slot
+  // and would let clearSeriesWinner slice it away — and since allMatches() walks
+  // t.games, that slot's matchUid is then never visited again by
+  // syncMyHistoryFromTourney, stranding its records with nothing able to
+  // reconcile or retract them on any device. Kept separate from
+  // lastDecidedSeriesGame, which renderSeries uses for its "games played" count.
+  function seriesSlotSettled(slot) {
+    if (!slot) return false;
+    if (slot.winner != null) return true;
+    var g = slot.completedGame || slot.game;
+    if (!g || !g.deals || !g.deals.length) return false;
+    var w = gameWinner(g);
+    return w === 0 || w === 1;
+  }
+  function lastSettledSeriesGame(t) {
+    var last = -1;
+    for (var i = 0; i < t.games.length; i++) if (seriesSlotSettled(t.games[i])) last = i;
+    return last;
+  }
+  // Only the most recent settled game can be undone (mirrors the bracket "undo
   // subsequent results first" rule), since later games/clinch depend on it.
   function canClearSeriesWinner(t, gi) {
-    return t.games[gi] && t.games[gi].winner != null && gi === lastDecidedSeriesGame(t);
+    return t.games[gi] && t.games[gi].winner != null && gi === lastSettledSeriesGame(t);
   }
   function clearSeriesWinner(t, gi) {
     t.games[gi].winner = null;
