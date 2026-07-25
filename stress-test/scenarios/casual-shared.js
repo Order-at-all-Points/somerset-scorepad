@@ -1016,6 +1016,125 @@ const missedGamesBackfillOnRejoin = {
   },
 };
 
+// The rules give a session two clocks: writable for 48h, readable for 30d (see
+// FIREBASE_SETUP.md). Past the write window every score write is rejected but
+// the session still loads, so the client has to SAY it's archived. Before
+// sessionFrozen() existed the pad went on offering "Record Bid", the hand-lock
+// transaction was denied, and the app blamed a teammate who wasn't there:
+// "Someone else just started entering this hand."
+const frozenSessionIsReadOnly = {
+  name: "casual-shared/frozen-session-reads-as-archived",
+  phase: "sync",
+  run: async ({ browser, store }) => {
+    const logger = store.newScenario("casual-shared/frozen-session-reads-as-archived");
+    const host = await browserLib.createDevice(browser, { label: "host", scenarioLogger: logger });
+    try {
+      await seats.nameAllSeats(host.page, ["F1", "F2", "F3", "F4"]);
+      await sync.shareFromGameOptions(host.page);
+      const code = await sync.readJoinCode(host.page);
+      await sync.identifyFromShareSheet(host.page, "F1");
+      await handEntry.playDeal(host.page, { bidder: { seat: 0 }, bid: 7, pointsTaken: 9 });
+      await host.page.waitForTimeout(config.syncSettleMs);
+
+      const before = await handEntry.recordDealState(host.page);
+      const beforeStatus = await sync.syncStatus(host.page);
+      if (before.state !== "ready" || beforeStatus.label !== "Live") {
+        await logger.record({
+          severity: "high",
+          category: "test-precondition",
+          summary: `Fresh session should be writable and read "Live" (got state=${before.state}, label=${beforeStatus.label})`,
+          page: host.page,
+          contextLabel: "host",
+        });
+        return;
+      }
+
+      logger.step("Age the session past the 48h write window (still inside the 30d read window)");
+      await emulator.dbSet(`tournaments/${code}/_createdAt`, Date.now() - 5 * 24 * 3600 * 1000);
+      // The client reads _createdAt off its synced snapshot, so wait for the
+      // change to land rather than assuming the next render sees it.
+      await host.page.waitForTimeout(config.syncSettleMs);
+
+      const after = await handEntry.recordDealState(host.page);
+      if (after.state === "ready" || after.state === "take") {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `A frozen session still offers a record-deal button (state=${after.state}) -- tapping it hits a server-denied write and reports "Someone else just started entering this hand."`,
+          expected: "no record affordance",
+          actual: after.state,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+      const bar = await host.page.locator(".view-only-bar:visible").allTextContents();
+      if (!bar.some((t) => /Archived/i.test(t))) {
+        await logger.record({
+          severity: "high",
+          category: "regression-repro",
+          summary: `Frozen session shows no "Archived" explanation on the pad (bars: ${JSON.stringify(bar)})`,
+          expected: 'a bar saying the session is archived',
+          actual: JSON.stringify(bar),
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+      if (bar.some((t) => /Someone else/i.test(t))) {
+        await logger.record({
+          severity: "critical",
+          category: "regression-repro",
+          summary: `Frozen session blames another device ("${bar.find((t) => /Someone else/i.test(t))}") for what is really an expired session`,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+      const status = await sync.syncStatus(host.page);
+      if (status.label === "Live") {
+        await logger.record({
+          severity: "medium",
+          category: "regression-repro",
+          summary: 'A frozen session still reports "Live" -- the connection is live but nothing can be written through it',
+          expected: "Archived: read-only",
+          actual: status.label,
+          page: host.page,
+          contextLabel: "host",
+        });
+      }
+
+      // The whole reason the read window outlives the write window: History
+      // still syncs. Freezing the pad must not have frozen that too.
+      logger.step("History sync must keep working while the pad is read-only");
+      const recs = ((await storage.readKey(host.page, storage.KEYS.history)).value || []);
+      const uid = (await storage.readKey(host.page, storage.KEYS.authUid)).raw;
+      if (uid && recs.length) {
+        const cloud = await emulator.pollFor(async () => {
+          const v = await emulator.dbGet(`users/${uid}/history/${recs[0].id}`);
+          return v || null;
+        });
+        if (!cloud) {
+          await logger.record({
+            severity: "high",
+            category: "sync-divergence",
+            summary: "Archived session stopped History from reaching the cloud -- read-only must apply to the shared session, not the device's own backup",
+            page: host.page,
+            contextLabel: "host",
+          });
+        }
+      }
+    } catch (e) {
+      await logger.record({
+        severity: "high",
+        category: "scenario-crash",
+        summary: `Scenario threw: ${e.message}`,
+        actual: e.stack,
+        page: host.page,
+      });
+    } finally {
+      await browserLib.closeDevice(host);
+    }
+  },
+};
+
 module.exports = [
   shareGameHostGuest,
   bestOf1LogsWithoutContinue,
@@ -1023,4 +1142,5 @@ module.exports = [
   decidingDealCorrectionPropagates,
   decidingDealCorrectionRepairsOnRejoin,
   missedGamesBackfillOnRejoin,
+  frozenSessionIsReadOnly,
 ];

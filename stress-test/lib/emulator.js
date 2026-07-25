@@ -46,6 +46,16 @@ async function dbGet(p) {
   return res.json();
 }
 
+/** Ground-truth write, bypassing rules -- for staging state a client couldn't
+ *  legitimately produce. The reason this exists: the tournaments rules put a
+ *  session on a 48h write clock anchored to `_createdAt`, and a scenario can't
+ *  wait two days, so it back-dates the stamp here and drives the app against a
+ *  genuinely frozen session. Never use it to prove a client CAN write -- that's
+ *  writeAs(), which goes through the rules. */
+async function dbSet(p, value) {
+  await fetch(`${E.databaseUrl}/${p}.json?${NS_Q}`, { method: "PUT", body: JSON.stringify(value) });
+}
+
 async function dbReset() {
   await fetch(`${E.databaseUrl}/.json?${NS_Q}`, { method: "DELETE" });
 }
@@ -123,4 +133,4 @@ async function pollFor(fn, attempts = 12, delay = 1000) {
   return last;
 }
 
-module.exports = { isUp, dbGet, dbReset, wireToEmulators, readAs, writeAs, pollFor };
+module.exports = { isUp, dbGet, dbSet, dbReset, wireToEmulators, readAs, writeAs, pollFor };

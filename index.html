@@ -682,6 +682,9 @@
   .mbox.changeable { cursor:pointer; }
   .mbox.changeable:active { background:var(--cream-shade); }
   .view-only-bar { padding:8px 16px; background:var(--cream-shade); color:var(--red); font-size:13px; text-align:center; border-top:1px solid var(--rule); }
+  /* An archived session is a settled fact, not a problem to act on — drop the
+     red the transient lock/error states use so it reads as a note, not a fault. */
+  .view-only-bar.archived { color:var(--ink-soft); }
   .match-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); }
   .match-vs { font-size:13px; color:var(--ink); font-weight:600; text-align:right; }
 
@@ -807,6 +810,7 @@
   .sync-dot.live { background:#52a852; }
   .sync-dot.connecting { background:var(--brass); animation:pulse 1s infinite; }
   .sync-dot.offline { background:var(--ink-soft); }
+  .sync-dot.archived { background:var(--ink-soft); }
   .sync-dot.error { background:var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   .sync-label { font-size:13px; color:var(--ink-soft); }
@@ -2149,6 +2153,41 @@ window.SOMERSET_FB_CONFIG = {
   }
 
   // ---- Firebase sync state ----
+  // Mirrors tournaments/$code's .write window in FIREBASE_SETUP.md. The rules
+  // deliberately give a session two different clocks — readable for 30 days,
+  // writable for 48 hours — so past this age every score write is rejected
+  // server-side while the session still loads fine. Joining an old code to
+  // repair History is the whole point of that gap (see reconcileArchivedRecord),
+  // but without a client-side check the app goes on offering "Record Bid", the
+  // hand-lock transaction is denied, and the user is told "Someone else just
+  // started entering this hand." — blaming a phantom other device for what is
+  // really an expired session.
+  var TOURNEY_WRITE_WINDOW_MS = 172800000;   // 48h
+  // True once the live shared session is past that window. Deliberately
+  // conservative: a missing or non-numeric _createdAt reads as NOT frozen, so
+  // the server stays the authority. That matters because several call sites
+  // (startNextSharedGame, restartTourney, openMatch…) set _createdAt to a
+  // firebase.database.ServerValue.TIMESTAMP sentinel, which is an OBJECT
+  // locally until the server echoes the real number back — treating that as
+  // "age unknown, assume writable" keeps a mid-flight re-stamp from flickering
+  // the whole pad into read-only. A skewed device clock can likewise only ever
+  // fail toward "let them try and let the rules answer", never lock someone out
+  // of a session they could still write.
+  function sessionFrozen() {
+    if (!syncCode || !tourney) return false;
+    var at = tourney._createdAt;
+    if (typeof at !== "number") return false;
+    return (Date.now() - at) >= TOURNEY_WRITE_WINDOW_MS;
+  }
+  // Any hand-lock claim that loses can either be a genuine race with another
+  // device or a rejected write against a frozen session — the transaction fails
+  // the same way for both. Check the session first so an expired one explains
+  // itself instead of accusing a teammate.
+  function lockFailMessage(raceMsg) {
+    return sessionFrozen()
+      ? "This session is archived — scores were locked 48 hours after it started. Your History still syncs."
+      : raceMsg;
+  }
   var SYNC_CODE_KEY = "somerset:dev-sync-code";
   var SYNC_ROLE_KEY = "somerset:dev-sync-role";
   var fb = null;              // firebase.database() instance
@@ -4247,9 +4286,17 @@ window.SOMERSET_FB_CONFIG = {
     var _am = isMatch && ui.activeMatch;
     var _m = _am && getActiveMatchObj(ui.activeMatch);
     // Locking is per-hand now (see claimLock/isMineOrUnlocked call sites below),
-    // not whole-match — this only covers genuinely-finished matches with no live
-    // game to show.
-    var isReadOnly = _am && (_m && !_m.game && _m.winner !== null);
+    // not whole-match — the second clause only covers genuinely-finished matches
+    // with no live game to show. A frozen session (past the rules' 48h write
+    // window, see sessionFrozen) folds into the SAME flag on purpose: every
+    // editing affordance the pad offers — swipe edit/delete on a deal row, the
+    // expanded row's Edit/Delete links, editing a pending bid, Record Bid /
+    // Record Take — is already gated on it, and every one of those writes would
+    // now be rejected server-side. Unlike the match clause this applies in solo
+    // mode too, because a shared casual game is a session that can expire just
+    // the same.
+    var frozen = sessionFrozen();
+    var isReadOnly = frozen || (_am && (_m && !_m.game && _m.winner !== null));
     subtitleEl.textContent = "";
     var t = totals(), winDetail = winnerDetail(), win = winDetail.winner, dealNo = game.deals.length + 1;
 
@@ -4436,7 +4483,7 @@ window.SOMERSET_FB_CONFIG = {
         };
         if (!pbKey) { open(); return; }
         claimLock(pbKey, function(won){
-          if (!won) { ui.info = "Someone else just started editing this hand."; softRender(); return; }
+          if (!won) { ui.info = lockFailMessage("Someone else just started editing this hand."); softRender(); return; }
           ui.myLockKey = pbKey;
           open();
         });
@@ -4474,12 +4521,17 @@ window.SOMERSET_FB_CONFIG = {
     // Entry or Add button
     var gameOver = (win === 0 || win === 1);
     if (isReadOnly) {
-      var viewBarText = gameOver
+      // A frozen session's own explanation wins over the finished-match and
+      // being-edited-elsewhere ones: those describe a state you could still
+      // come back from, this one is permanent and needs to say why.
+      var viewBarText = frozen
+        ? "Archived: scores locked 48 hours after this session started. Your History still syncs."
+        : gameOver
         ? ("Match complete: " + game.teams[win] + " Won")
         : (game.pendingBid
             ? ((game.pendingBid.bidderSeat != null ? seatName(game.pendingBid.bidderSeat) : game.teams[game.pendingBid.bidTeam]) + (game.pendingBid.bid === POINTS_PER_DEAL ? " bid 14 (moon)" : (" bid " + game.pendingBid.bid)) + ", playing the hand")
             : "Viewing: being edited on another device");
-      pad.appendChild(el("div", { class:"view-only-bar disp" }, [viewBarText]));
+      pad.appendChild(el("div", { class:"view-only-bar" + (frozen ? " archived" : "") + " disp" }, [viewBarText]));
     } else if (ui.showEntry) {
       pad.appendChild(renderEntry(dealNo));
     } else if (gameOver) {
@@ -4523,7 +4575,7 @@ window.SOMERSET_FB_CONFIG = {
             };
             if (!addKey) { openTake(); return; }
             claimLock(addKey, function(won){
-              if (!won) { ui.info = "Someone else just started recording the take."; softRender(); return; }
+              if (!won) { ui.info = lockFailMessage("Someone else just started recording the take."); softRender(); return; }
               ui.myLockKey = addKey;
               openTake();
             });
@@ -4535,7 +4587,7 @@ window.SOMERSET_FB_CONFIG = {
             var openEntry = function(){ ui.showEntry = true; ui.entryStep = 1; ui.editingDeal = null; ui.bidderSeat = null; ui.bidderWarn = false; softRender(); scrollEntryIntoView(); };
             if (!addKey) { openEntry(); return; }
             claimLock(addKey, function(won){
-              if (!won) { ui.info = "Someone else just started entering this hand."; softRender(); return; }
+              if (!won) { ui.info = lockFailMessage("Someone else just started entering this hand."); softRender(); return; }
               ui.myLockKey = addKey;
               openEntry();
             });
@@ -8384,8 +8436,13 @@ window.SOMERSET_FB_CONFIG = {
     // Options menu now (see ui.gameOptionsOpen) rather than being on permanent
     // display here.
     var offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
-    var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : syncStatus) });
-    var statusTxt = offline ? "Offline: sync paused" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
+    // "Live" would be a lie for a frozen session — the connection genuinely is
+    // live, but nothing can be written through it, and that's the part the
+    // player needs to know. Ranks below Offline (no connection at all is the
+    // more immediate fact) and above the transport states.
+    var frozen = !offline && sessionFrozen();
+    var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : frozen ? "archived" : syncStatus) });
+    var statusTxt = offline ? "Offline: sync paused" : frozen ? "Archived: read-only" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
     container.appendChild(el("div", { class:"sync-bar" }, [
       el("span", { class:"sync-pill" }, [dotEl, el("span", { class:"sync-label" }, [statusTxt])])
     ]));
