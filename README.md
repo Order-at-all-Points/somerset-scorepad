@@ -208,7 +208,7 @@ Client state is kept under `localStorage` keys (all prefixed `somerset:dev-`):
 | `somerset:dev-history-tombstones` | Locally‑deleted History entries, so a linked device doesn't resurrect them from its own cloud copy. |
 | `somerset:dev-profile-id` / `somerset:dev-share-peers` / `somerset:dev-auto-share` / `somerset:dev-share-game-names` | Stats Sharing: this device's published‑stats profile id, the People list of peers you follow/share with, the master share toggle, and the "include names" opt‑in. |
 
-In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and put each record on two clocks: **writable for 48 hours** after creation, then frozen, and **readable for 30 days**, so a participant can still rejoin an old code to repair or back-fill their own History. Cloud Backup, device linking, and Stats Sharing add further per‑user paths (`users/<uid>`, `statsProfiles/<profileId>`, etc.), each with their own rules. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
+In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and put each record on two clocks: **writable for 48 hours** after creation, then frozen, and **readable for 30 days**, so a participant can still rejoin an old code to repair or back-fill their own History. Cloud Backup, device linking, and Stats Sharing add further per‑user paths (`users/<uid>`, `statsProfiles/<profileId>`, etc.), each with their own rules. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md). If two people who played the same games ever see different numbers, [`SYNC_TROUBLESHOOTING.md`](SYNC_TROUBLESHOOTING.md) is the runbook for tracking it down.
 
 ---
 
@@ -259,6 +259,7 @@ SomeRSet/
 ├── icon-*.png            # App icons (light/dark pairs, 192/512)
 ├── FIREBASE_SETUP.md     # Step-by-step Firebase Realtime Database setup
 ├── SECURITY_REVIEW.md    # Security review of the Firebase backend & client
+├── SYNC_TROUBLESHOOTING.md # Runbook: diagnosing a cross-device History/Stats discrepancy
 ├── ROADMAP.md            # Shipped features and future plans
 ├── README.md             # This file
 ├── stress-test/          # Playwright E2E harness — page objects, scenarios, oracle
