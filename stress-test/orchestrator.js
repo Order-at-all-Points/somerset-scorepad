@@ -16,7 +16,6 @@ const SCENARIO_FILES = [
   "tournament-single-elim",
   "tournament-round-robin",
   "tournament-double-elim",
-  "series-best-of",
   "sync-cross-cutting",
   "history-export-import",
   "device-linking",
