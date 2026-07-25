@@ -1169,12 +1169,31 @@ window.SOMERSET_FB_CONFIG = {
     gameHistory.forEach(function (r) { ids[r.id] = true; });
     gameHistory.forEach(function (r) {
       if (lastSyncedHistoryIds[r.id] && !dirtyHistoryIds[r.id]) return;
-      fb.ref("users/" + authUid + "/history/" + r.id).set(r);
-      delete dirtyHistoryIds[r.id];   // cleared only once the write is actually issued
+      // Cleared in the completion callback, not on the line below: issuing a set()
+      // only queues it. Clearing on issue meant a device that went offline — or was
+      // killed — before the write flushed lost the flag with nothing able to
+      // re-derive it, since subscribeMyHistory rebuilds lastSyncedHistoryIds from
+      // the cloud snapshot and skips ids already present locally, and
+      // reconcileArchivedRecord sees no diff (the LOCAL record is already
+      // corrected). The stale cloud copy — exactly what linked devices read through
+      // linkedHistoryCache — would then never be repaired. An error leaves the flag
+      // set so the next pass retries.
+      fb.ref("users/" + authUid + "/history/" + r.id).set(r, function (err) {
+        if (err || !dirtyHistoryIds[r.id]) return;
+        delete dirtyHistoryIds[r.id];
+        saveDirtyHistoryIds();
+      });
     });
     Object.keys(lastSyncedHistoryIds).forEach(function (id) {
       if (!ids[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
     });
+    // A flag for a record that no longer exists locally can never be acted on, and
+    // the prune above already removes its cloud copy.
+    var prunedDirty = false;
+    Object.keys(dirtyHistoryIds).forEach(function (id) {
+      if (!ids[id]) { delete dirtyHistoryIds[id]; prunedDirty = true; }
+    });
+    if (prunedDirty) saveDirtyHistoryIds();
     lastSyncedHistoryIds = ids;
   }
   // Flag an already-pushed record as needing a re-push, for the one case where
@@ -1187,7 +1206,7 @@ window.SOMERSET_FB_CONFIG = {
   // when a reconcile runs before auth/fb are ready — syncHistoryToCloud bails
   // early, then the first history snapshot re-marks the id as synced and the
   // stale cloud copy is never corrected). This survives that rebuild.
-  function markHistoryRecordDirty(id) { dirtyHistoryIds[id] = true; }
+  function markHistoryRecordDirty(id) { dirtyHistoryIds[id] = true; saveDirtyHistoryIds(); }
   // Flip cloud sync on for this device (first-time link, either generating or
   // redeeming a code) and immediately back-fill this device's existing History.
   // Single owner of ALL subscription wiring — callers (boot, generateLinkCode,
@@ -1913,7 +1932,7 @@ window.SOMERSET_FB_CONFIG = {
       (t.schedule || []).forEach(function (m, idx) { out.push({ am:{ bracket:"rr", idx:idx }, m:m }); });
       if (t.final) out.push({ am:{ bracket:"rr", isFinal:true }, m:t.final });
     } else if (t.format === "series") {
-      (t.games || []).forEach(function (m, gi) { out.push({ am:{ bracket:"series", gi:gi }, m:m }); });
+      (t.games || []).forEach(function (m, gi) { out.push({ am:seriesAmFor(t, gi), m:m }); });
     } else {
       (t.rounds || []).forEach(function (round, ri) {
         round.forEach(function (m, mi) { out.push({ am:{ bracket:null, ri:ri, mi:mi }, m:m }); });
@@ -1990,6 +2009,12 @@ window.SOMERSET_FB_CONFIG = {
       target: g.target || 50,
       totals: gameTotals(g),
       winner: winnerIdx,
+      // Every scoring field archiveCurrentGame stamps has to be here, or a
+      // reconcile silently leaves the omitted one at its pre-correction value:
+      // a game archived as a tie-break win whose deciding deal is then corrected
+      // so the other team crosses the target outright would keep tieBreak:true
+      // against the new winner, and render as a tie-break it never was.
+      tieBreak: gameWinnerDetail(g).tieBreak,
       deals: JSON.parse(JSON.stringify(g.deals))
     };
   }
@@ -2050,7 +2075,13 @@ window.SOMERSET_FB_CONFIG = {
     for (var i = 0; i < gameHistory.length; i++) {
       var h = gameHistory[i];
       if (h.matchUid !== uid) continue;
-      var differs = keys.some(function (k) { return JSON.stringify(h[k]) !== JSON.stringify(body[k]); });
+      // fbEq, not JSON.stringify: h was built locally (object-literal key order,
+      // null values kept) while body is derived from a match that has been through
+      // Firebase (keys sorted, null-valued keys dropped, arrays possibly objects).
+      // Raw stringify calls those semantically identical records different, so the
+      // archiving device rewrote and re-pushed its own record — and republished its
+      // digest — on the first snapshot after every single shared match.
+      var differs = keys.some(function (k) { return !fbEq(h[k], body[k]); });
       if (!differs) return false;
       keys.forEach(function (k) { h[k] = body[k]; });
       // syncHistoryToCloud() skips ids it has already pushed (archived records
@@ -2061,6 +2092,18 @@ window.SOMERSET_FB_CONFIG = {
       return true;   // one record per matchUid per device (archivedMatches guarantees it)
     }
     return false;
+  }
+  // The other half of the same job: a correction can UN-decide a match, not just
+  // change who won. Forget this device's record for it, and forget the archived
+  // flag with it so the match archives cleanly if it's decided again.
+  //
+  // Deliberately NOT a tombstone: historyTombstones is keyed on matchUid and means
+  // "the user deleted this", so tombstoning here would permanently block the same
+  // game from ever being re-archived (and would suppress it on linked devices too).
+  function dropArchivedRecordForMatch(uid) {
+    gameHistory = gameHistory.filter(function (h) { return h.matchUid !== uid; });
+    delete archivedMatches[uid];
+    return true;   // the flag is worth persisting even when there was no record left to drop
   }
   // Scan the synced tournament for completed matches that include "me" (the
   // identified roster name) and aren't archived to this device's History yet.
@@ -2091,8 +2134,29 @@ window.SOMERSET_FB_CONFIG = {
         var gw = gameWinner(m.game);
         if (gw === 0 || gw === 1) effWinner = (gw === 0 ? m.a : m.b);
       }
-      if (effWinner == null) return;   // truly undecided
       var uid = matchUid(am);
+      if (effWinner == null) {
+        // Not just "never decided" — this also covers a game that WAS decided and
+        // archived, then had its deciding deal deleted as a mis-entry. The scoring
+        // device drops its own now-false record where the edit happens
+        // (removeDealWithUndo), but every other participant would keep showing a
+        // completed win/loss forever: the same divergence reconcileArchivedRecord
+        // exists to fix, running the other direction.
+        //
+        // Series only. A bracket match's winner is set by returnToBracket, which is
+        // also the first thing to call markMatchArchived for it, so during play both
+        // sides are consistently unarchived and "Clear result" leaves every device's
+        // record alone — there is no divergence there to repair, and dropping would
+        // be a behaviour change rather than a fix.
+        //
+        // A slot whose game was REPLACED rather than corrected (resetSharedGame,
+        // redraw) never reaches here for the outgoing game: it carries a fresh gen,
+        // so the finished game's uid is no longer one this loop visits. Only
+        // clearSeriesWinner — an explicit "undo this result" — keeps the uid stable,
+        // which is exactly how every device learns to retract the record.
+        if (am.bracket === "series" && archivedMatches[uid] && dropArchivedRecordForMatch(uid)) changed = true;
+        return;
+      }
       var A = tourney.teams[m.a], B = tourney.teams[m.b];
       if (!A || !B) return;
       if (archivedMatches[uid]) {
@@ -2178,6 +2242,20 @@ window.SOMERSET_FB_CONFIG = {
     var at = tourney._createdAt;
     if (typeof at !== "number") return false;
     return (Date.now() - at) >= TOURNEY_WRITE_WINDOW_MS;
+  }
+  // sessionFrozen() describes the SESSION; this describes what is actually on
+  // screen, and only the latter should ever gray out a control. The Game tab falls
+  // back to the plain local soloGame whenever gameHasTourneyLink() is false — which
+  // it is for EVERY non-series format — so a shared bracket left sitting in
+  // localStorage would otherwise freeze an unrelated local game that never touches
+  // Firebase at all, "New Game" included (it lives in the pad's game-over arm, so
+  // there'd be no way out either). Now that sessions stay readable for 30 days, a
+  // multi-day-old shared bracket is the normal resting state rather than an edge
+  // case. Mirrors render()'s own rule for which game the pad is pointed at.
+  function frozenAppliesHere() {
+    if (!sessionFrozen()) return false;
+    if (ui.view === "game") return gameHasTourneyLink();
+    return true;   // Tournament tab: the bracket (or an open match) IS the session
   }
   // Any hand-lock claim that loses can either be a genuine race with another
   // device or a rejected write against a frozen session — the transaction fails
@@ -2385,7 +2463,16 @@ window.SOMERSET_FB_CONFIG = {
   var linkedUids = loadLinkedUids();
 
   var lastSyncedHistoryIds = {};   // in-memory baseline for syncHistoryToCloud() diffing, seeded by subscribeMyHistory()
-  var dirtyHistoryIds = {};        // { recordId: true } archived records whose contents changed and must be re-pushed (markHistoryRecordDirty)
+  // { recordId: true } archived records whose contents changed and must be re-pushed
+  // (markHistoryRecordDirty). Persisted, unlike lastSyncedHistoryIds above: that one
+  // is a cache of what the cloud already has and is re-seeded from the cloud on every
+  // snapshot, whereas this is the record of an obligation the cloud does NOT yet know
+  // about. Losing it on reload strands a corrected record as permanently stale for
+  // every linked device (see syncHistoryToCloud).
+  var DIRTY_HISTORY_KEY = "somerset:dev-dirty-history";
+  function loadDirtyHistoryIds() { try { var r = localStorage.getItem(DIRTY_HISTORY_KEY); if (r) return JSON.parse(r) || {}; } catch (e) {} return {}; }
+  function saveDirtyHistoryIds() { try { localStorage.setItem(DIRTY_HISTORY_KEY, JSON.stringify(dirtyHistoryIds)); } catch (e) {} }
+  var dirtyHistoryIds = loadDirtyHistoryIds();
   var linkedHistoryCache = {};     // in-memory { uid: [rec,...] }, populated by subscribeLinkedHistories()
   var myHistorySubscribed = false; // subscribeMyHistory() idempotence (enableCloudSync may be re-entered on re-link)
   var linkedUidSubs = {};          // { uid: true } for each users/<uid>/history listener currently attached
@@ -2919,8 +3006,52 @@ window.SOMERSET_FB_CONFIG = {
     if (am.bracket === "lb") return "lb_" + am.ri + "_" + am.mi;
     if (am.bracket === "gf") return "gf_" + am.match;
     if (am.bracket === "rr") return "rr_" + am.idx;
-    if (am.bracket === "series") return "series_" + am.gi;
+    // "_g<n>" rather than a punctuation separator: amKey also composes handLockKey,
+    // which becomes a Firebase PATH segment under tournaments/<code>/locks/, and RTDB
+    // rejects any key containing . $ # [ ] or / — a "#" here made every saveTourney()
+    // throw for the rest of a session that had been reset or redrawn. gi is always a
+    // numeric slot index, so "series_0_g1" can never collide with a plain "series_N".
+    if (am.bracket === "series") return "series_" + am.gi + (am.gen ? "_g" + am.gen : "");
     return am.ri + "_" + am.mi;
+  }
+  // A series slot index alone is NOT a stable identity for a game: resetSharedGame
+  // and redrawSoloTeamsAndPlay both install a brand-new game into an EXISTING slot
+  // (same gi, same tourney.id, same syncCode), so without a generation counter the
+  // replacement collides with the game it replaced on matchUid — archivedMatches
+  // then suppresses the new record entirely and reconcileArchivedRecord overwrites
+  // the old record's deals with the new game's. `gen` rides the synced slot so
+  // every device derives the same uid. Absent on slots written before this existed,
+  // which read as 0 and keep their original matchUid (no re-archiving on upgrade).
+  function seriesAmFor(t, gi) {
+    var slot = t && t.games && t.games[gi];
+    return { bracket: "series", gi: gi, gen: (slot && slot.gen) || 0 };
+  }
+  // The next unused generation for this series, as a tournament-wide high-water
+  // mark rather than a per-slot counter. Slot INDICES get reused whenever games[]
+  // is rebuilt or truncated — redrawSoloTeamsAndPlay rebuilds it as a single slot,
+  // clearSeriesWinner slices off the trailing ones — so a per-slot counter can hand
+  // a freshly-pushed slot an (index, generation) pair that an orphaned History
+  // record from the discarded array already owns, which is the exact collision the
+  // generation exists to prevent. t.genHigh persists the mark independently of the
+  // array so truncation can't walk it backwards.
+  function nextSeriesGen(t) {
+    var max = t.genHigh || 0;
+    (t.games || []).forEach(function (s) { if (s && (s.gen || 0) > max) max = s.gen; });
+    return max + 1;
+  }
+  // Stamp a slot with a brand-new identity. Called when a slot's game is REPLACED
+  // rather than corrected, and when a new slot is appended, so the incoming game
+  // can never inherit an outgoing one's matchUid.
+  //
+  // Deliberately NOT called by clearSeriesWinner: that's an explicit "undo this
+  // result", and keeping the uid stable is what lets every device's
+  // syncMyHistoryFromTourney see the slot go undecided and drop the stale record.
+  function stampSeriesGen(t, slot) {
+    if (!slot) return slot;
+    var g = nextSeriesGen(t);
+    slot.gen = g;
+    t.genHigh = g;
+    return slot;
   }
   function getActiveMatchObj(am) {
     if (!am || !tourney) return null;
@@ -3032,7 +3163,7 @@ window.SOMERSET_FB_CONFIG = {
   // currently being played, or — on the Game tab — the shared series' live slot.
   function currentGameAm() {
     if (ui.activeMatch) return ui.activeMatch;
-    if (gameHasTourneyLink()) return { bracket:"series", gi: tourney.games.length - 1 };
+    if (gameHasTourneyLink()) return seriesAmFor(tourney, tourney.games.length - 1);
     return null;
   }
   // A specific hand within that slot: an existing deal being edited, or the next
@@ -4294,8 +4425,9 @@ window.SOMERSET_FB_CONFIG = {
     // Record Take — is already gated on it, and every one of those writes would
     // now be rejected server-side. Unlike the match clause this applies in solo
     // mode too, because a shared casual game is a session that can expire just
-    // the same.
-    var frozen = sessionFrozen();
+    // the same — but only when the pad is actually showing that session's game,
+    // which is what frozenAppliesHere() settles.
+    var frozen = frozenAppliesHere();
     var isReadOnly = frozen || (_am && (_m && !_m.game && _m.winner !== null));
     subtitleEl.textContent = "";
     var t = totals(), winDetail = winnerDetail(), win = winDetail.winner, dealNo = game.deals.length + 1;
@@ -4741,7 +4873,15 @@ window.SOMERSET_FB_CONFIG = {
         el("h3", { class:"disp" }, ["Start a new game?"]),
         el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 14px;" },
           [ resetDone ? "This game is finished and saved in History." : "The current score will be discarded." ]),
-        el("button", { class:"sheet-btn primary disp", onClick:function(){ if (gameHasTourneyLink()) resetSharedGame(); else newGame(); } }, ["Yes, start fresh"]),
+        // An unfinished game is DISCARDED here, not completed — archiveCurrentGame
+        // bails on it, so those hands leave no record anywhere and must not move
+        // the dealer either. Re-deal from where the discarded game began instead of
+        // rotating past it; a finished game takes the normal rotation (resetSharedGame
+        // makes the same call for the shared side).
+        el("button", { class:"sheet-btn primary disp", onClick:function(){
+          if (gameHasTourneyLink()) { resetSharedGame(); return; }
+          newGame(resetDone ? null : soloGame.dealerStart);
+        } }, ["Yes, start fresh"]),
         el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.confirmReset = false; softRender(); } }, ["Keep playing"])
       ]);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
@@ -5983,6 +6123,12 @@ window.SOMERSET_FB_CONFIG = {
       if (snapRec) {
         gameHistory.unshift(snapRec);
         gameHistory.sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+        // A snapshot that landed while the deal was gone saw the match go undecided
+        // and retracted the archived flag along with the record (see
+        // dropArchivedRecordForMatch). Restoring the record has to restore the flag
+        // too, or the next snapshot — which now sees a decided match again — archives
+        // a SECOND copy under the same matchUid.
+        if (snapRec.matchUid) { archivedMatches[snapRec.matchUid] = true; saveArchivedMatches(); }
         saveHistory();
         snapGame.archivedId = snapArchivedId;
       }
@@ -6063,7 +6209,7 @@ window.SOMERSET_FB_CONFIG = {
           var am = ui.activeMatch, m = getActiveMatchObj(am);
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[m.a].name, tourney.teams[m.b].name], id: tourney.id, bestOf: tourney.bestOf }, am) || null;
         } else if (gameHasTourneyLink()) {
-          var seriesAm = { bracket:"series", gi: tourney.games.length - 1 };
+          var seriesAm = seriesAmFor(tourney, tourney.games.length - 1);
           game.archivedId = archiveCurrentGame({ format: tourney.format, teams: [tourney.teams[0].name, tourney.teams[1].name], id: tourney.id, bestOf: tourney.bestOf }, seriesAm) || null;
           // This device just archived the game itself, so lock the match against
           // its own syncMyHistoryFromTourney re-archiving it (that path now fires
@@ -6152,7 +6298,28 @@ window.SOMERSET_FB_CONFIG = {
   // join code. Unlike advanceSharedGame, there's no winner to record here, so no
   // series-target bookkeeping happens.
   function resetSharedGame() {
-    setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+    var slot = liveSeriesSlot(tourney);
+    // Already decided and recorded (advanceSharedGame ran): the finished game owns
+    // this slot outright — its completedGame is what every device's
+    // syncMyHistoryFromTourney reads for it — so "start fresh" here means a NEW
+    // slot, which is exactly what the post-game "New Game" button does. Reusing the
+    // slot would hand the incoming game the finished one's matchUid and let the next
+    // advance overwrite its History record; bumping the generation instead would
+    // leave completedGame behind and re-archive the OLD game under a second uid.
+    if (slot.winner != null || slot.completedGame) { startNextSharedGame(); return; }
+    var outgoing = slot.game;
+    // The outgoing game is REPLACED, not corrected, so the incoming one needs its
+    // own matchUid — otherwise it collides with whatever the slot held before (see
+    // seriesAmFor). Matters most when the slot's game had already been played to a
+    // finish and auto-archived but nobody tapped Continue: that record must survive
+    // untouched. No outgoing game means nothing to collide with.
+    if (outgoing) stampSeriesGen(tourney, slot);
+    // Discarded deals leave no History record at all, so they must not advance the
+    // dealer either — the fresh game re-deals from where the discarded one began.
+    // A game that was actually played to a finish is real, so there the rotation
+    // continues as normal (see nextGameDealerStart).
+    var discarding = outgoing && gameWinner(outgoing) === null;
+    setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney, discarding ? outgoing.dealerStart : null));
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
@@ -6186,7 +6353,7 @@ window.SOMERSET_FB_CONFIG = {
     // syncMyHistoryFromTourney (which defers exactly until .game is null,
     // see its comment) push a second, duplicate record for a match this
     // device already logged itself.
-    markMatchArchived({ bracket: "series", gi: gi });
+    markMatchArchived(seriesAmFor(tourney, gi));
     // If this game just crowned the champion, the record archived above
     // predates that (recordDeal archives before champion is known), so
     // badge it now — same as returnToBracket does for the bracket flow.
@@ -6207,7 +6374,11 @@ window.SOMERSET_FB_CONFIG = {
   // re-join needed) and starts a fresh single shared game.
   function startNextSharedGame() {
     tourney.champion = null;
-    tourney.games.push({ a:0, b:1, winner:null, game:null, completedGame:null });
+    // Stamped, not left at generation 0: this index may have been used before (a
+    // redraw or an undone result rebuilds/truncates games[]), and an orphaned
+    // History record from that earlier occupant would otherwise share this game's
+    // matchUid — see nextSeriesGen.
+    tourney.games.push(stampSeriesGen(tourney, { a:0, b:1, winner:null, game:null, completedGame:null }));
     setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
     if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
@@ -6268,8 +6439,19 @@ window.SOMERSET_FB_CONFIG = {
       tourney.teams[0].players = [shuffled[0], shuffled[2]];
       tourney.teams[1].players = [shuffled[1], shuffled[3]];
       tourney.champion = null;
-      tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null }];
-      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney));
+      // The rebuilt games[0] replaces the old games[0] under the same tourney.id
+      // and join code, so its generation must continue that slot's sequence rather
+      // than restart at 0 — otherwise the post-redraw game collides with the
+      // pre-redraw one on matchUid and reconcileArchivedRecord overwrites the
+      // earlier game's History record with this one's deals. Computed before the
+      // reassignment below drops every existing slot, so it clears their marks too.
+      var redrawGen = nextSeriesGen(tourney);
+      tourney.genHigh = redrawGen;
+      tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null, gen:redrawGen }];
+      // Seats just changed hands — carrying the rotation would be meaningless,
+      // matching the newGame(0) the local branch below uses. Explicit rather than
+      // relying on the rebuilt (empty) games array leaving lastSeriesGame null.
+      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney, 0));
       if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
       ui.rematchOffer = null;
       saveTourney();
@@ -7723,7 +7905,11 @@ window.SOMERSET_FB_CONFIG = {
     }
     return null;
   }
-  function freshGameForTourneyTeams(t) {
+  // dealerStartOverride pins the opening dealer instead of continuing the
+  // rotation — used when the predecessor game's deals are being DISCARDED rather
+  // than completed (resetSharedGame), since hands that leave no History record
+  // must not move the deal either, and when a redraw makes the rotation moot.
+  function freshGameForTourneyTeams(t, dealerStartOverride) {
     var A = t.teams[0], B = t.teams[1];
     var g = freshGame();
     g.teams = [A.name, B.name];
@@ -7733,7 +7919,9 @@ window.SOMERSET_FB_CONFIG = {
     // across games in the session rather than resetting to seat 0 each time.
     // A redraw rebuilds t.games from scratch before calling here, so there's no
     // predecessor to inherit from and the rotation correctly starts over.
-    g.dealerStart = nextGameDealerStart(lastSeriesGame(t));
+    g.dealerStart = (typeof dealerStartOverride === "number")
+      ? dealerStartOverride
+      : nextGameDealerStart(lastSeriesGame(t));
     return g;
   }
   // Points the tourney's live slot at a (usually freshly-built) game object, and
@@ -7799,7 +7987,9 @@ window.SOMERSET_FB_CONFIG = {
     // real game to point a connected guest's Game tab at, so it silently fell
     // back to that guest's own unrelated local game (see the bug this fixed).
     if (t.champion == null && gi === t.games.length - 1) {
-      t.games.push({ a: 0, b: 1, winner: null, game: null, completedGame: null });
+      // Same reasoning as startNextSharedGame: a reused slot index must not inherit
+      // a discarded occupant's matchUid (see nextSeriesGen).
+      t.games.push(stampSeriesGen(t, { a: 0, b: 1, winner: null, game: null, completedGame: null }));
       setLiveSeriesGame(t, freshGameForTourneyTeams(t));
     }
   }
@@ -8440,7 +8630,7 @@ window.SOMERSET_FB_CONFIG = {
     // live, but nothing can be written through it, and that's the part the
     // player needs to know. Ranks below Offline (no connection at all is the
     // more immediate fact) and above the transport states.
-    var frozen = !offline && sessionFrozen();
+    var frozen = !offline && frozenAppliesHere();
     var dotEl = el("span", { class:"sync-dot " + (offline ? "offline" : frozen ? "archived" : syncStatus) });
     var statusTxt = offline ? "Offline: sync paused" : frozen ? "Archived: read-only" : syncStatus === "live" ? "Live" : syncStatus === "connecting" ? "Syncing…" : "Sync lost";
     container.appendChild(el("div", { class:"sync-bar" }, [
