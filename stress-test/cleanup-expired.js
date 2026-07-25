@@ -2,12 +2,14 @@
 "use strict";
 /**
  * Sweep PRODUCTION for tournaments/linkCodes that are already dead by the
- * app's own security rules (past their 48h / 30min expiry window, or in
+ * app's own security rules (past their 30d / 30min *read* expiry window, or in
  * tournaments' case missing `_createdAt` entirely -- the pre-fix Rematch/
  * Redraw bug that bricked sync, see FIREBASE_SETUP.md's rules and
  * memory/firebase-sync-open-issues.md). Expired records are already
  * unreadable and unwritable by rules; this only reclaims the storage they
- * still occupy. It never touches users/, people/, personOf/, profileOf/, or
+ * still occupy. Note a tournament stops being *writable* at 48h but stays
+ * readable to 30d by design -- "dead" here means past the READ window, since
+ * anything still readable is still serving the History-repair path. It never touches users/, people/, personOf/, profileOf/, or
  * statsProfiles/ -- those hold real backup/identity/sharing data with no
  * built-in expiry, and determining true orphans there needs cross-
  * referencing against Firebase Auth (see audit-orphaned-profiles.js for the
@@ -38,7 +40,15 @@ const PROJECT = projIdx !== -1 ? args[projIdx + 1] : "somerset-scorepad";
 const APPLY = args.includes("--apply");
 const FIREBASE = process.env.FIREBASE_BIN || "firebase";
 
-const TOURNAMENT_TTL_MS = 172800000; // 48h, matches tournaments/$code rules
+// Must match the tournaments/$code *read* window (30d), NOT the shorter 48h
+// write window -- the two are deliberately different lengths (see
+// FIREBASE_SETUP.md). A tournament between 48h and 30d old is frozen but still
+// readable on purpose: that's the window in which a participant who was offline
+// when a game finished, or who archived a deal before it was corrected, repairs
+// their own History by rejoining the code. Setting this to 48h would delete
+// those nodes while the rules still serve them, silently closing the repair
+// path -- and this script is meant to run before each release.
+const TOURNAMENT_TTL_MS = 2592000000; // 30d, matches tournaments/$code .read
 const LINKCODE_TTL_MS = 1800000; // 30min, matches linkCodes/$code rules
 
 function fb(dbPath, extra = []) {

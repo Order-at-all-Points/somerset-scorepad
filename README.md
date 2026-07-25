@@ -150,7 +150,7 @@ Tournaments can be **synced live across phones** via Firebase Realtime Database:
 - Other players join via **Tournament → Join with a code**.
 - All match updates sync simultaneously across devices, **siloed per tournament**.
 - Per‑match **locks** prevent two devices from editing the same game at once.
-- Tournaments **auto‑expire after 48 hours** (enforced by Firebase security rules).
+- Shared sessions **stop accepting changes after 48 hours** and are **deleted after 30 days** (enforced by Firebase security rules). The gap in between is what lets someone who was offline when a game finished rejoin the code later and have it land in their own History.
 - The name book stays **local** to each device.
 - **"Which player are you?"** — after starting or joining a synced tournament, tag yourself with your name from the roster (or set it later via **Playing as → Change** in the sync bar). Every match you're in then lands in *your own* History automatically as it's completed — even ones a teammate enters the score for — with no duplicate entries if you also played/recorded it yourself.
 
@@ -208,7 +208,7 @@ Client state is kept under `localStorage` keys (all prefixed `somerset:dev-`):
 | `somerset:dev-history-tombstones` | Locally‑deleted History entries, so a linked device doesn't resurrect them from its own cloud copy. |
 | `somerset:dev-profile-id` / `somerset:dev-share-peers` / `somerset:dev-auto-share` / `somerset:dev-share-game-names` | Stats Sharing: this device's published‑stats profile id, the People list of peers you follow/share with, the master share toggle, and the "include names" opt‑in. |
 
-In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and make each record readable/writable only for 48 hours after creation. Cloud Backup, device linking, and Stats Sharing add further per‑user paths (`users/<uid>`, `statsProfiles/<profileId>`, etc.), each with their own rules. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
+In Firebase, tournaments are stored under `tournaments/<code>` with a `_createdAt` server timestamp. Security rules require a valid `format` (`single` / `double` / `round` / `series`) and a `teams` field, and put each record on two clocks: **writable for 48 hours** after creation, then frozen, and **readable for 30 days**, so a participant can still rejoin an old code to repair or back-fill their own History. Cloud Backup, device linking, and Stats Sharing add further per‑user paths (`users/<uid>`, `statsProfiles/<profileId>`, etc.), each with their own rules. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
 
 ---
 
