@@ -60,7 +60,11 @@ const roundTripAndDedup = {
       }
 
       logger.step("Clear local storage (simulating a reinstall) and import the backup");
-      await storage.clearAll(device.page);
+      // Must clear IndexedDB too, or the Firebase Auth session survives, the same
+      // anonymous uid comes back, and this device's own cloud backup correctly
+      // restores itself -- History is then NOT empty and the round-trip below is
+      // measuring the restore path rather than an import. See simulateReinstall.
+      await storage.simulateReinstall(device.page);
       await device.page.reload({ waitUntil: "domcontentloaded" });
       await device.page.locator("nav#nav button.nav-btn").first().waitFor({ state: "visible" });
       await nav.goto(device.page, "History");
