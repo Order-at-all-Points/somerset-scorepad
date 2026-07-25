@@ -69,9 +69,19 @@ async function enableBackupViaToggle(page) {
     await page.waitForTimeout(500);
   }
   await openDisplaySheet(page);
+  // Idempotent: only tap when it is actually off. Cloud backup DEFAULTS ON now
+  // (loadCloudSyncEnabled treats an unset key as true), so a fresh device already
+  // has it enabled -- and tapping an already-on toggle takes the opposite branch,
+  // which sets ui.showThemeSheet = false and opens the unlink confirm instead. That
+  // closes the Settings sheet out from under the poll below, whose locator then
+  // never resolves and burns Playwright's full 30s default before failing. This
+  // helper is a fixture step meaning "ensure backup is on", so a device that is
+  // already backing up is success, not something to toggle.
+  const isOn = async () => ((await cloudBackupToggle(page).getAttribute("class")) || "").includes(" on");
+  if (await isOn()) return true;
   await cloudBackupToggle(page).click({ timeout: config.actionTimeoutMs });
   for (let i = 0; i < 8; i++) {
-    if (((await cloudBackupToggle(page).getAttribute("class")) || "").includes(" on")) return true;
+    if (await isOn()) return true;
     await page.waitForTimeout(500);
   }
   return false;
