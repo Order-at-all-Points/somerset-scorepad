@@ -75,6 +75,10 @@ function generate(store, runMeta) {
   lines.push(`- **Run started:** ${runMeta.startedAt}`);
   lines.push(`- **Duration:** ${(runMeta.durationMs / 1000).toFixed(1)}s`);
   lines.push(`- **Git commit:** \`${runMeta.gitCommit}\``);
+  // The commit is where the tree HAPPENED to be; this is what was actually
+  // served for the whole run (see server.snapshot()). They differ if the tree
+  // was dirty, or changed mid-run -- in which case the hash is the honest one.
+  if (runMeta.servedHash) lines.push(`- **index.html served:** \`${runMeta.servedHash}\``);
   lines.push(`- **Browser:** ${runMeta.browser}`);
   lines.push(`- **Phase(s) run:** ${runMeta.phase}`);
   lines.push(`- **Scenarios:** ${runMeta.scenarioCount}`);
