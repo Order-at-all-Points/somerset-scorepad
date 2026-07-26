@@ -661,8 +661,10 @@ Nothing outstanding from this investigation — F1-F6 are all closed. Remaining 
 
 ## Open issues carried in from prior sessions (to re-test, not assume)
 
-- **C4** — no deletion tombstones cloud-side: a shared match deleted on one device resurrects via the linked copy.
-- **C5** — casual record ids are `Date.now()` with no random part, but are now cross-device dedup keys.
+- ~~**C4** — no deletion tombstones cloud-side: a shared match deleted on one device resurrects via the linked
+  copy.~~ **Closed** — re-tested 2026-07-25, see below.
+- ~~**C5** — casual record ids are `Date.now()` with no random part, but are now cross-device dedup keys.~~
+  **Closed** — re-tested 2026-07-25, see below.
 - **#11** — redeem-time owner confirmation (partially addressed: `ownerName` now rides in the linkCode).
 - **#10** — client-side consume-on-redeem (appears implemented at 1304 — verify).
 
@@ -751,3 +753,59 @@ The side finding in section 4 holds, and the argument against cleanup is now **s
 
 Nothing here is broken: 0 stranded, 0 split, 0 structural orphans. The residue is inert rows, not damage.
 The standing advice is unchanged — a dated allowlist or a fresh project for testing, never a bulk delete.
+
+---
+
+## C4 / C5 re-test — 2026-07-25: both already closed; the carried-in list was stale
+
+The carried-in list said "to re-test, not assume", and re-testing was the right instinct — but it turned out
+both entries described state from **before** 2026-07-14. Neither is an open issue. Recording the evidence so
+they stop being re-opened by their own stale summaries.
+
+### C5 — closed, and it was fixed twice
+
+The carried-in wording ("ids are `Date.now()` with no random part") describes the pre-2026-07-14 code. It was
+first "fixed" that day with `Date.now() + Math.floor(Math.random()*1000)` — which **F4 later demolished**: it
+adds jitter to a timestamp rather than composing timestamp + entropy, so it smears ids across a ~1s window
+instead of widening the space (2.8% collision per 8-record burst, measured). The real fix is F4's composed
+`<millis>-<crypto>` id, which is what ships today:
+
+```js
+function genRecordId() { return Date.now() + "-" + genCode(); }
+```
+
+Guard `stats-sharing/record-ids-survive-archive-burst` — re-run 2026-07-25: **0 findings**.
+
+**Production check on the residual.** F4 recorded that legacy ids cannot be re-keyed (tombstones key on
+`matchUid || id`; synced copies live at `users/<uid>/history/<id>`) and that pre-fix same-uid overwrites are
+unrepairable. Nobody had checked whether that damage actually happened. `stress-test/audit-record-ids.js`
+(read-only, record KEYS only — never a record body) against `somerset-scorepad`:
+
+```
+201 uids, 187 with history, 422 records total
+legacy-format ids (bare integer, pre-F4): 350
+composed ids (<millis>-<code>, post-F4):   72
+91 person groups hold history; 56 span >1 device
+cross-device id collisions: 0
+```
+
+**Zero.** Nothing is currently being dropped from merged Stats. The 350 legacy ids remain as exposure, but
+same-uid overwrites among them are historical and undetectable by construction — the overwritten record left
+no trace. That is the documented unrepairable residual, not new damage. Worth re-running as the legacy
+fraction shrinks.
+
+### C4 — closed, and the "gap" is the design
+
+Tombstones are local-only, and `SECURITY_REVIEW.md` C4 already states this is deliberate: *"By design, this
+is local-only, not a network-wide delete broadcast… a linked device that never deleted its own copy keeps
+seeing it. That's the documented, accepted shape — not a remaining gap."* Shared matches are only fully
+removed from the device that owns each copy.
+
+Guard `device-linking/deleted-shared-match-stays-deleted` — re-run 2026-07-25: **0 findings**.
+
+### Why this kept looking open
+
+Same failure mode as F2, in reverse. There, a doc said *fixed* and the code had a third cause nobody reached;
+here, a list said *open* and the code had been fixed twice over. **A summary written before a fix outlives the
+fix.** Both directions cost real time this session, and in both cases the resolution was to measure rather
+than to read: run the guard, probe production, and let the result overrule the prose.
