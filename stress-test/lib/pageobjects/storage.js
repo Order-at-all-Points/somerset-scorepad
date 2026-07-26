@@ -40,4 +40,32 @@ async function clearAll(page) {
   await page.evaluate(() => window.localStorage.clear());
 }
 
-module.exports = { KEYS, readKey, snapshotAll, clearAll };
+/**
+ * Wipe everything that identifies this device -- localStorage AND IndexedDB --
+ * so a reload comes up as a genuinely fresh install.
+ *
+ * clearAll() alone is NOT a reinstall: Firebase Auth persists its session in
+ * IndexedDB (`firebaseLocalStorageDb`), not localStorage, so the reload restores
+ * the SAME anonymous authUid, subscribeMyHistory finds that uid's cloud backup and
+ * correctly restores it. Measured: localStorage-only leaves the uid unchanged and
+ * History repopulated; clearing both mints a new uid and comes up empty. Callers
+ * simulating a reinstall must use this, or they are really testing "same device,
+ * local data lost" -- which is the restore path, not a fresh install.
+ */
+async function simulateReinstall(page) {
+  await page.evaluate(async () => {
+    window.localStorage.clear();
+    const dbs = indexedDB.databases ? await indexedDB.databases() : [];
+    await Promise.all(
+      dbs.map(
+        (d) =>
+          new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+          })
+      )
+    );
+  });
+}
+
+module.exports = { KEYS, readKey, snapshotAll, clearAll, simulateReinstall };

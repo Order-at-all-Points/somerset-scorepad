@@ -61,7 +61,12 @@ async function exportHistory(page) {
   await page.locator("#viewRoot .settings-toggle", { hasText: "Options" }).click({ timeout: config.actionTimeoutMs });
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: config.actionTimeoutMs }),
-    page.locator('[role="dialog"][aria-label="Options"] .sheet-btn', { hasText: "Back up" }).click({ timeout: config.actionTimeoutMs }),
+    // "Export Game History" -- the button was labelled "Back up" when this was
+    // written; the stale text silently never matched, so the click never landed and
+    // the download event this races against could only ever time out.
+    page
+      .locator('[role="dialog"][aria-label="Options"] .sheet-btn', { hasText: "Export Game History" })
+      .click({ timeout: config.actionTimeoutMs }),
   ]);
   const stream = await download.createReadStream();
   const chunks = [];
