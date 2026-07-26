@@ -9,7 +9,6 @@ const dealHistory = require("../lib/pageobjects/dealHistory");
 const newGame = require("../lib/pageobjects/newGame");
 const bracket = require("../lib/pageobjects/bracket");
 const storage = require("../lib/pageobjects/storage");
-const seriesSetup = require("../lib/pageobjects/seriesSetup");
 const simulator = require("../lib/simulator");
 const config = require("../config");
 

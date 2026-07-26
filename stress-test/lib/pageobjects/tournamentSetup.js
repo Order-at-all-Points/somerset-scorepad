@@ -92,11 +92,6 @@ async function setupAndStart(page, { names, format }) {
   return teams;
 }
 
-async function openBestOfSeriesSetup(page) {
-  await page.locator(".btn.btn-add:visible", { hasText: "Best-of Series" }).click({ timeout: config.actionTimeoutMs });
-  await page.waitForTimeout(60);
-}
-
 async function openJoinSheet(page) {
   await page
     .locator(".btn.btn-cancel:visible", { hasText: "Join with code" })
@@ -116,6 +111,5 @@ module.exports = {
   drawnTeams,
   startTournament,
   setupAndStart,
-  openBestOfSeriesSetup,
   openJoinSheet,
 };

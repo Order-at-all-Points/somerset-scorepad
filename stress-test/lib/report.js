@@ -7,7 +7,6 @@ const MODE_BUCKETS = [
   { label: "Single Elimination", prefixes: ["tournament-single-elim"] },
   { label: "Double Elimination", prefixes: ["tournament-double-elim"] },
   { label: "Round Robin", prefixes: ["tournament-round-robin"] },
-  { label: "Best-of Series", prefixes: ["series-best-of"] },
 ];
 const CROSS_CUTTING_PREFIXES = ["sync-cross-cutting", "history-export-import"];
 
@@ -102,7 +101,7 @@ function generate(store, runMeta) {
   lines.push("## Regression checks (recent commits)");
   lines.push("");
   lines.push(
-    "These reproduce the last 5 `dev` commits touching best-of-series escalation and shared-history sync, so a break here is a direct regression, not new territory:"
+    "These reproduce bugs that have already been fixed once -- shared-history sync and bracket advancement -- so a break here is a direct regression, not new territory:"
   );
   lines.push("");
   const regressionResults = scenarioResults.filter((r) => r.name.includes("regression"));
