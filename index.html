@@ -1163,38 +1163,81 @@ window.SOMERSET_FB_CONFIG = {
   // reconcile in syncMyHistoryFromTourney rewrites that record in place and
   // flags it here (see markHistoryRecordDirty) so this pass re-pushes it
   // instead of leaving a stale copy in the cloud for linked devices to read.
+  // Firebase rejects `undefined` anywhere in a written value, and it does so by
+  // THROWING synchronously rather than failing the write asynchronously. Since
+  // saveHistory() calls syncHistoryToCloud() inline, that throw used to escape
+  // all the way back out of archiveCurrentGame and recordDeal — skipping
+  // recordDeal's trailing persist(), so the winning deal the player had just
+  // entered was never saved locally OR synced, the pad never re-rendered, and the
+  // match could not be completed. A bracket tourney's `bestOf` was undefined (see
+  // makeSingleElim), so this fired on the deciding hand of every bracket match
+  // with cloud backup on — which is the default.
+  //
+  // Cloud backup is a background convenience. It must never be able to take local
+  // play down with it, whatever a record happens to contain, so strip undefined
+  // so the write can succeed and contain anything else so it cannot escape.
+  // Undefined ARRAY entries become null: Firebase stores arrays as objects and
+  // rejects undefined elements too, and a null hole round-trips back through
+  // fbObjToArr the same way a sparse array already does.
+  function stripUndefined(v) {
+    if (v === null || typeof v !== "object") return v;
+    if (Array.isArray(v)) return v.map(function (x) { return x === undefined ? null : stripUndefined(x); });
+    var out = {};
+    Object.keys(v).forEach(function (k) {
+      if (v[k] === undefined) return;
+      out[k] = stripUndefined(v[k]);
+    });
+    return out;
+  }
   function syncHistoryToCloud() {
     if (!cloudSyncEnabled || !authUid || !fb) return;
-    var ids = {};
-    gameHistory.forEach(function (r) { ids[r.id] = true; });
+    // Two distinct sets, deliberately. `localIds` is what History holds right now
+    // and drives every prune decision; `synced` is what we believe actually reached
+    // the cloud and becomes the next diff baseline. A record whose write throws is
+    // still local — it must keep both its cloud copy and its dirty flag, and only
+    // drop out of the baseline so the next pass retries it. Collapsing these into
+    // one set silently prunes the dirty flag off exactly the records that need a
+    // retry most.
+    var localIds = {}, synced = {};
+    gameHistory.forEach(function (r) { localIds[r.id] = true; synced[r.id] = true; });
     gameHistory.forEach(function (r) {
       if (lastSyncedHistoryIds[r.id] && !dirtyHistoryIds[r.id]) return;
-      // Cleared in the completion callback, not on the line below: issuing a set()
-      // only queues it. Clearing on issue meant a device that went offline — or was
-      // killed — before the write flushed lost the flag with nothing able to
-      // re-derive it, since subscribeMyHistory rebuilds lastSyncedHistoryIds from
-      // the cloud snapshot and skips ids already present locally, and
-      // reconcileArchivedRecord sees no diff (the LOCAL record is already
-      // corrected). The stale cloud copy — exactly what linked devices read through
-      // linkedHistoryCache — would then never be repaired. An error leaves the flag
-      // set so the next pass retries.
-      fb.ref("users/" + authUid + "/history/" + r.id).set(r, function (err) {
-        if (err || !dirtyHistoryIds[r.id]) return;
-        delete dirtyHistoryIds[r.id];
-        saveDirtyHistoryIds();
-      });
+      // The dirty flag is cleared in the completion callback, not on the line that
+      // issues the write: issuing a set() only queues it. Clearing on issue meant a
+      // device that went offline — or was killed — before the write flushed lost the
+      // flag with nothing able to re-derive it, since subscribeMyHistory rebuilds
+      // lastSyncedHistoryIds from the cloud snapshot and skips ids already present
+      // locally, and reconcileArchivedRecord sees no diff (the LOCAL record is
+      // already corrected). The stale cloud copy — exactly what linked devices read
+      // through linkedHistoryCache — would then never be repaired.
+      //
+      // stripUndefined and the try/catch are here because Firebase rejects
+      // `undefined` by THROWING synchronously, and this runs inline from
+      // saveHistory(): an escaping throw used to skip recordDeal's persist() and
+      // lose the deal the player had just entered. One malformed record must not
+      // abort the loop and strand every record after it either.
+      try {
+        fb.ref("users/" + authUid + "/history/" + r.id).set(stripUndefined(r), function (err) {
+          if (err || !dirtyHistoryIds[r.id]) return;
+          delete dirtyHistoryIds[r.id];
+          saveDirtyHistoryIds();
+        });
+      } catch (e) {
+        delete synced[r.id];   // retry next pass; the dirty flag deliberately stays set
+      }
     });
     Object.keys(lastSyncedHistoryIds).forEach(function (id) {
-      if (!ids[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
+      if (!localIds[id]) fb.ref("users/" + authUid + "/history/" + id).remove();
     });
     // A flag for a record that no longer exists locally can never be acted on, and
-    // the prune above already removes its cloud copy.
+    // the prune above already removed its cloud copy. Keyed on localIds, NOT synced:
+    // a record that merely failed to write is still local and must stay dirty.
     var prunedDirty = false;
     Object.keys(dirtyHistoryIds).forEach(function (id) {
-      if (!ids[id]) { delete dirtyHistoryIds[id]; prunedDirty = true; }
+      if (!localIds[id]) { delete dirtyHistoryIds[id]; prunedDirty = true; }
     });
     if (prunedDirty) saveDirtyHistoryIds();
-    lastSyncedHistoryIds = ids;
+    lastSyncedHistoryIds = synced;
   }
   // Flag an already-pushed record as needing a re-push, for the one case where
   // an archived record's contents change (reconcileArchivedRecord).
@@ -2206,7 +2249,14 @@ window.SOMERSET_FB_CONFIG = {
     // tourney.champion to null for the exact same reason. Leaving the archived
     // flag set double-counts a championship once the real series later clinches
     // for real on its own final game.
-    gameHistory.forEach(function (h) {
+    // Series only. Escalation is the sole thing that moves bestOf, and it only
+    // exists for a series — whereas a bracket's records archived before bestOf
+    // was stamped at all (it used to be undefined, see makeSingleElim) have no
+    // bestOf key, so on a live shared bracket this would read `undefined !== 1`,
+    // rewrite them, and clear their championship flag as collateral. It recovers
+    // on the next snapshot via the back-badge pass above, but there is no reason
+    // to churn a bracket's records here in the first place.
+    if (tourney.format === "series") gameHistory.forEach(function (h) {
       if (h.tournament && h.tournament.id === tourney.id && h.tournament.bestOf !== tourney.bestOf) {
         h.tournament.bestOf = tourney.bestOf;
         h.tournament.championship = false;
@@ -7684,7 +7734,14 @@ window.SOMERSET_FB_CONFIG = {
       for (var k = 0; k < count / 2; k++) rnd.push({ a: null, b: null, winner: null });
       rounds.push(rnd); count = count / 2;
     }
-    var t = { id: Date.now(), createdAt: new Date().toISOString(), format: "single", teams: teams, rounds: rounds, champion: null };
+    // bestOf is stamped into every archived record's .tournament (see
+    // archiveCurrentGame's callers) and Firebase REJECTS an undefined value
+    // outright, so a bracket that omits it breaks History sync — and, because
+    // that write throws synchronously out of saveHistory(), takes recordDeal's
+    // persist() down with it. A bracket match is a single game, so 1 is both
+    // honest and inert (isTournamentRecord/tourneyHasRealChampionship ignore it
+    // for every non-series format).
+    var t = { id: Date.now(), createdAt: new Date().toISOString(), format: "single", teams: teams, rounds: rounds, bestOf: 1, champion: null };
     t.rounds[0].forEach(function (m, i) { if (m.a != null && m.b == null) setMatchWinner(t, 0, i, m.a); }); // auto-advance byes
     return t;
   }
@@ -7739,7 +7796,7 @@ window.SOMERSET_FB_CONFIG = {
       id: Date.now(), createdAt: new Date().toISOString(), format: "double", teams: teams,
       wBracket: { rounds: wbRounds }, lBracket: { rounds: lbRounds },
       grandFinal: { m1: { a: null, b: null, winner: null }, m2: null },
-      locks: {}, champion: null
+      locks: {}, bestOf: 1, champion: null   // see makeSingleElim: undefined here breaks History sync
     };
     t.wBracket.rounds[0].forEach(function(m, i) { if (m.a != null && m.b == null) setWBWinner(t, 0, i, m.a); });
     return t;
@@ -7851,7 +7908,7 @@ window.SOMERSET_FB_CONFIG = {
     }
     return {
       id: Date.now(), createdAt: new Date().toISOString(), format: "round", teams: teams,
-      schedule: schedule, final: null, locks: {}, champion: null
+      schedule: schedule, final: null, locks: {}, bestOf: 1, champion: null   // see makeSingleElim
     };
   }
   function rrStandings(t) {
