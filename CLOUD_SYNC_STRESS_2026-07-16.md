@@ -669,5 +669,85 @@ Nothing outstanding from this investigation — F1-F6 are all closed. Remaining 
 ## Known v1 limitations (documented; verify blast radius rather than re-finding)
 
 - Original-ownerUid device unlinking locks remaining devices out of digest writes.
-- Two linked devices flipping sharing on simultaneously race two profiles.
+- ~~Two linked devices flipping sharing on simultaneously race two profiles.~~ **Closed 2026-07-25** — and it
+  was mis-scoped as a race: it is deterministic, needs no simultaneity, and any two devices used solo before
+  linking hit it. See "F2 completion" below.
 - Wrong-NAME claims by session code-holders.
+
+---
+
+## F2 completion + orphan-sweep scoping — 2026-07-25
+
+### The 2026-07-17 F2 fix was real but incomplete
+
+Section 3 above closed F2 with both guards green, and that was true when measured. Re-running them today
+they were red again — not a regression in that fix (both halves are still in place and still correct), but a
+**third cause it never reached**, one layer earlier than either:
+
+> Cloud backup **and** `autoShare` both default on, so `bootStatsSharing()` mints a stats profile at **boot** —
+> long before a device can know it will ever join someone's group. Link two devices that have each been used
+> solo and the person ends up with **two profiles**. `allowed/` is per-profile, so that split is exactly what
+> makes a grant created on one device invisible and unrevocable from the other. `ensureStatsProfile`'s
+> `if (myProfileId) return` early-out then makes it permanent.
+
+This is the item listed below as a v1 limitation — *"two linked devices flipping sharing on simultaneously
+race two profiles"* — but it is **not a race**. It is deterministic, and it needs no simultaneity: any two
+devices used solo before linking will do it. Both halves of the 07-17 fix were inert against it, because
+both operate on a person already agreed on one profile.
+
+Reading the code would have concluded F2 was fixed. The probe is what found it — note that every input the
+old analysis blamed is healthy here:
+
+```
+tablet linkedUids: [tabletUid, aliceUid]            <- populated
+personOf/alice == personOf/tablet                   <- same person
+read users/<alice>/profileId as tablet -> {ok:true} <- rules fine
+tablet profileId BEFORE setMaster: spTNFCLA8JVXQD   <- already minted its own
+statsProfiles: [spSJKT..., spTNFC...]               <- two, for one person
+```
+
+**Fix:** `personDeviceUids()` resolves the person's devices from `people/<personId>/linkedUids` (source of
+truth) rather than the `linkedUids` cache, which `subscribeLinkedHistories` fills asynchronously and is empty
+in precisely the moments the profile decision is made. `adoptPersonProfile()` reconciles a split person onto
+the **oldest** profile, migrating the retiring profile's grants first and deleting only a profile this device
+minted for itself. `restorePeersFromCloud()` had the identical staleness bug and now uses the same source.
+All 8 sharing guards green.
+
+**Why nobody noticed the guards had gone red:** seven of the eight `stats-sharing` scenarios had been dying
+in a fixture step since cloud backup's default flipped to on — `enableBackupViaToggle` tapped an already-on
+toggle, which opens the unlink confirm and closes the sheet the next poll needs. The suite reported them as
+`Scenario threw`, indistinguishable from noise. **A guard that cannot run is not a guard**; the harness fix
+had to come first before any of this was measurable.
+
+### Orphan sweep: not needed
+
+`audit-orphaned-profiles.js` (read-only) against `somerset-scorepad`, plus a second read-only pass scoping
+what the new reconcile would actually mutate:
+
+```
+34 profiles, 182 personOf, 33 profileOf, 103 persons, 79 multi-device groups
+STRANDED: 0        <- the F6 sweep has nothing to sweep
+SPLIT persons: 0   <- adoptPersonProfile is a no-op against current production data
+personOf uids not in any people/<id>/linkedUids: 0 of 182   <- no structural orphans
+```
+
+The load-bearing number is that `personOf` and `profileOf` are **completely disjoint** — 0 of 33 devices
+holding a profile is currently in a linked-device group — so there is no split for the reconcile to act on,
+and no profile whose owner has left. Verified rather than inferred, because it is surprising.
+
+**Section 4's conclusion is now stale.** It read zero-stranded as *"Stats Sharing has never actually been used
+in production"* (3 profiles, 2 profileOf, no grants anywhere). Today: 34 profiles, 4 of them carrying grants,
+created in bursts on 07-19/07-22/07-24/07-25. Sharing **is** in use now. Zero stranded today means *currently
+healthy*, not *unused* — so this needs re-running after real multi-device sharing, not treating as settled.
+
+### Stress-test residue: still do not clean
+
+The side finding in section 4 holds, and the argument against cleanup is now **stronger**, not weaker:
+
+- there is still no reliable server-side discriminator between test and real rows;
+- `people` nodes carry only `linkedUids` — no timestamp to date them by;
+- and the real-data fraction has grown since 07-17 (multiple genuine players now have digests), so the cost
+  of a wrong deletion has gone up while the benefit stays cosmetic.
+
+Nothing here is broken: 0 stranded, 0 split, 0 structural orphans. The residue is inert rows, not damage.
+The standing advice is unchanged — a dated allowlist or a fresh project for testing, never a bulk delete.

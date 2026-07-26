@@ -2633,34 +2633,115 @@ window.SOMERSET_FB_CONFIG = {
     fb.ref("statsProfiles/" + myProfileId + "/personId").set(personId)
       .catch(function () { if (stampedProfilePersonId === key) stampedProfilePersonId = null; });
   }
+  // profileOf is what the digest read rule identifies THIS uid by; the
+  // users/<uid>/profileId copy is only the restore/adoption breadcrumb. Shared by
+  // first-time adoption and by the reconcile below, so the two can't write one and
+  // forget the other.
+  function adoptProfileId(pid) {
+    return fb.ref("profileOf/" + authUid).set(pid)
+      .then(function () { return fb.ref("users/" + authUid + "/profileId").set(pid); })
+      .then(function () { myProfileId = pid; saveMyProfileId(pid); stampProfilePersonId(); });
+  }
+  // The person's device set from the SOURCE OF TRUTH, not the local linkedUids
+  // cache. subscribeLinkedHistories fills that cache asynchronously from a
+  // membership snapshot, so it is still empty in the moments right after this
+  // device redeems a link code — exactly when the profile decision gets made.
+  // people/<personId> is readable by any member, and redeemLinkCode writes this
+  // device's membership BEFORE it enables sync, so this read is already correct
+  // by the time anything here runs.
+  function personDeviceUids(cb) {
+    var local = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; }));
+    if (!personId || !fb) { cb(local); return; }
+    fb.ref("people/" + personId + "/linkedUids").once("value").then(function (s) {
+      var all = Object.keys(s.val() || {});
+      if (all.indexOf(authUid) === -1) all.push(authUid);
+      cb(all);
+    }).catch(function () { cb(local); });
+  }
+  // One person, ONE stats profile.
+  //
+  // A device mints its own the moment sharing is ready — and since both cloud
+  // backup and autoShare default on, that is boot, long before it can know it will
+  // ever join someone's group. Link two devices that have each been used solo and
+  // the person ends up with two profiles. `allowed/` lives per PROFILE, so that
+  // split is precisely what makes a grant created on one device invisible and
+  // unrevocable from the other: F2, and F6 with it, since F6's rules fix is inert
+  // while the client is still pointed at the wrong profile.
+  //
+  // Reconcile onto the OLDEST profile: it's the one followers are most likely to
+  // already hold a grant on, and ordering by age (rather than by whoever happened
+  // to run last) makes two devices reconciling concurrently agree. Grants on the
+  // profile being retired are migrated FIRST so nobody loses access mid-flight.
+  function adoptPersonProfile(then) {
+    var done = function () { if (then) then(); };
+    if (!personId || !sharingReady()) { done(); return; }
+    personDeviceUids(function (uids) {
+      Promise.all(uids.map(function (u) {
+        return fb.ref("users/" + u + "/profileId").once("value")
+          .then(function (s) { return s.val(); }).catch(function () { return null; });
+      })).then(function (found) {
+        var seen = {};
+        found.concat([myProfileId]).forEach(function (p) { if (typeof p === "string" && p) seen[p] = true; });
+        var list = Object.keys(seen);
+        if (list.length < 2) return null;   // nothing split — the common case
+        return Promise.all(list.map(function (p) {
+          return fb.ref("statsProfiles/" + p + "/createdAt").once("value")
+            .then(function (s) { return { pid: p, at: s.val() }; })
+            .catch(function () { return { pid: p, at: null }; });
+        })).then(function (metas) {
+          metas.sort(function (a, b) {
+            // An unreadable/missing createdAt sorts last rather than winning by
+            // accident; the pid tie-break keeps this total and device-independent.
+            var aa = (typeof a.at === "number") ? a.at : Infinity;
+            var bb = (typeof b.at === "number") ? b.at : Infinity;
+            if (aa !== bb) return aa - bb;
+            return a.pid < b.pid ? -1 : 1;
+          });
+          var canonical = metas[0].pid;
+          if (myProfileId === canonical) return null;
+          var stray = myProfileId;
+          if (!stray) return adoptProfileId(canonical);
+          return fb.ref("statsProfiles/" + stray + "/allowed").once("value")
+            .then(function (s) { return Object.keys(s.val() || {}); })
+            .catch(function () { return []; })
+            .then(function (theirs) {
+              return Promise.all(theirs.map(function (tp) {
+                return fb.ref("statsProfiles/" + canonical + "/allowed/" + tp).set(true).catch(function () {});
+              }));
+            })
+            .then(function () { return adoptProfileId(canonical); })
+            // Only ever removes a profile this device minted for itself (stray was
+            // myProfileId), never a sibling's.
+            .then(function () { return fb.ref("statsProfiles/" + stray).remove().catch(function () {}); })
+            .then(function () { publishMyDigestSoon(); });
+        });
+      }).then(done).catch(done);
+    });
+  }
   function ensureStatsProfile(cb) {
     // Already known: still re-stamp. A device that minted its profile while
     // solo (personId null) and linked later would otherwise leave the profile
     // permanently unstamped, since this is the early-out every later call takes.
     if (myProfileId) { stampProfilePersonId(); if (cb) cb(myProfileId); return; }
     if (!sharingReady()) { if (cb) cb(null); return; }
-    var uids = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; })).sort();
-    Promise.all(uids.map(function (u) {
-      return fb.ref("users/" + u + "/profileId").once("value")
-        .then(function (s) { return s.val(); }).catch(function () { return null; });
-    })).then(function (found) {
-      var existing = found.filter(function (v) { return typeof v === "string" && v; })[0];
-      var adopt = function (pid) {
-        // profileOf is what the digest read rule identifies THIS uid by; the
-        // users/<uid>/profileId copy is only the restore/adoption breadcrumb.
-        return fb.ref("profileOf/" + authUid).set(pid)
-          .then(function () { return fb.ref("users/" + authUid + "/profileId").set(pid); })
-          .then(function () { myProfileId = pid; saveMyProfileId(pid); stampProfilePersonId(); if (cb) cb(pid); });
-      };
-      if (existing) return adopt(existing);
-      var pid = "sp" + genCode() + genCode();   // 12 chars of the 32-char alphabet = 60 bits, crypto RNG
-      // personId rides along at creation when it's already known (a device that
-      // links first, then shares). Solo devices have none yet — stampProfilePersonId()
-      // fills it in later, on whichever path establishes one. Firebase drops
-      // null-valued keys, so an unset personId just omits the field.
-      return fb.ref("statsProfiles/" + pid).set({ ownerUid: authUid, personId: personId || null, createdAt: firebase.database.ServerValue.TIMESTAMP })
-        .then(function () { return adopt(pid); });
-    }).catch(function () { if (cb) cb(null); });
+    personDeviceUids(function (uids) {
+      uids = uids.slice().sort();
+      Promise.all(uids.map(function (u) {
+        return fb.ref("users/" + u + "/profileId").once("value")
+          .then(function (s) { return s.val(); }).catch(function () { return null; });
+      })).then(function (found) {
+        var existing = found.filter(function (v) { return typeof v === "string" && v; })[0];
+        if (existing) return adoptProfileId(existing).then(function () { if (cb) cb(existing); });
+        var pid = "sp" + genCode() + genCode();   // 12 chars of the 32-char alphabet = 60 bits, crypto RNG
+        // personId rides along at creation when it's already known (a device that
+        // links first, then shares). Solo devices have none yet — stampProfilePersonId()
+        // fills it in later, on whichever path establishes one. Firebase drops
+        // null-valued keys, so an unset personId just omits the field.
+        return fb.ref("statsProfiles/" + pid).set({ ownerUid: authUid, personId: personId || null, createdAt: firebase.database.ServerValue.TIMESTAMP })
+          .then(function () { return adoptProfileId(pid); })
+          .then(function () { if (cb) cb(pid); });
+      }).catch(function () { if (cb) cb(null); });
+    });
   }
 
   // Recompute my own line from the same stats pipeline the UI uses and publish
@@ -2866,7 +2947,12 @@ window.SOMERSET_FB_CONFIG = {
   // survives the merge on the others rather than being resurrected by a stale copy.
   function restorePeersFromCloud(then) {
     if (!sharingReady()) { if (then) then(); return; }
-    var uids = [authUid].concat(linkedUids.filter(function (u) { return u !== authUid; }));
+    // personDeviceUids, not the local linkedUids cache: that cache is filled
+    // asynchronously by subscribeLinkedHistories, so a device that has only just
+    // joined the group still reads an empty one here and restores nothing — which
+    // is the same staleness that had it minting a second profile. Reading the
+    // membership node directly makes the very first restore after linking correct.
+    personDeviceUids(function (uids) {
     Promise.all(uids.map(function (u) {
       return fb.ref("users/" + u + "/sharePeers").once("value")
         .then(function (s) { return s.val() || {}; })
@@ -2883,6 +2969,7 @@ window.SOMERSET_FB_CONFIG = {
       if (changed) saveSharePeersLocal();
       if (then) then();
     }).catch(function () { if (then) then(); });
+    });
   }
 
   // Archive-time discovery: match the archived record's roster against the
@@ -2974,6 +3061,10 @@ window.SOMERSET_FB_CONFIG = {
       // what surfaces the peers the person already knows, so the grant loop
       // below covers them instead of silently doing nothing.
       restorePeersFromCloud(function () {
+        // Same reconcile as bootStatsSharing: turning the master switch on is the
+        // other moment a linked device commits to a profile, and it must be the
+        // person's rather than one it minted while solo (F2).
+        adoptPersonProfile(function () {
         ensureStatsProfile(function (mine) {
           if (!mine) {
             autoShare = false; saveAutoShare(false);
@@ -2989,6 +3080,7 @@ window.SOMERSET_FB_CONFIG = {
             if (peer.follow) subscribeDigest(pid);
           });
           softRender();
+        });
         });
       });
     } else {
@@ -3008,14 +3100,19 @@ window.SOMERSET_FB_CONFIG = {
   function bootStatsSharing() {
     if (!statsSharingOn()) return;
     restorePeersFromCloud(function () {
-      ensureStatsProfile(function (mine) {
-        if (!mine) return;
-        publishSessionClaim();
-        publishMyDigestSoon();
-        Object.keys(sharePeers).forEach(function (pid) {
-          if (sharePeers[pid].follow) subscribeDigest(pid);
+      // Reconcile before ensuring: this also runs via enableCloudSync() the moment
+      // redeemLinkCode joins a group, which is the point at which a device that had
+      // been minting its own profile solo has to fold into the person's (F2).
+      adoptPersonProfile(function () {
+        ensureStatsProfile(function (mine) {
+          if (!mine) return;
+          publishSessionClaim();
+          publishMyDigestSoon();
+          Object.keys(sharePeers).forEach(function (pid) {
+            if (sharePeers[pid].follow) subscribeDigest(pid);
+          });
+          if (!sheetOpen()) softRender();
         });
-        if (!sheetOpen()) softRender();
       });
     });
   }
