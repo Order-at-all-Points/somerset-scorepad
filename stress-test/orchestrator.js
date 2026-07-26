@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const crypto = require("crypto");
 const config = require("./config");
 const server = require("./server");
 const browserLib = require("./lib/browser");
@@ -82,8 +83,18 @@ async function main() {
   console.log(`Stress test run: phase=${opts.phase} browser=${opts.browser} filter=${opts.filter || "(none)"}`);
 
   fs.mkdirSync(config.artifactsDir, { recursive: true });
-  await server.start(config.serverPort);
-  console.log(`Static server up on :${config.serverPort}`);
+  // Serve a snapshot, not the working tree: a run takes ~14 minutes, and the
+  // server reads from disk per request, so a branch switch or an edit part-way
+  // through silently changes the app under test. Hash what we actually served so
+  // the report can prove which build produced its findings.
+  const servedRoot = server.snapshot();
+  const servedHash = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(path.join(servedRoot, "index.html")))
+    .digest("hex")
+    .slice(0, 12);
+  await server.start(config.serverPort, servedRoot);
+  console.log(`Static server up on :${config.serverPort} (snapshot ${servedHash})`);
 
   const store = new FindingsStore(config.artifactsDir);
 
@@ -167,6 +178,7 @@ async function main() {
     finishedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt.getTime(),
     gitCommit,
+    servedHash,   // sha256 prefix of the index.html actually served, see server.snapshot()
     browser: opts.browser,
     phase: opts.phase,
     filter: opts.filter,
