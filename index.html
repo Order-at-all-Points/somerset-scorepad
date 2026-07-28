@@ -7327,8 +7327,8 @@ window.SOMERSET_FB_CONFIG = {
     if (followedPeer && statsSharingOn() && followedPeer.follow && !digestMatchesLocal) {
       var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
       var overallExplain = digestStale
-        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."
-        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
+        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in ☰ → Stats Sharing."
+        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in ☰ → Stats Sharing.";
       var overallKids = [
         el("p", { class:"stats-section-title disp", role:"button", tabindex:"0",
           "aria-label": overallTitleText + ": " + overallExplain,

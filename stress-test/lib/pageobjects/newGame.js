@@ -20,14 +20,15 @@ async function readWinnerBanner(page) {
 }
 
 /**
- * After ANY casual-game win (solo Game tab, or a match/series game that just
- * completed) the app auto-opens an escalation sheet -- offering a best-of-N
- * rematch, a redraw, or dismissal. Its `aria-label` depends on the target
- * length: exactly "Play again?" when escalating to bestOf===3, but "Play
- * Best of 5"/"Play Best of 7" for the next rungs up the ladder (see
- * `renderModal`'s `ui.offerSeries` branch, ~line 2626) -- both variants are
- * the same feature and need the same handling, so match either. Every other
- * UI action is blocked behind its overlay until it's resolved.
+ * After ANY Standard-game win (solo Game tab, or a match game that just
+ * completed) the app auto-opens a "Play again?" sheet -- same teams, redraw,
+ * or no thanks (see `renderModal`'s `ui.rematchOffer` branch). Every other UI
+ * action is blocked behind its overlay until it's resolved.
+ *
+ * The `aria-label^="Play Best of "` half of the selector is dead: it matched
+ * the best-of-3/5/7 escalation ladder that went away with the series mode on
+ * 2026-07-22. Kept as a harmless no-match so a run against an older build
+ * still resolves the sheet rather than hanging on it.
  */
 const OFFER_SERIES_SELECTOR = '[role="dialog"][aria-label="Play again?"], [role="dialog"][aria-label^="Play Best of "]';
 
