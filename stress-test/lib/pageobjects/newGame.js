@@ -95,6 +95,42 @@ async function newGameViaOptions(page, { confirm = true } = {}) {
   await page.waitForTimeout(80);
 }
 
+/**
+ * Hamburger (#menuBtn) -> Settings sheet -> "Moon Shot" row -> picker sheet.
+ * With no deals recorded yet, selecting the other mode applies directly; once
+ * deals exist it opens a scope step instead (same sheet,
+ * `ui.moonShotSheet = { step:"scope" }` in index.html) that must pick "Just
+ * this game" or "From now on" -- `scope` selects which. Both take effect from
+ * the very next deal of the game in progress; they differ only in whether the
+ * device-wide default for future games moves too ("future" persists it).
+ *
+ * Only meaningful for a solo/unlinked game: while a tournament is active the
+ * row shows that tournament's locked-at-setup mode and isn't tappable at all.
+ */
+async function setInstantDeathMoon(page, { on = true, scope = "game" } = {}) {
+  await page.locator("#menuBtn").click();
+  const settingsSheet = page.locator('[role="dialog"][aria-label="Settings"]');
+  await settingsSheet.waitFor();
+  const label = on ? "Instant Death" : "Classic";
+  const row = settingsSheet.locator(".settings-row", { hasText: "Moon Shot" });
+  if ((await row.innerText()).includes(label)) {
+    await settingsSheet.locator(".sheet-btn.ghost", { hasText: "Done" }).click();
+    await page.waitForTimeout(60);
+    return;
+  }
+  await row.click();
+  await page.waitForTimeout(60);
+  const pickerSheet = page.locator('[role="dialog"][aria-label="Moon Shot"]');
+  await pickerSheet.locator("button.sheet-btn", { hasText: label }).click();
+  await page.waitForTimeout(60);
+  const scopeSheet = page.locator('[role="dialog"][aria-label="Moon Shot"] h3', { hasText: /^Switch to/ });
+  if (await scopeSheet.count()) {
+    const scopeLabel = scope === "future" ? "From now on" : "Just this game";
+    await page.locator('[role="dialog"][aria-label="Moon Shot"] .sheet-btn', { hasText: scopeLabel }).click();
+    await page.waitForTimeout(60);
+  }
+}
+
 module.exports = {
   readTeamTotals,
   readWinnerBanner,
@@ -104,5 +140,6 @@ module.exports = {
   acceptRedrawEscalation,
   clickNewGameDirect,
   newGameViaOptions,
+  setInstantDeathMoon,
   continueSharedGame,
 };

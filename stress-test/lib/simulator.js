@@ -69,15 +69,19 @@ async function checkWinnerAgreement(page, oracleDeals, { logger, contextLabel } 
  * specific set, a moon at a specific score, a tie-break scenario, etc.),
  * cross-checking the running score against the oracle after every deal and
  * the win/no-win state at the end. `deals` entries are
- * `{ bidder: {seat} | {teamIndex}, bid, pointsTaken }`.
+ * `{ bidder: {seat} | {teamIndex}, bid, pointsTaken }`. `instantDeathMoon`
+ * (default false) is stamped onto every oracle deal -- pass true when the
+ * caller has already switched the in-app Instant Death toggle on before
+ * calling this (see newGame.setInstantDeathMoon), matching the app's own
+ * per-deal stamp (game.instantDeathMoon at record time).
  */
-async function playGameWithScriptedDeals(page, deals, { logger, contextLabel } = {}) {
+async function playGameWithScriptedDeals(page, deals, { logger, contextLabel, instantDeathMoon } = {}) {
   const oracleDeals = [];
   const results = [];
   for (let i = 0; i < deals.length; i++) {
     const d = deals[i];
     const bidTeam = "seat" in d.bidder ? d.bidder.seat % 2 : d.bidder.teamIndex;
-    oracleDeals.push({ bidTeam, bid: d.bid, pointsTaken: d.pointsTaken });
+    oracleDeals.push({ bidTeam, bid: d.bid, pointsTaken: d.pointsTaken, instantDeathMoon: !!instantDeathMoon });
     if (logger) logger.step(`Deal ${i + 1}: ${JSON.stringify(d.bidder)} bid ${d.bid}, took ${d.pointsTaken}`);
     const { warnings } = await handEntry.playDeal(page, d);
     results.push({ warnings });

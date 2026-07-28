@@ -20,6 +20,10 @@
 //  - A game cannot end in an exact tie: if both teams are >= target after
 //    the same deal with equal scores, the team that bid on that deal wins
 //    (README/in-app rule: "they took the risk").
+//  - Instant Death (opt-in): a deal carrying instantDeathMoon===true that
+//    bids 14 and misses, at a score that was >= 0 *before* the hand (the
+//    same gate the win side uses), ends the game immediately as a loss for
+//    the bidding team -- the mirror of the moon-instant-win rule above.
 //  - Dealer rotates one seat clockwise (0->1->2->3->0) every deal.
 
 const POINTS_PER_DEAL = 14;
@@ -37,6 +41,10 @@ function isMoonAttempt(deal) {
 
 function isSet(deal) {
   return deal.pointsTaken < deal.bid;
+}
+
+function isMoonAttemptFailed(deal) {
+  return deal.bid === POINTS_PER_DEAL && isSet(deal);
 }
 
 /** [deltaTeam0, deltaTeam1] for one deal, given pre-hand scores [s0, s1]. */
@@ -79,23 +87,28 @@ function finalTotals(deals) {
 }
 
 /**
- * { winner: 0|1|null, tieBreak: bool, moonWin: bool }
- * Mirrors the documented "no ties -- the bidder on the tying deal wins" rule.
+ * { winner: 0|1|null, tieBreak: bool, moonWin: bool, instantDeath: bool }
+ * Mirrors the documented "no ties -- the bidder on the tying deal wins" rule,
+ * plus the opt-in Instant Death variant (deal.instantDeathMoon===true).
  */
 function gameWinnerDetail(deals) {
   let s = [0, 0];
   let lastBidTeam = null;
   for (const d of deals) {
+    const preBidScore = s[d.bidTeam];
     const delta = dealDelta(d, s);
     s = [s[0] + delta[0], s[1] + delta[1]];
     lastBidTeam = d.bidTeam;
     if (isMoonAttempt(d) && s[d.bidTeam] >= TARGET) {
-      return { winner: d.bidTeam, tieBreak: false, moonWin: true };
+      return { winner: d.bidTeam, tieBreak: false, moonWin: true, instantDeath: false };
+    }
+    if (d.instantDeathMoon && isMoonAttemptFailed(d) && preBidScore >= 0) {
+      return { winner: 1 - d.bidTeam, tieBreak: false, moonWin: false, instantDeath: true };
     }
   }
-  if (s[0] < TARGET && s[1] < TARGET) return { winner: null, tieBreak: false, moonWin: false };
-  if (s[0] === s[1]) return { winner: lastBidTeam, tieBreak: true, moonWin: false };
-  return { winner: s[0] > s[1] ? 0 : 1, tieBreak: false, moonWin: false };
+  if (s[0] < TARGET && s[1] < TARGET) return { winner: null, tieBreak: false, moonWin: false, instantDeath: false };
+  if (s[0] === s[1]) return { winner: lastBidTeam, tieBreak: true, moonWin: false, instantDeath: false };
+  return { winner: s[0] > s[1] ? 0 : 1, tieBreak: false, moonWin: false, instantDeath: false };
 }
 
 function gameWinner(deals) {
@@ -113,6 +126,7 @@ module.exports = {
   MAX_BID,
   isValidBid,
   isMoonAttempt,
+  isMoonAttemptFailed,
   isSet,
   dealDelta,
   runningTotals,
