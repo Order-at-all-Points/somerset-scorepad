@@ -10,7 +10,7 @@ Single-file PWA (`index.html`), no build step. Surface = browser GUI.
 ## Serve + drive
 
 - Static server: `node -e 'require("./stress-test/server.js").start()'` → `http://127.0.0.1:8934/index.html` (must be http://, not file://, or the Firebase SDK scripts are blocked).
-- Playwright is in `node_modules` (chromium installed). Reuse `stress-test/lib/pageobjects/*` — seats, sync (share/join/identify), nav, newGame, stats, linking (Display sheet, Cloud Backup toggle), storage (localStorage keys) — and `stress-test/lib/simulator.js` (`playDealsToCompletion` plays a full game fast). `stress-test/scenarios/casual-shared.js` is the canonical host+guest shared-game flow to crib from.
+- Playwright is in `node_modules` (chromium installed). Reuse `stress-test/lib/pageobjects/*` — seats, sync (share/join/identify), nav, newGame, stats, linking (☰ Settings sheet, Cloud Backup toggle), storage (localStorage keys) — and `stress-test/lib/simulator.js` (`playDealsToCompletion` plays a full game fast). `stress-test/scenarios/casual-shared.js` is the canonical host+guest shared-game flow to crib from.
 - Console 404s for `/_vercel/insights/script.js` and `/_vercel/speed-insights/script.js` are pre-existing local-serve noise — filter them, don't report them.
 
 ## Cloud features against local Firebase emulators (not production)

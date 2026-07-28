@@ -115,6 +115,75 @@ const moonAttemptWhileNegative = {
     }),
 };
 
+const instantDeathLossAtNonNegScore = {
+  name: "casual-local/instant-death-loss-at-nonneg-score",
+  phase: "local",
+  run: async ({ browser, store }) =>
+    withDevice(browser, store, "casual-local/instant-death-loss-at-nonneg-score", async (page, logger) => {
+      logger.step("Turning on Instant Death before any hands are recorded (direct flip, no scope prompt)");
+      await newGame.setInstantDeathMoon(page, { on: true });
+      const res = await simulator.playGameWithScriptedDeals(
+        page,
+        [
+          { bidder: { teamIndex: 0 }, bid: 8, pointsTaken: 8 }, // team0 at 8, still >=0
+          { bidder: { teamIndex: 0 }, bid: 14, pointsTaken: 10 }, // moon attempt, missed -> instant loss for team0
+        ],
+        { logger, contextLabel: "solo", instantDeathMoon: true }
+      );
+      if (!res.detail.instantDeath || res.detail.winner !== 1) {
+        await logger.record({
+          severity: "critical",
+          category: "scoring-correctness",
+          summary: "Oracle did not register the expected Instant Death loss",
+          expected: "instantDeath=true, winner=1",
+          actual: JSON.stringify(res.detail),
+          page,
+        });
+      }
+      await newGame.dismissPlayAgainOffer(page);
+    }),
+};
+
+const instantDeathNoLossWhileNegative = {
+  name: "casual-local/instant-death-no-loss-while-negative",
+  phase: "local",
+  run: async ({ browser, store }) =>
+    withDevice(browser, store, "casual-local/instant-death-no-loss-while-negative", async (page, logger) => {
+      logger.step("Turning on Instant Death before any hands are recorded (direct flip, no scope prompt)");
+      await newGame.setInstantDeathMoon(page, { on: true });
+      const res = await simulator.playGameWithScriptedDeals(
+        page,
+        [
+          { bidder: { teamIndex: 0 }, bid: 12, pointsTaken: 2 }, // set: 0 - 12 = -12
+          { bidder: { teamIndex: 0 }, bid: 14, pointsTaken: 10 }, // moon attempt while negative, missed -> ordinary -14, no instant loss
+        ],
+        { logger, contextLabel: "solo", instantDeathMoon: true }
+      );
+      if (res.detail.instantDeath || res.detail.winner != null) {
+        await logger.record({
+          severity: "critical",
+          category: "scoring-correctness",
+          summary: "A failed moon bid from a negative score should NOT trigger Instant Death, but the game ended",
+          expected: "instantDeath=false, winner=null",
+          actual: JSON.stringify(res.detail),
+          page,
+        });
+      }
+      const totals = await newGame.readTeamTotals(page);
+      const expectedTeam0 = -12 - 14; // ordinary set penalty, not an instant loss
+      if (totals[0] !== expectedTeam0) {
+        await logger.record({
+          severity: "critical",
+          category: "scoring-correctness",
+          summary: `Instant-Death-ineligible failed moon should score as an ordinary set (expected ${expectedTeam0}), app shows ${totals[0]}`,
+          expected: expectedTeam0,
+          actual: totals[0],
+          page,
+        });
+      }
+    }),
+};
+
 const setGoesNegative = {
   name: "casual-local/set-penalty-goes-negative",
   phase: "local",
@@ -340,6 +409,8 @@ module.exports = [
   fullGameToFifty,
   moonAtNonNegativeScore,
   moonAttemptWhileNegative,
+  instantDeathLossAtNonNegScore,
+  instantDeathNoLossWhileNegative,
   setGoesNegative,
   editPastDealRecomputes,
   deleteAndUndo,

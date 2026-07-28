@@ -20,14 +20,15 @@ async function readWinnerBanner(page) {
 }
 
 /**
- * After ANY casual-game win (solo Game tab, or a match/series game that just
- * completed) the app auto-opens an escalation sheet -- offering a best-of-N
- * rematch, a redraw, or dismissal. Its `aria-label` depends on the target
- * length: exactly "Play again?" when escalating to bestOf===3, but "Play
- * Best of 5"/"Play Best of 7" for the next rungs up the ladder (see
- * `renderModal`'s `ui.offerSeries` branch, ~line 2626) -- both variants are
- * the same feature and need the same handling, so match either. Every other
- * UI action is blocked behind its overlay until it's resolved.
+ * After ANY Standard-game win (solo Game tab, or a match game that just
+ * completed) the app auto-opens a "Play again?" sheet -- same teams, redraw,
+ * or no thanks (see `renderModal`'s `ui.rematchOffer` branch). Every other UI
+ * action is blocked behind its overlay until it's resolved.
+ *
+ * The `aria-label^="Play Best of "` half of the selector is dead: it matched
+ * the best-of-3/5/7 escalation ladder that went away with the series mode on
+ * 2026-07-22. Kept as a harmless no-match so a run against an older build
+ * still resolves the sheet rather than hanging on it.
  */
 const OFFER_SERIES_SELECTOR = '[role="dialog"][aria-label="Play again?"], [role="dialog"][aria-label^="Play Best of "]';
 
@@ -95,6 +96,42 @@ async function newGameViaOptions(page, { confirm = true } = {}) {
   await page.waitForTimeout(80);
 }
 
+/**
+ * Hamburger (#menuBtn) -> Settings sheet -> "Moon Shot" row -> picker sheet.
+ * With no deals recorded yet, selecting the other mode applies directly; once
+ * deals exist it opens a scope step instead (same sheet,
+ * `ui.moonShotSheet = { step:"scope" }` in index.html) that must pick "Just
+ * this game" or "From now on" -- `scope` selects which. Both take effect from
+ * the very next deal of the game in progress; they differ only in whether the
+ * device-wide default for future games moves too ("future" persists it).
+ *
+ * Only meaningful for a solo/unlinked game: while a tournament is active the
+ * row shows that tournament's locked-at-setup mode and isn't tappable at all.
+ */
+async function setInstantDeathMoon(page, { on = true, scope = "game" } = {}) {
+  await page.locator("#menuBtn").click();
+  const settingsSheet = page.locator('[role="dialog"][aria-label="Settings"]');
+  await settingsSheet.waitFor();
+  const label = on ? "Instant Death" : "Classic";
+  const row = settingsSheet.locator(".settings-row", { hasText: "Moon Shot" });
+  if ((await row.innerText()).includes(label)) {
+    await settingsSheet.locator(".sheet-btn.ghost", { hasText: "Done" }).click();
+    await page.waitForTimeout(60);
+    return;
+  }
+  await row.click();
+  await page.waitForTimeout(60);
+  const pickerSheet = page.locator('[role="dialog"][aria-label="Moon Shot"]');
+  await pickerSheet.locator("button.sheet-btn", { hasText: label }).click();
+  await page.waitForTimeout(60);
+  const scopeSheet = page.locator('[role="dialog"][aria-label="Moon Shot"] h3', { hasText: /^Switch to/ });
+  if (await scopeSheet.count()) {
+    const scopeLabel = scope === "future" ? "From now on" : "Just this game";
+    await page.locator('[role="dialog"][aria-label="Moon Shot"] .sheet-btn', { hasText: scopeLabel }).click();
+    await page.waitForTimeout(60);
+  }
+}
+
 module.exports = {
   readTeamTotals,
   readWinnerBanner,
@@ -104,5 +141,6 @@ module.exports = {
   acceptRedrawEscalation,
   clickNewGameDirect,
   newGameViaOptions,
+  setInstantDeathMoon,
   continueSharedGame,
 };

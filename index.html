@@ -369,8 +369,8 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease; }
   .chip:active:not(.on) { transform:scale(.93); background:var(--cream-shade); box-shadow:none; }
-  .chip.on { border-color:var(--red);
-    background:var(--red);
+  .chip.on { border-color:color-mix(in srgb, var(--brass) 80%, black);
+    background:var(--brass);
     color:var(--cream);
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .chip.on:active { transform:scale(.93); box-shadow:none; }
@@ -779,12 +779,13 @@
   .stats-pair-sub { font-size:11px; color:var(--ink-soft); margin-top:1px; }
 
   /* ---- Stats Sharing (People list + shared overall record) ---- */
-  /* Centered within the same box width as .ios-toggle so "On"/"Off" sits
-     under the Cloud Backup row's toggle above it -- both rows end at the
-     same right edge (flex space-between), so without this the toggle's
-     fixed 51px width makes it start further left than the narrower text
-     does, throwing off the column. */
-  .settings-row-state { font-size:15px; color:var(--ink-soft); display:inline-block; min-width:51px; text-align:center; }
+  /* "On"/"Off" summary for a row that opens a sub-sheet rather than toggling
+     in place (Stats Sharing). Deliberately shares .settings-row-value's metrics
+     and no others: it used to be centered in a 51px box to hold the column
+     under the Cloud Backup toggle above it, but this row now carries a chevron
+     like every other sub-sheet row, which offsets it from the toggle no matter
+     what -- so it lines up with the values beside its own chevron instead. */
+  .settings-row-state { margin-left:auto; font-size:15px; color:var(--ink-soft); display:inline-block; }
   .peer-list { max-height:42vh; overflow-y:auto; margin:2px 0 6px; }
   .peer-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding:10px 2px; border-bottom:1px solid var(--cream-shade); }
@@ -968,12 +969,16 @@ window.SOMERSET_FB_CONFIG = {
   // Add to Home Screen steps show the exact icon the user is looking for on screen.
   var MORE_DOTS_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>';
   var SHARE_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  // Stands in for the chevron on a settings row that can't be opened (the
+  // Moon Shot row while a tournament's mode is locked) — same 12px box, so the
+  // value column doesn't shift when it swaps in.
+  var LOCK_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
   // Trump recording disabled for now — see renderEntry()/recordDeal() below.
   // var TRUMP_CHIPS = ["0","1","2","3","4","5","6"];
 
   // ---- State ----
   function freshGame() {
-    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", deals:[], archivedId:null, pendingBid:null };
+    return { teams:["We","They"], players:["","","",""], dealerStart:0, target:50, setRule:"subtract", instantDeathMoon:loadInstantDeathMoon(), deals:[], archivedId:null, pendingBid:null };
   }
   // seat → team:  seats 0 & 2 = team 0,  seats 1 & 3 = team 1 (alternating clockwise)
   function dealerSeat() { return ((game.dealerStart + game.deals.length) % 4 + 4) % 4; }
@@ -1109,7 +1114,7 @@ window.SOMERSET_FB_CONFIG = {
   var soloGame = loadGame();   // the casual "Game" tab
   var game = soloGame;         // active game pointer (solo, or a tournament match's game)
   var ui = {
-    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, storageOk:true,
+    showEntry:false, showSettings:false, showThemeSheet:false, confirmReset:false, moonShotSheet:null, storageOk:true,
     bidTeam:0, bidderSeat:null, bidderWarn:false, bid:6, /* trump:"", */ bidderPts:6, pendingDealer:null,
     seatMenu:null, seatMenuMode:"menu", seatMenuError:null, info:null, entryStep:1,
     view:"game", historyOpen:null, historyGroupOpen:{}, tSetup:null, confirmEndT:false,
@@ -2045,6 +2050,7 @@ window.SOMERSET_FB_CONFIG = {
     // deals/totals instead of falling through to the empty manual:true branch.
     var g = m.completedGame || m.game;
     if (!g || !g.deals || !g.deals.length) return null;
+    var gwd = gameWinnerDetail(g);
     return {
       teams: [A.name, B.name],
       players: (g.players && g.players.length) ? g.players.slice() : [ap[0] || "", bp[0] || "", ap[1] || "", bp[1] || ""],
@@ -2057,7 +2063,8 @@ window.SOMERSET_FB_CONFIG = {
       // a game archived as a tie-break win whose deciding deal is then corrected
       // so the other team crosses the target outright would keep tieBreak:true
       // against the new winner, and render as a tie-break it never was.
-      tieBreak: gameWinnerDetail(g).tieBreak,
+      tieBreak: gwd.tieBreak,
+      instantDeath: !!gwd.instantDeath,
       deals: JSON.parse(JSON.stringify(g.deals))
     };
   }
@@ -2501,6 +2508,15 @@ window.SOMERSET_FB_CONFIG = {
   function loadCloudSyncEnabled() { try { var v = localStorage.getItem(CLOUD_SYNC_KEY); return v === null ? true : v === "1"; } catch (e) { return true; } }
   function saveCloudSyncEnabled(v) { try { localStorage.setItem(CLOUD_SYNC_KEY, v ? "1" : "0"); } catch (e) {} }
   var cloudSyncEnabled = loadCloudSyncEnabled();
+
+  // Instant Death (opt-in shoot-the-moon variant): off by default, unlike cloud
+  // sync — this changes game rules, so it should never turn on for someone
+  // who's never seen the toggle. This is only the device-wide default new solo
+  // games start with; the live per-game/per-tournament value can diverge from it
+  // (see game.instantDeathMoon / tourney.instantDeathMoon).
+  var INSTANT_DEATH_MOON_KEY = "somerset:dev-instant-death-moon";
+  function loadInstantDeathMoon() { try { return localStorage.getItem(INSTANT_DEATH_MOON_KEY) === "1"; } catch (e) { return false; } }
+  function saveInstantDeathMoon(v) { try { localStorage.setItem(INSTANT_DEATH_MOON_KEY, v ? "1" : "0"); } catch (e) {} }
 
   var PERSON_ID_KEY = "somerset:dev-person-id";
   function loadPersonId() { try { return localStorage.getItem(PERSON_ID_KEY); } catch (e) { return null; } }
@@ -3935,6 +3951,7 @@ window.SOMERSET_FB_CONFIG = {
   // Local-only creation — the default for every "Start Tournament" button.
   // Sharing is a separate, explicit opt-in (see shareSession below).
   function startLocalTourney(t) {
+    if (t.instantDeathMoon === undefined) t.instantDeathMoon = loadInstantDeathMoon();
     tourney = t; saveTourney(); ui.tSetup = null; render();
   }
 
@@ -3953,12 +3970,23 @@ window.SOMERSET_FB_CONFIG = {
     var payload = JSON.parse(JSON.stringify(tourney));
     payload._createdAt = firebase.database.ServerValue.TIMESTAMP;
     payload._code = code;
+    // Stamps who's allowed to change host-only fields (currently just
+    // instantDeathMoon) -- rules-enforced, see FIREBASE_SETUP.md. Omitted (and
+    // the rule falls back to permissive) if authUid hasn't resolved yet, same
+    // as any tournament shared before this field existed.
+    if (authUid) payload.hostUid = authUid;
     syncStatus = "connecting"; render();
     fb.ref("tournaments/" + code).set(payload).then(function() {
       syncCode = code; syncRole = "host";
       localStorage.setItem(SYNC_CODE_KEY, code);
       localStorage.setItem(SYNC_ROLE_KEY, "host");
       tourney._code = code;
+      // Must mirror onto the LOCAL object too, not just the remote payload —
+      // saveTourney()'s diffing (tourneyUnitDiff) compares the local tourney
+      // against lastSyncedTourney on every future sync, and a field present
+      // remotely but missing locally reads as "deleted", which would wipe
+      // hostUid off the shared record on the very next host-side write.
+      if (payload.hostUid) tourney.hostUid = payload.hostUid;
       localStorage.setItem(TOURNEY_KEY, JSON.stringify(tourney));
       lastSyncedTourney = JSON.parse(JSON.stringify(payload));
       subscribeToTourney(code);
@@ -4085,6 +4113,9 @@ window.SOMERSET_FB_CONFIG = {
     if (!Array.isArray(g.deals)) g.deals = [];
     if (!("archivedId" in g)) g.archivedId = null;
     if (!("pendingBid" in g)) g.pendingBid = null;
+    // Default off for pre-existing saved games — never silently opt an
+    // in-progress game into a riskier rule it never agreed to.
+    if (typeof g.instantDeathMoon !== "boolean") g.instantDeathMoon = false;
     return g;
   }
   function persist() {
@@ -4109,6 +4140,11 @@ window.SOMERSET_FB_CONFIG = {
   }
   function isMoonMade(d) {
     return d.bid === POINTS_PER_DEAL && d.pts[d.bidTeam] === POINTS_PER_DEAL;
+  }
+  // Bid the moon and missed — the mirror-image case of isMoonMade, used by the
+  // Instant Death rule variant (see gameWinnerDetail).
+  function isMoonAttemptFailed(d) {
+    return d.bid === POINTS_PER_DEAL && isDealSet(d);
   }
   // Compute per-deal deltas threading the running total so moon → 50 only when pre-score >= 0.
   function dealDelta(d, preScores) {
@@ -4173,10 +4209,18 @@ window.SOMERSET_FB_CONFIG = {
     var tgt = g.target, s = [0, 0];
     for (var i = 0; i < g.deals.length; i++) {
       var d = g.deals[i];
+      var preBidScore = s[d.bidTeam];
       var delta = dealDelta(d, s);
       s[0] += delta[0]; s[1] += delta[1];
       // Moon win: score jumped to 50 (>= target)
       if (isMoonMade(d) && s[d.bidTeam] >= tgt) return { winner: d.bidTeam, tieBreak: false };
+      // Instant Death (opt-in, stamped per-deal so a later toggle flip never
+      // rewrites already-recorded deals): bid the moon, missed, and was at or
+      // above zero going into the hand — same >=0 gate the win side uses —
+      // ends the game immediately as a loss for the bidding team.
+      if (d.instantDeathMoon && isMoonAttemptFailed(d) && preBidScore >= 0) {
+        return { winner: 1 - d.bidTeam, tieBreak: false, instantDeath: true };
+      }
     }
     if (s[0] < tgt && s[1] < tgt) return { winner: null, tieBreak: false };
     if (s[0] === s[1]) return { winner: d.bidTeam, tieBreak: true };
@@ -4453,7 +4497,7 @@ window.SOMERSET_FB_CONFIG = {
     return ui.matchMenu != null || ui.backConfirm || ui.joinSheet ||
            ui.info != null || ui.seatMenu != null || ui.whoSheet || ui.confirmReset || ui.showThemeSheet ||
            ui.mergeSheet != null || ui.gameDetailRecId != null || ui.gameDetailShared != null || ui.shareSheetOpen || ui.gameOptionsOpen ||
-           ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor ||
+           ui.confirmEndT || ui.shareNamesSetup != null || ui.identityEditor || ui.moonShotSheet != null ||
            ui.linkDeviceSheet != null || ui.sharingSheet || ui.installSheet;
   }
 
@@ -4587,6 +4631,9 @@ window.SOMERSET_FB_CONFIG = {
       if (winDetail.tieBreak) {
         bannerKids.push(el("span", { class:"banner-note disp" },
           ["Both teams landed on the same score, so " + teamLabel(win) + " take it as the high bidder."]));
+      } else if (winDetail.instantDeath) {
+        bannerKids.push(el("span", { class:"banner-note disp" },
+          [teamLabel(1 - win) + " bid the moon and fell short — Instant Death."]));
       }
       pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
     }
@@ -5034,6 +5081,77 @@ window.SOMERSET_FB_CONFIG = {
       modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.confirmReset = false; softRender(); } }, [resetSheet]));
       return;
     }
+    if (ui.moonShotSheet != null) {
+      var msCtx = moonShotContext();
+      if (ui.moonShotSheet.step === "scope") {
+        // Deals already exist in the current (non-tournament) game, so a bare
+        // flip would be ambiguous: does it stick past this game, or not? Force
+        // the choice instead of guessing. Both answers change the game in
+        // progress from the next hand on — they differ only in whether the
+        // device-wide default new games start from moves with it. Neither is
+        // ever retroactive (see recordDeal's per-deal instantDeathMoon stamp).
+        var msNext = ui.moonShotSheet.value;
+        var msScopeSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Moon Shot",
+          onClick:function(e){ e.stopPropagation(); } }, [
+          el("h3", { class:"disp" }, [ "Switch to " + (msNext ? "Instant Death" : "Classic") + "?" ]),
+          el("p", { class:"sub disp", style:"font-style:normal; font-size:15px; color:var(--ink); margin:8px 0 8px;" },
+            [ "There's currently a game in progress. Do you want to change the penalty for the rest of this game, or do you want to switch it for future games as well?" ]),
+          el("p", { class:"sub disp", style:"font-style:normal; font-size:13px; color:var(--ink-soft); margin:0 0 14px;" },
+            [ "Note: This setting won't apply to hands that have already been recorded." ]),
+          el("button", { class:"sheet-btn primary disp", onClick:function(){
+            game.instantDeathMoon = msNext; persist();
+            ui.moonShotSheet = null; softRender();
+          } }, ["Just this game"]),
+          el("button", { class:"sheet-btn disp", onClick:function(){
+            game.instantDeathMoon = msNext; persist();
+            saveInstantDeathMoon(msNext);
+            ui.moonShotSheet = null; softRender();
+          } }, ["From now on"]),
+          el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.moonShotSheet = { step:"pick" }; softRender(); } }, ["Back"])
+        ]);
+        modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.moonShotSheet = null; softRender(); } }, [msScopeSheet]));
+        return;
+      }
+      // step "pick": choose between the two moon-shot rules for the solo game
+      // (this sheet is solo-only now — a tournament's mode is locked at setup
+      // and shown read-only in the Settings sheet instead, see moonShotSettingsRow).
+      // Selecting the option that's not already active either applies
+      // immediately (nothing recorded yet) or routes to the "scope" step
+      // above once the game already has hands on the board.
+      var selectMoonShot = function (nextVal) {
+        if (nextVal === msCtx.value) { ui.moonShotSheet = null; softRender(); return; }
+        if (game.deals.length === 0) {
+          game.instantDeathMoon = nextVal; persist();
+          ui.moonShotSheet = null; softRender();
+        } else {
+          ui.moonShotSheet = { step:"scope", value:nextVal };
+          softRender();
+        }
+      };
+      var moonShotOption = function (val, title, desc) {
+        var selected = msCtx.value === val;
+        var descColor = selected ? "var(--cream)" : "var(--ink-soft)";
+        var kids = [
+          el("span", { class:"disp", style:"font-weight:600; display:block;" }, [ (selected ? "✓ " : "") + title ]),
+          el("span", { class:"sub disp", style:"font-style:normal; font-size:13px; color:"+descColor+"; opacity:"+(selected?".85":"1")+"; font-weight:400; display:block; margin-top:2px;" }, [desc])
+        ];
+        return el("button", { class:"sheet-btn disp" + (selected ? " primary" : ""),
+          style:"text-align:left; padding-left:14px; padding-right:14px;",
+          onClick:function(){ selectMoonShot(val); } }, kids);
+      };
+      var msKids = [
+        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Moon Shot"]),
+        moonShotOption(false, "Classic",
+          "Shooting the moon (bidding 14 and taking all 14 points) results in an instant win, and failed attempts incur a 14-point penalty."),
+        moonShotOption(true, "Instant Death",
+          "Same instant win for shooting the moon successfully, but a failed attempt results in an instant loss. High risk, high reward. Common in tournament play.")
+      ];
+      msKids.push(el("button", { class:"sheet-btn ghost disp", onClick:function(){ ui.moonShotSheet = null; softRender(); } }, ["Done"]));
+      var msSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Moon Shot",
+        onClick:function(e){ e.stopPropagation(); } }, msKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:function(){ ui.moonShotSheet = null; softRender(); } }, [msSheet]));
+      return;
+    }
     if (ui.showThemeSheet) {
       var curThemePref = loadThemePref();
       var themeKids = [
@@ -5080,8 +5198,10 @@ window.SOMERSET_FB_CONFIG = {
           // (CLOUD_SYNC_STRESS_2026-07-16.md F1). Backup-off now genuinely revokes
           // when this is the last device (see unlinkDevice), so "Off" here is a
           // statement about sharing rather than about connectivity.
-          el("span", { class:"settings-row-state disp" }, [(autoShare && cloudSyncEnabled) ? "On" : "Off"])
+          el("span", { class:"settings-row-state disp" }, [(autoShare && cloudSyncEnabled) ? "On" : "Off"]),
+          el("span", { class:"rank-chevron disp", style:"margin-left:6px;", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, [])
         ]),
+        moonShotSettingsRow(),
         el("div", { class:"sheet-rule" }, []),
         el("div", { class:"settings-row disp", role:"button", tabindex:"0", "aria-label":"Share app",
           onClick:function(){ shareApp(); } }, [
@@ -5509,6 +5629,12 @@ window.SOMERSET_FB_CONFIG = {
         var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
         var connected = onGameTab ? isGameShared() : !!syncCode;
         var blocked = onGameTab && !linked && !!tourney;   // an unrelated tourney/tournament is already active
+        // Moon Shot (bid the moon and miss, on Instant Death, and it's an
+        // instant loss for your team — the mirror of the existing
+        // instant-win-on-a-made-moon rule) used to sit at the bottom of this
+        // stack; it now lives in the Settings sheet as a proper settings row
+        // (see moonShotSettingsRow), where a rule you set once and rarely
+        // revisit belongs, rather than among the per-session actions here.
         if (onGameTab && game.deals.length > 0) {
           ogKids.push(el("button", { class:"sheet-btn disp", onClick:function(){
             ui.gameOptionsOpen = false;
@@ -6172,7 +6298,9 @@ window.SOMERSET_FB_CONFIG = {
     if (willBeSet) {
       kids.push(el("p", { class:"warn strong disp" }, [
         moonBid
-          ? (teamLabel(ui.bidTeam) + " attempted to shoot the moon but fell short.")
+          ? (game.instantDeathMoon && preTotal >= 0
+              ? (teamLabel(ui.bidTeam) + " shot for the moon and missed — instant loss.")
+              : (teamLabel(ui.bidTeam) + " attempted to shoot the moon but fell short."))
           : (teamLabel(ui.bidTeam) + " went set: bid of " + ui.bid + " subtracted from " + (bidTeamIsMine ? "our" : "their") + " score.")
       ]));
     } else if (moonBid && ui.bidderPts === POINTS_PER_DEAL) {
@@ -6344,7 +6472,11 @@ window.SOMERSET_FB_CONFIG = {
       }
       ui.editingDeal = null;
     } else {
-      game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat, /* trump:ui.trump.trim(), */ pts:pts, dealer:dealerSeat() });
+      // Stamp the live instant-death setting onto the deal itself, not just
+      // read off game.instantDeathMoon at score time — the toggle can change
+      // mid-game and gameWinnerDetail replays every deal on each render, so
+      // each deal must remember what was in effect when it was actually played.
+      game.deals.push({ id:Date.now(), bidTeam:ui.bidTeam, bid:ui.bid, bidderSeat:ui.bidderSeat, /* trump:ui.trump.trim(), */ pts:pts, dealer:dealerSeat(), instantDeathMoon:!!game.instantDeathMoon });
     }
     game.pendingBid = null;
     // reset form, alternate default bidder
@@ -6412,6 +6544,7 @@ window.SOMERSET_FB_CONFIG = {
       totals: totals(),
       winner: detail.winner,       // 0 or 1
       tieBreak: detail.tieBreak,   // true if both teams finished level and the bidder took it
+      instantDeath: !!detail.instantDeath,   // true if the loser bid the moon and missed
       deals: JSON.parse(JSON.stringify(game.deals)),
       tournament: meta || null
     };
@@ -7194,8 +7327,8 @@ window.SOMERSET_FB_CONFIG = {
     if (followedPeer && statsSharingOn() && followedPeer.follow && !digestMatchesLocal) {
       var overallTitleText = digestStale ? "Overall record — not currently updating" : "Overall record — shared live";
       var overallExplain = digestStale
-        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing."
-        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in Display → Stats Sharing.";
+        ? "This player's record as of their last update — it hasn't refreshed in a while, so it may no longer reflect their actual play. They can stop sharing at any time, and you can unfollow below or in ☰ → Stats Sharing."
+        : "This player's complete record, shared live from their own device — every game they record anywhere, not just the ones in your History (which the rest of this page counts). They can stop sharing at any time, and you can unfollow below or in ☰ → Stats Sharing.";
       var overallKids = [
         el("p", { class:"stats-section-title disp", role:"button", tabindex:"0",
           "aria-label": overallTitleText + ": " + overallExplain,
@@ -7739,6 +7872,9 @@ window.SOMERSET_FB_CONFIG = {
     if (rec.tieBreak) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
         ["Both teams landed on the same score, so " + rec.teams[rec.winner] + " took it as the high bidder."]));
+    } else if (rec.instantDeath) {
+      wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
+        [rec.teams[1 - rec.winner] + " bid the moon and fell short — Instant Death."]));
     }
     if (rec.tournament && rec.tournament.manual) {
       wrap.appendChild(el("p", { class:"hist-roster disp", style:"color:var(--ink-soft);" },
@@ -8075,6 +8211,7 @@ window.SOMERSET_FB_CONFIG = {
   function freshGameForTourneyTeams(t, dealerStartOverride) {
     var A = t.teams[0], B = t.teams[1];
     var g = freshGame();
+    g.instantDeathMoon = !!t.instantDeathMoon;   // tournament-wide setting, not the device default
     g.teams = [A.name, B.name];
     g.players = [A.players[0] || "", B.players[0] || "", A.players[1] || "", B.players[1] || ""];
     // Every game in a series seats the same four people in the same order (the
@@ -8120,6 +8257,54 @@ window.SOMERSET_FB_CONFIG = {
   // (as opposed to gameHasTourneyLink's broader "linked, maybe not connected yet").
   function isGameShared() {
     return gameHasTourneyLink() && !!syncCode;
+  }
+  // Shared between the Settings sheet's "Moon Shot" row and its picker
+  // (ui.moonShotSheet) -- both need the same "am I looking at the
+  // tournament-wide setting or my own local game's" read, computed fresh
+  // each render since sheets are separate top-level renderModal branches
+  // that don't share locals across calls. A tournament's mode is locked at
+  // setup (see renderNameStep) and never writable again, so there's no
+  // host/guest permission check here anymore -- idOnTourney only gates
+  // which value is being displayed, not whether it can change.
+  function moonShotContext() {
+    var onGameTab = ui.view === "game";
+    var linked = onGameTab ? gameHasTourneyLink() : !!tourney;
+    var idOnTourney = linked && !!tourney;
+    return {
+      onGameTab: onGameTab,
+      linked: linked,
+      idOnTourney: idOnTourney,
+      value: idOnTourney ? !!tourney.instantDeathMoon : !!game.instantDeathMoon
+    };
+  }
+  // The Settings (hamburger) sheet's Moon Shot row: same iOS-style
+  // label/value/chevron idiom as Cloud Backup and Stats Sharing beside it, so
+  // the rule reads as a setting rather than as one more button in the Options
+  // stack. It reports the mode *in effect right now*, which for a tournament
+  // is the tournament's own locked-at-setup mode -- read-only, no chevron, no
+  // tap target, since nothing may write tourney.instantDeathMoon after
+  // creation. Everywhere else it opens the picker (which handles the "this
+  // game vs. new games" scope choice itself once hands are recorded).
+  function moonShotSettingsRow() {
+    var ctx = moonShotContext();
+    var label = ctx.value ? "Instant Death" : "Classic";
+    var kids = [
+      el("span", { class:"settings-row-label disp" }, ["Moon Shot"]),
+      el("span", { class:"settings-row-value disp" }, [label])
+    ];
+    if (ctx.idOnTourney) {
+      // No chevron and no tap target; the padlock is what says *why*, since a
+      // row that simply does nothing when tapped reads as broken. Sized to sit
+      // where the chevron would, so the value column still lines up.
+      kids.push(el("span", { class:"rank-chevron disp", style:"margin-left:6px;",
+        "aria-hidden":"true", html:LOCK_ICON_SVG }, []));
+      return el("div", { class:"settings-row disp", style:"cursor:default;",
+        "aria-label":"Moon Shot: " + label + ", locked for this tournament" }, kids);
+    }
+    kids.push(el("span", { class:"rank-chevron disp", style:"margin-left:6px;", "aria-hidden":"true", html:CHEVRON_RIGHT_SVG }, []));
+    return el("div", { class:"settings-row disp", role:"button", tabindex:"0",
+      "aria-label":"Moon Shot: " + label,
+      onClick:function(){ ui.showThemeSheet = false; ui.moonShotSheet = { step:"pick" }; render(); } }, kids);
   }
   function seriesTarget(t) { return Math.floor(t.bestOf / 2) + 1; }  // games needed to clinch — always 1, bestOf is always 1
   function seriesWins(t) {
@@ -8235,14 +8420,17 @@ window.SOMERSET_FB_CONFIG = {
     t.teams.forEach(function (tm) { (tm.players || []).forEach(function (p) { if (p && p.trim()) names.push(p.trim()); }); });
     return names;
   }
-  function makeTourney(format, teams, bestOf) {
-    if (format === "double") return makeDoubleElim(teams);
-    if (format === "round") return makeRoundRobin(teams);
+  function makeTourney(format, teams, bestOf, instantDeathMoon) {
+    if (format === "double") { var td = makeDoubleElim(teams); td.instantDeathMoon = !!instantDeathMoon; return td; }
+    if (format === "round") { var tr = makeRoundRobin(teams); tr.instantDeathMoon = !!instantDeathMoon; return tr; }
     if (format === "series") {
       // bestOf is always forced to 1 here — best-of series is no longer a mode
       // a rematch/redraw can recreate, even if the tourney being replayed was
       // an old multi-game series.
       var t = makeSeries(teams, 1);
+      // Set before building the live game below — freshGameForTourneyTeams
+      // reads t.instantDeathMoon to stamp the seeded first game.
+      t.instantDeathMoon = !!instantDeathMoon;
       // Attach a live game to the seeded first slot — same reasoning as
       // setSeriesWinner/clearSeriesWinner: a guest can land on the Game tab
       // (auto-routed there for any format:"series" tourney) before the host
@@ -8253,16 +8441,18 @@ window.SOMERSET_FB_CONFIG = {
       setLiveSeriesGame(t, freshGameForTourneyTeams(t));
       return t;
     }
-    return makeSingleElim(teams);
+    var ts = makeSingleElim(teams); ts.instantDeathMoon = !!instantDeathMoon; return ts;
   }
   function rematchSameTeams() {
-    var t = makeTourney(tourney.format, shuffle(tourney.teams), tourney.bestOf);
+    // Continuation of the same series, not a fresh default — carries the
+    // tournament-wide setting forward.
+    var t = makeTourney(tourney.format, shuffle(tourney.teams), tourney.bestOf, tourney.instantDeathMoon);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
     restartTourney(t);
   }
   function redrawAndReplay() {
     var teams = drawTeams(rosterPlayers(tourney));
-    var t = makeTourney(tourney.format, teams, tourney.bestOf);
+    var t = makeTourney(tourney.format, teams, tourney.bestOf, tourney.instantDeathMoon);
     ui.activeMatch = null; ui.matchMenu = null; ui.confirmEndT = false;
     restartTourney(t);
   }
@@ -8272,6 +8462,7 @@ window.SOMERSET_FB_CONFIG = {
     if (!m.game) {
       var A = tourney.teams[m.a], B = tourney.teams[m.b];
       var g = freshGame();
+      g.instantDeathMoon = !!tourney.instantDeathMoon;   // tournament-wide setting, not the device default
       g.teams = [A.name, B.name];
       g.players = [A.players[0] || "", B.players[0] || "", A.players[1] || "", B.players[1] || ""];
       m.game = g;
@@ -8412,7 +8603,11 @@ window.SOMERSET_FB_CONFIG = {
       el("div", { class:"view-head disp" }, [headLabel]),
       el("div", { class:"match-bar" }, [
         el("button", { class:"link-btn disp", onClick:leaveMatch }, ["← Back to bracket"]),
-        el("span", { class:"match-vs disp" }, [ tourney.teams[m.a].name + " vs " + tourney.teams[m.b].name ])
+        el("span", { class:"match-vs disp" }, [ tourney.teams[m.a].name + " vs " + tourney.teams[m.b].name ]),
+        // Otherwise unreachable while actually playing a match: the Tournament
+        // tab's own Options pill (see renderBracket) only shows on the bracket
+        // screen, not this match-play sub-view.
+        el("button", { class:"link-btn disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
       ])
     ]);
     renderScorePad(card, "match");
@@ -8441,7 +8636,7 @@ window.SOMERSET_FB_CONFIG = {
     card.appendChild(el("div", { style:"padding:16px 12px 14px;" }, [
       el("button", { class:"btn btn-new disp", onClick:function(){
         var arr = []; for (var i = 0; i < ui.tCount; i++) arr.push("");
-        ui.tSetup = { players: arr, format: "single", drawn: null }; render();
+        ui.tSetup = { players: arr, format: "single", drawn: null, instantDeathMoon: loadInstantDeathMoon() }; render();
       } }, [ "Set up " + ui.tCount + " players" ])
     ]));
     card.appendChild(el("div", { style:"padding:0 12px 28px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
@@ -8542,6 +8737,24 @@ window.SOMERSET_FB_CONFIG = {
       el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Format"]), frow
     ]));
 
+    // Moon Shot mode for the whole tournament — same field startLocalTourney()
+    // would otherwise seed from the device-wide default; setting it explicitly
+    // here just means that seed never fires (t.instantDeathMoon is no longer
+    // undefined by the time "Start" builds the tourney). Locked for the life
+    // of the tournament once chosen — nothing writes tourney.instantDeathMoon
+    // after creation, so this is the only place it's ever set. The Settings
+    // sheet still shows which mode is in effect (see moonShotSettingsRow),
+    // just as a read-only row, not an editable control.
+    var msmRow = el("div", { class:"chips chips-fit" }, [
+      el("button", { class:"chip disp" + (!s.instantDeathMoon ? " on" : ""),
+        onClick:function(){ s.instantDeathMoon = false; softRender(); } }, ["Classic"]),
+      el("button", { class:"chip disp" + (s.instantDeathMoon ? " on" : ""),
+        onClick:function(){ s.instantDeathMoon = true; softRender(); } }, ["Instant Death"])
+    ]);
+    card.appendChild(el("div", { style:"padding:0 12px 14px;" }, [
+      el("span", { class:"label disp", style:"display:block; margin:8px 0 6px;" }, ["Moon Shot"]), msmRow
+    ]));
+
     drawBtn = el("button", { class:"btn btn-add disp", onClick:function(){
       if (recompute()) { s.drawn = drawTeams(s.players.map(function (p) { return p.trim(); })); softRender(); }
     } }, [ s.drawn ? "Re-draw teams" : "Draw teams" ]);
@@ -8559,6 +8772,7 @@ window.SOMERSET_FB_CONFIG = {
           var t = s.format === "double" ? makeDoubleElim(s.drawn)
                 : s.format === "round"  ? makeRoundRobin(s.drawn)
                 : makeSingleElim(s.drawn);
+          t.instantDeathMoon = !!s.instantDeathMoon;
           startLocalTourney(t);
         } }, [ "Start " + formatName(s.format) ])
       ]));
@@ -8853,10 +9067,6 @@ window.SOMERSET_FB_CONFIG = {
         el("button", { class:"link-btn disp", onClick:shareSession },
           [ t.format === "series" ? "Share Join Code →" : "Share this tournament →" ])
       ]));
-    } else {
-      card.appendChild(el("div", { class:"sync-bar", style:"justify-content:center;" }, [
-        el("button", { class:"link-btn disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
-      ]));
     }
 
     if (t.champion != null) {
@@ -8893,6 +9103,13 @@ window.SOMERSET_FB_CONFIG = {
 
     renderEndSharedSessionControl(card, t);
     viewRootEl.appendChild(card);
+    // Same pill, same wrapper, same bottom-of-screen placement as the Game tab's
+    // #gameOptionsToggle and the History tab's Options pill — was a bare
+    // sync-bar text link, and only reachable once shared; unconditional now so
+    // a local, unshared tournament can reach it too (e.g. Moon Shot).
+    viewRootEl.appendChild(el("div", { style:"text-align:center; margin-top:14px; display:flex; justify-content:center; gap:10px;" }, [
+      el("button", { class:"settings-toggle disp", onClick:function(){ ui.gameOptionsOpen = true; render(); } }, ["Options"])
+    ]));
     var nw = viewRootEl.querySelector(".bracket-wrap");
     if (nw) nw.scrollLeft = bracketScroll;     // keep scroll position after a pick
     suppressFade = false;
@@ -8997,6 +9214,11 @@ window.SOMERSET_FB_CONFIG = {
     }
     if (ui.info != null) { ui.info = null; softRender(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
+    if (ui.moonShotSheet != null) {
+      ui.moonShotSheet = (ui.moonShotSheet.step === "scope") ? { step:"pick" } : null;
+      softRender();
+      return true;
+    }
     if (ui.seatMenu !== null) { closeSeatMenu(); return true; }
     if (ui.whoSheet) { if (!whoSheetForced()) { ui.whoSheet = false; softRender(); } return true; }
     if (ui.shareSheetOpen) { closeShareSheet(); return true; }
