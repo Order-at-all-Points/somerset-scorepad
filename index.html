@@ -46,6 +46,18 @@
        on-device, so typography works offline and costs no network request. */
     --font-display: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif;
     --font-text: -apple-system, system-ui, 'Helvetica Neue', sans-serif;
+    /* Deep accent used as a FILL under --cream text: the leading team's score
+       bar and the active view-filter/sort pill. Lives here, not in a theme
+       block, because it doesn't vary across the themes anyone can actually
+       pick — both aubergine variants share this exact value (it's their
+       --felt). Deliberately NOT written as var(--felt): these are fills on
+       --cream cards, and aliasing them to the page background would make them
+       vanish the day one moves onto felt. The two retired classic themes
+       override it below so a revived palette doesn't inherit a foreign purple.
+       A lighter mid-plum (#4E2C63) was tried so the hue would register more on
+       a 46px chip; it read as too assertive against the cream pad, especially
+       on the score bar. Keeping the background-weight tone deliberately. */
+    --plum:#2E1B3A;
   }
   /* Theme key naming convention (internal [data-theme] values, NOT the
      user-facing Display-sheet chip labels, which churn freely and are just
@@ -86,6 +98,7 @@
     --mast:var(--cream); --mast-soft:var(--rule);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
+    --plum:var(--felt-deep);   /* this family's own deep wine, not the aubergine purple */
   }
   /* Light default: Linen Daylight — felt goes pale for the first time, so text
      that sits on it has to flip dark (--mast/--mast-soft below) instead of
@@ -106,6 +119,7 @@
     --mast:var(--ink); --mast-soft:#675D4C;
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
+    --plum:var(--ink);   /* this family has no deep tone that carries cream text — keep the original near-black */
   }
   /* Rocket Fuel: originally an additional pinnable dark option alongside
      Mahogany Parlor (not tied to Auto) — eggplant baize, warm gold instead
@@ -695,7 +709,11 @@
   .stat-sort-row { display:flex; justify-content:safe center; gap:8px; padding:10px 12px 12px; overflow-x:auto; border-bottom:1px solid var(--rule); }
   .stat-sort-chip { flex:none; font-family:var(--font-text); font-size:13px; font-weight:600; padding:7px 14px;
     border-radius:var(--r-pill); border:1px solid var(--rule); background:none; color:var(--ink-soft); cursor:pointer; white-space:nowrap; }
-  .stat-sort-chip.on { background:var(--ink); color:var(--cream); border-color:var(--ink); }
+  /* --plum, not --brass: brass marks a SETTING you've committed to (theme,
+     tournament format, Moon Shot mode — see .chip.on), whereas these only
+     change what you're looking at. Keeping the two fills distinct keeps that
+     read; it just no longer has to be near-black to do it. */
+  .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum); }
   .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
 
   .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
@@ -4664,7 +4682,7 @@ window.SOMERSET_FB_CONFIG = {
       var scoreColor = "var(--ink)";
       var bar = el("div", { class:"track", role:"img",
         "aria-label":teamLabel(i)+": "+t[i]+" of "+game.target+" points" }, [
-        el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(pos===0?"#2E1B3A":"var(--rule)")+";" })
+        el("span", { style:"width:"+Math.min(100,(Math.max(0,t[i])/game.target)*100)+"%; background:"+(pos===0?"var(--plum)":"var(--rule)")+";" })
       ]);
       var teamKids = [
         nameInput,
