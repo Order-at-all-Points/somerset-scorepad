@@ -2,13 +2,57 @@
 /**
  * Vertical-space comparison page -> out/vertical-space.html
  *
- * Four ways to handle the dead felt below short screens, applied to the real
+ * Five ways to handle the dead felt below short screens, applied to the real
  * captured DOM (out/screens.json, from capture-screens.js) with the app's real
  * CSS. Each frame is an iframe at true device dimensions, so 100dvh, safe-area
  * insets and media queries all resolve exactly as they do on a phone — which
  * variant B depends on entirely.
  *
- * PARKED, not shipped. Nothing here has been applied to index.html.
+ * A–D are the original parked set. E was added on revisiting, because the
+ * framing that produced A–D was wrong in a way worth writing down.
+ *
+ * measure-space.js reports dead space per screen and flags any screen whose
+ * void GROWS from SE to Pro Max as "shrink-wrapping instead of participating in
+ * the viewport". Every short screen does (History-empty 42%->59%, Stats 17->41,
+ * Tournament 16->40), and the obvious reading is that they are all the same
+ * defect. Look at them and they are not:
+ *
+ *   Tournament — setup   a COMPLETE card: heading, stepper, primary button, and
+ *                        a secondary route out. It ends where it ends.
+ *   Stats — 4 players    four rows because there are four players.
+ *   History — 1 game     one game because one game has been played.
+ *   Game — fresh         a full seat diagram and the primary GO control.
+ *
+ * Those grow on their own, and the felt under them is the product: the pad is a
+ * sheet of paper on a card table, so the table showing is the metaphor working.
+ * Stretching a finished card to 100dvh and ruling the remainder tells the user
+ * there is more to come when there is not. That is what B does to them.
+ *
+ * The two screens that ARE broken are broken for a different reason. History and
+ * Stats on first run render the full filter chrome — Log/Stats, then All/Today/
+ * Standard/Tournament or the four sort chips — wrapped around one grey sentence
+ * at `.empty`'s 20px padding. They are not short cards, they are chrome with
+ * nothing in it, filtering over a set with no members. And History-empty is the
+ * literal first screen a new user sees.
+ *
+ * So the measurement was answering "which screens are short?" when the question
+ * was "which screens look unfinished?" -- a screen can be either without being
+ * the other, and dead space turns out to be a poor proxy in both directions.
+ * E fixed the two that look unfinished and left the rest alone: no flexed body,
+ * no 100dvh, no ruled filler, and no change at all to four of the six screens.
+ * On those four it rendered identically to A, which was the argument for it.
+ *
+ * SHIPPED: E, as .empty-state plus the chip-row gate. B, C and D are kept below
+ * because a choice is only legible next to what it beat, and B in particular has
+ * to be looked at on the lower three screens to be rejected -- described, it
+ * sounds like the obvious fix.
+ *
+ * E has no row of its own any more. It is in index.html, so `A · Current`
+ * renders it from the real file the moment screens.json is recaptured, which is
+ * the same convention the other generators follow: a shipped variant renders
+ * whatever the app currently says rather than a copy that can rot. If A looks
+ * like the old one-line caption, the capture predates the change -- rerun
+ * capture-screens.js.
  *
  *   node archive/design-prototypes/capture-screens.js   # first, once
  *   node archive/design-prototypes/build-vertical.js
@@ -109,7 +153,12 @@ const ICONS = {
   Tournament: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5v1.5A3.5 3.5 0 0 0 7.6 11M17 6h2.5v1.5A3.5 3.5 0 0 1 16.4 11"/><path d="M12 14v3M9 20h6M10 17h4"/></svg>',
 };
 
-const EMPTY_STATE = `
+/* Only reached against a capture that PREDATES the .empty-state change, where
+   the zero-state boards were still a bare <p class="empty">. A current capture
+   carries the real thing and this is unused -- B then lands on the shipped
+   empty state via the html.v-fill .empty-state rules above, which is the honest
+   way to judge it now. */
+const LEGACY_EMPTY_STATE = `
 <div class="empty-state">
   <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
     <rect x="4" y="2.5" width="16" height="19" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h4"/>
@@ -125,9 +174,13 @@ const TRANSFORM = `
   var root = document.documentElement;
   var pad = document.querySelector("#viewRoot > .pad");
   if (root.classList.contains("v-fill") && pad) {
-    var empty = pad.querySelector("p.empty");
-    if (empty) {
-      empty.outerHTML = ${JSON.stringify(EMPTY_STATE)};
+    /* Three cases, in the order they became possible. A current capture hits
+       the first: the app ships .empty-state, so B only has to let it grow, and
+       the html.v-fill rules already do. */
+    if (pad.querySelector(".empty-state")) {
+      /* nothing to build — CSS alone */
+    } else if (pad.querySelector("p.empty")) {
+      pad.querySelector("p.empty").outerHTML = ${JSON.stringify(LEGACY_EMPTY_STATE)};
     } else {
       var filler = document.createElement("div");
       filler.className = "pad-filler";
@@ -152,17 +205,21 @@ const TRANSFORM = `
 `;
 
 const VARIANTS = [
-  { cls: "", title: "A · Current", note: "shrink-wraps to content" },
-  { cls: "v-fill", title: "B · Fill the pad", note: "sheet grows + ruled remainder" },
-  { cls: "v-tabs", title: "C · Bottom tab bar", note: "nav docked, void remains" },
-  { cls: "v-fill v-tabs", title: "D · Both", note: "B + C combined" },
+  { cls: "", title: "A · Current", note: "shrink-wraps to content — includes shipped E" },
+  { cls: "v-fill", title: "B · Fill the pad", note: "rejected — sheet grows + ruled remainder" },
+  { cls: "v-tabs", title: "C · Bottom tab bar", note: "rejected — nav docked, void remains" },
+  { cls: "v-fill v-tabs", title: "D · Both", note: "rejected — B + C combined" },
 ];
 
+/* Percentages are measure-space.js at 390x844, re-run 2026-07-29. Read them
+   against the prose, not on their own -- the bottom four are the screens whose
+   numbers look like the top two's and whose problem is not the same. */
 const NOTES = {
-  "history-empty": "The literal first screen a new user sees. 54% empty today.",
-  "history-one": "After one game. 39% empty today.",
-  "tournament-setup": "34% empty today.",
-  "stats-list": "35% empty today.",
+  "history-empty": "BROKEN — filter chrome around one grey sentence, and the literal first screen a new user sees. 54% empty.",
+  "stats-empty": "BROKEN — same shape: four sort chips over nothing to sort. 54% empty.",
+  "history-one": "Fine. Short because one game has been played; grows on its own. 39% empty.",
+  "stats-list": "Fine. Four rows because there are four players. 35% empty.",
+  "tournament-setup": "Fine. A complete card — heading, stepper, primary action, secondary route out. 34% empty.",
 };
 
 /* index.html's CSS comments mention "</scr"+"ipt>", which would terminate the
@@ -221,8 +278,9 @@ const page = `<!doctype html>
 </head>
 <body>
 <div class="pagepad">
-  <h1>Vertical space &mdash; four options, real markup</h1>
-  <p class="lede">Real device viewports running the app's actual CSS and DOM. <span class="more">Nothing was redrawn by hand &mdash; the variants are stylesheet overlays on the shipped CSS. <strong>Parked; none of this is in <code>index.html</code>.</strong></span></p>
+  <h1>Vertical space &mdash; what shipped, and what it beat</h1>
+  <p class="lede">Real device viewports running the app's actual CSS and DOM. <span class="more">Nothing was redrawn by hand &mdash; the rejected variants are stylesheet overlays on the shipped CSS.</span></p>
+  <p class="lede" style="margin-top:8px"><strong>Read the rows top to bottom.</strong> The first two screens looked unfinished; the last three are simply short and grow on their own &mdash; the measurement could not tell those apart, and that is the whole finding. <code>A</code> is <code>index.html</code> as it stands, composed zero states included. <code>B</code> is the one worth looking at rather than reading about: on the lower three, ruling the remainder under a finished card says more is coming.</p>
 </div>
 <div class="bar">
   <span>Theme</span>
