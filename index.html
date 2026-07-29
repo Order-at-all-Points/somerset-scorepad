@@ -96,6 +96,7 @@
     --brass-text:#7C5D1C;
     --control:#FCF5E6;
     --mast:var(--cream); --mast-soft:var(--rule);
+    --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
     --plum:var(--felt-deep);   /* this family's own deep wine, not the aubergine purple */
@@ -117,6 +118,7 @@
     --brass-text:#27503D;
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
+    --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
     --plum:var(--ink);   /* this family has no deep tone that carries cream text — keep the original near-black */
@@ -137,6 +139,7 @@
     --brass-text:#7A6234;
     --control:#FCF6E6;
     --mast:var(--cream); --mast-soft:var(--rule);
+    --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
   }
@@ -164,6 +167,7 @@
     --brass-text:#7A6234;
     --control:#FCF6E6;
     --mast:var(--ink); --mast-soft:#675D4C;
+    --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
   }
@@ -183,6 +187,7 @@
     --brass-text:#251938;
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
+    --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--brass);
   }
@@ -218,7 +223,20 @@
   .eyebrow .rule-dash { display:inline-block; width:30px; height:1px; background:currentColor; vertical-align:middle; margin:0 .6em; }
   /* letter-spacing adds a trailing .35em after the final letter; pull the trailing dash back so the gaps before/after the word match */
   .eyebrow .rule-dash:last-child { margin-left:calc(.6em - .35em); }
-  h1 { color:var(--mast); font-family:var(--font-display); font-size:34px; margin:2px 0 0; font-weight:600; letter-spacing:.04em; }   /* Large Title; tracking OK — all-caps */
+  /* Letterpress: the wordmark is pressed INTO the felt rather than printed onto
+     it. Light reads as coming from above, so the upper inner wall of an
+     impression falls into shadow while the lower lip catches the light — hence
+     the dark offset up and the light one down. Swapping those two offsets gives
+     an embossed (raised) wordmark instead; that was tried and read as a drop
+     shadow on web text rather than a physical edge, so it wasn't kept.
+     --mast-hi/--mast-lo are per-theme (defined beside --mast in each theme
+     block) because the balance inverts with the ground: on dark felt the shadow
+     carries the effect and the highlight has to stay faint, on light felt it's
+     the other way round. One pair of literals tuned on dark felt measures ~1.0
+     against light felt — i.e. no effect at all — which is why these are tokens
+     and not baked into the rule below. */
+  h1 { color:var(--mast); font-family:var(--font-display); font-size:34px; margin:2px 0 0; font-weight:600; letter-spacing:.04em;
+       text-shadow:0 -1px 1px var(--mast-lo), 0 1px 0 var(--mast-hi); }   /* Large Title; tracking OK — all-caps */
   .subtitle { color:var(--mast-soft); font-family:var(--font-display); font-style:italic; font-size:13px; margin:2px 0 0; }
   .menu-btn { position:absolute; top:0; right:max(0px, env(safe-area-inset-right)); width:44px; height:44px;
     display:flex; align-items:center; justify-content:center; background:none; border:none;
