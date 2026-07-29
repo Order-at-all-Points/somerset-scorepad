@@ -14,7 +14,7 @@ Eight experiments live here, at different stages:
 | **What carries the label on a brass fill** (`build-brass.js`) | **Parked — decision recorded, nothing applied.** The 2.50:1 pairing ships. Both fixes were built, shipped and reverted; the generator holds all three states and the arithmetic showing there is no fourth. |
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
-| **Vertical space** (`build-vertical.js`) | **Parked, reframed 2026-07-29.** Nothing applied. The original four options answered the wrong question; `E` is the one to look at. See the finding below. |
+| **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -202,15 +202,18 @@ Worth knowing before extending any of this.
   luminance ≤ .031. Either the button stops being gold or the label stops being
   light. The audit still prints the number, marked `soft` with the review date,
   so a change to `--brass` or `--cream` still moves it.
-- **The two zero-state boards render filter chrome around a one-line caption.**
-  `History` and `Stats` on first run both show the Log/Stats switcher and a full
-  chip row — `All / Today / Standard / Tournament`, or the four sort chips —
-  filtering over a set with no members, above `.empty` at its 20px padding.
-  History-empty is the literal first screen a new user sees. `build-vertical.js`
-  variant `E` composes both properly and drops the chips *only* when the set is
-  genuinely empty (`!gameHistory.length`), not when a filter merely matches
-  nothing — "No games match this filter" has to keep its chips or there is no
-  way back. **Open; nothing applied.**
+- ~~**The two zero-state boards render filter chrome around a one-line
+  caption.**~~ **Fixed.** `History` and `Stats` on first run both showed the
+  Log/Stats switcher and a full chip row — `All / Today / Standard / Tournament`,
+  or the four sort chips — filtering over a set with no members, above `.empty`
+  at its 20px padding. History-empty is the literal first screen a new user sees.
+  Both now render `.empty-state`, and the chip rows are gated on the underlying
+  set being empty (`!gameHistory.length`), **not** on the rendered result being
+  empty — "No games match this filter" keeps its chips deliberately, or the
+  filter that hid everything is also the one you can no longer change.
+  `.empty` keeps its 20px and its four remaining callers: that padding is right
+  for a caption under a populated list and wrong when the caption *is* the
+  screen, which is the distinction the new class exists to draw.
 
   Worth reading `measure-space.js` output against this one, because the two
   disagree and the measurement loses. It flags any screen whose void grows from
@@ -224,7 +227,9 @@ Worth knowing before extending any of this.
   under the rank list reads as ranks 5–12 existing and being blank. **"Which
   screens are short?" is not "which screens look unfinished?", and dead space is
   a bad proxy for either.** The generator now renders both zero-state boards so
-  the two groups sit in the same comparison.
+  the two groups sit in the same comparison, and `A · Current` renders the
+  shipped fix from `index.html` rather than a copy of it — recapture before
+  judging, or `A` shows you the app as it was.
 
 - ~~`--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
   is invisible.~~ **Fixed.** Third instance of the same shape as the two above:
