@@ -1,0 +1,102 @@
+# Design prototypes
+
+Tooling for looking at SomeRSet's visual design without changing it. Everything
+here reads `index.html`; nothing writes to it.
+
+Two experiments live here, at different stages:
+
+| | Status |
+| --- | --- |
+| **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
+| **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
+
+## Running
+
+Playwright is a local dev dependency, and `package.json` is gitignored — so on
+a fresh clone: `npm i -D playwright && npx playwright install chromium webkit`.
+Run everything from the repo root.
+
+```
+node archive/design-prototypes/serve.js            # static server, reachable from a phone
+node archive/design-prototypes/audit-contrast.js   # contrast audit, all themes
+node archive/design-prototypes/measure-space.js    # dead space per screen per device
+node archive/design-prototypes/screenshot-app.js   # full screenshot sweep -> out/screens/
+node archive/design-prototypes/capture-screens.js  # real DOM -> out/screens.json
+node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
+node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
+```
+
+`out/` is generated and gitignored. The generators are the artifact; the pages
+are disposable and should be rebuilt against whatever `index.html` currently
+says.
+
+## serve.js
+
+Binds `0.0.0.0` so a phone on the same Wi-Fi can reach it — that is the whole
+reason it exists separately from `stress-test/server.js`, which is pinned to
+`127.0.0.1` and resolves *any* file under the repo root including `.env.local`.
+Fine on loopback; not something to put on a network. This one refuses every
+dot-path and anything outside an extension allowlist, and only serves `.html`
+from `out/`.
+
+It reads live from the repo with `cache-control: no-store`, so edits appear on
+refresh — deliberately the opposite of the harness's `snapshot()`, which freezes
+a run against one revision.
+
+Over plain HTTP on a LAN address: Add to Home Screen and standalone chrome both
+work, and `viewport-fit=cover` means `env(safe-area-inset-*)` behaves. The
+service worker will **not** register (not a secure context), so offline caching
+is off; the app already swallows that failure. For a genuine PWA install you
+need HTTPS — a Vercel preview deploy is the easy route.
+
+## Why the prototypes use iframes
+
+Each frame is an iframe at true device dimensions, so `100dvh`, `env()` insets
+and media queries resolve exactly as on a phone. The vertical-space variant B
+depends on this entirely — rendered in a scaled `<div>` it would silently
+measure the desktop viewport and look like it worked.
+
+`build-vertical.js` additionally scales frames with `transform: scale()` to fit
+narrow screens. That is visual only: `iframe.contentWindow.innerWidth` still
+reports the device width, so the layout under test stays honest.
+
+## Traps already hit here
+
+Worth knowing before extending any of this.
+
+- **`</script>` inside `index.html`'s CSS comments.** The stylesheet is embedded
+  into a `<script>` block as a JSON string; without escaping `<` as `<`,
+  the HTML parser terminates the block early and the page silently renders
+  nothing. Both generators use a `js()` helper for this.
+- **`isMobile`/`hasTouch` in Playwright contexts.** They synthesise both touch
+  and mouse events for one `click()`, which double-fires the `+`/`−` steppers
+  and corrupts every bid. Use a phone-sized viewport without the emulation.
+- **Bids are 6..14** (`POINTS_PER_DEAL`). Lower values are clamped and the
+  stepper silently refuses to move — it looks like a hang, not a rejection.
+- **Step 2 of hand entry submits with "Record Take"**, not "Record deal".
+  `handEntry.submitDeal()` is for the edit flow only.
+- **Flexing `body` breaks `.wrap`.** `.wrap` carries `margin: 0 auto`, and auto
+  margins in the cross axis absorb free space, which disables
+  `align-items: stretch`. Without an explicit `width: 100%` the wrap collapses
+  to its content width and the whole app narrows. Cost an hour in
+  `build-vertical.js`.
+- **A prototype page needs its own `<!doctype>` and viewport meta.** Without
+  them iOS lays out at 980px in quirks mode and the page is unusable on the
+  device it is describing.
+
+## Findings these produced
+
+`audit-contrast.js` output, for reference — none of these are fixed:
+
+- `--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
+  nav tabs and the OPTIONS pill have no fill anywhere in the app.
+- In `aubergine-light` the pad measures **1.13:1** against the felt and the
+  `.pad` dashed outline **1.05:1** — the cream-paper-on-felt metaphor does not
+  render in the shipped Light theme. The theme was copied token-for-token from
+  the dark one; several dark-specific values did not survive the flip.
+- `--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
+  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.
+  `--brass-text` on cream measures 5.02:1, so the palette already contains the
+  fix.
+- `--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
+  is invisible.

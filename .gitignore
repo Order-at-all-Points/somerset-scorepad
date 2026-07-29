@@ -9,3 +9,8 @@ package-lock.json
 
 # Stress-test run output (harness source under stress-test/ stays tracked)
 stress-test/artifacts/
+
+# Design-prototype output: generated pages, screenshots and captured DOM.
+# The generators under archive/design-prototypes/ stay tracked; rebuild the
+# pages against whatever index.html currently says rather than committing them.
+archive/design-prototypes/out/
