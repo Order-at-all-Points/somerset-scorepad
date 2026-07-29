@@ -2,11 +2,45 @@
 /**
  * Vertical-space comparison page -> out/vertical-space.html
  *
- * Four ways to handle the dead felt below short screens, applied to the real
+ * Five ways to handle the dead felt below short screens, applied to the real
  * captured DOM (out/screens.json, from capture-screens.js) with the app's real
  * CSS. Each frame is an iframe at true device dimensions, so 100dvh, safe-area
  * insets and media queries all resolve exactly as they do on a phone — which
  * variant B depends on entirely.
+ *
+ * A–D are the original parked set. E was added on revisiting, because the
+ * framing that produced A–D was wrong in a way worth writing down.
+ *
+ * measure-space.js reports dead space per screen and flags any screen whose
+ * void GROWS from SE to Pro Max as "shrink-wrapping instead of participating in
+ * the viewport". Every short screen does (History-empty 42%->59%, Stats 17->41,
+ * Tournament 16->40), and the obvious reading is that they are all the same
+ * defect. Look at them and they are not:
+ *
+ *   Tournament — setup   a COMPLETE card: heading, stepper, primary button, and
+ *                        a secondary route out. It ends where it ends.
+ *   Stats — 4 players    four rows because there are four players.
+ *   History — 1 game     one game because one game has been played.
+ *   Game — fresh         a full seat diagram and the primary GO control.
+ *
+ * Those grow on their own, and the felt under them is the product: the pad is a
+ * sheet of paper on a card table, so the table showing is the metaphor working.
+ * Stretching a finished card to 100dvh and ruling the remainder tells the user
+ * there is more to come when there is not. That is what B does to them.
+ *
+ * The two screens that ARE broken are broken for a different reason. History and
+ * Stats on first run render the full filter chrome — Log/Stats, then All/Today/
+ * Standard/Tournament or the four sort chips — wrapped around one grey sentence
+ * at `.empty`'s 20px padding. They are not short cards, they are chrome with
+ * nothing in it, filtering over a set with no members. And History-empty is the
+ * literal first screen a new user sees.
+ *
+ * So the measurement was answering "which screens are short?" when the question
+ * was "which screens look unfinished?" -- a screen can be either without being
+ * the other, and dead space turns out to be a poor proxy in both directions.
+ * E fixes the two that look unfinished and leaves the rest alone: no flexed
+ * body, no 100dvh, no ruled filler, and no change at all to four of the six
+ * screens. On those four it renders identically to A, which is the argument.
  *
  * PARKED, not shipped. Nothing here has been applied to index.html.
  *
@@ -78,6 +112,27 @@ html.v-fill .empty-state p { margin:4px 0 18px; font-size:13px; color:var(--ink-
 html.v-fill .empty-state .btn-new { width:auto; padding:13px 26px; border-radius:var(--r-pill); }
 `;
 
+/* Deliberately no flex on body, no 100dvh, no filler. This variant is a
+   composition change inside the card, so the pad still shrink-wraps and every
+   screen that is merely SHORT is left exactly as it is. Padding does the work:
+   .empty ships at 20px, which is right for a caption under a populated list and
+   far too little when the caption IS the screen. */
+const EMPTY_CSS = `
+/* ===== Variant: compose the empty states ===== */
+html.v-empty .empty-state {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; padding:46px 24px 42px; text-align:center;
+}
+html.v-empty .empty-state svg { color:var(--rule); margin-bottom:12px; }
+html.v-empty .empty-state h4 {
+  margin:0; font-family:var(--font-display); font-size:20px; font-weight:600; color:var(--ink);
+}
+html.v-empty .empty-state p {
+  margin:5px 0 20px; font-size:13px; color:var(--ink-soft); max-width:26ch; line-height:1.45;
+}
+html.v-empty .empty-state .btn-new { width:auto; padding:13px 26px; border-radius:var(--r-pill); }
+`;
+
 const TABS_CSS = `
 /* ===== Variant: bottom tab bar ===== */
 html.v-tabs nav#nav { display:none; }
@@ -119,6 +174,23 @@ const EMPTY_STATE = `
   <button class="btn btn-new disp">Start a Game</button>
 </div>`;
 
+/* One per board, because "no games yet" on the Stats tab is answering a
+   question nobody asked -- the user tapped Stats, so tell them what stats are
+   and what produces them. Both route to the same place: the only thing that
+   fixes either screen is playing a game, so the action is not a choice. */
+const EMPTY_STATES = {
+  log: EMPTY_STATE,
+  stats: `
+<div class="empty-state">
+  <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.5 20.5V13M9.5 20.5V8.5M14.5 20.5v-6M19.5 20.5V4.5"/>
+  </svg>
+  <h4>No stats yet</h4>
+  <p>Win rates, moons and streaks build up here once a few games are in.</p>
+  <button class="btn btn-new disp">Start a Game</button>
+</div>`,
+};
+
 // Runs inside each iframe once the captured markup is in place.
 const TRANSFORM = `
 (function () {
@@ -132,6 +204,22 @@ const TRANSFORM = `
       var filler = document.createElement("div");
       filler.className = "pad-filler";
       pad.appendChild(filler);
+    }
+  }
+  if (root.classList.contains("v-empty") && pad) {
+    var e = pad.querySelector("p.empty");
+    if (e) {
+      /* Which board we are on, read the same way the tab bar reads it. */
+      var board = "log";
+      pad.querySelectorAll(".seg-btn").forEach(function (b) {
+        if (b.classList.contains("on")) board = b.textContent.trim().toLowerCase();
+      });
+      /* Filters over a set with no members. In the app this is gated on
+         !gameHistory.length, NOT on the filtered result being empty -- "No games
+         match this filter" has to keep its chips or there is no way back. */
+      var chips = pad.querySelector(".stat-sort-row");
+      if (chips) chips.remove();
+      e.outerHTML = ${JSON.stringify(EMPTY_STATES)}[board];
     }
   }
   if (root.classList.contains("v-tabs")) {
@@ -153,16 +241,21 @@ const TRANSFORM = `
 
 const VARIANTS = [
   { cls: "", title: "A · Current", note: "shrink-wraps to content" },
+  { cls: "v-empty", title: "E · Compose the empty states", note: "recommended — identical to A on the lower four" },
   { cls: "v-fill", title: "B · Fill the pad", note: "sheet grows + ruled remainder" },
   { cls: "v-tabs", title: "C · Bottom tab bar", note: "nav docked, void remains" },
   { cls: "v-fill v-tabs", title: "D · Both", note: "B + C combined" },
 ];
 
+/* Percentages are measure-space.js at 390x844, re-run 2026-07-29. Read them
+   against the prose, not on their own -- the bottom four are the screens whose
+   numbers look like the top two's and whose problem is not the same. */
 const NOTES = {
-  "history-empty": "The literal first screen a new user sees. 54% empty today.",
-  "history-one": "After one game. 39% empty today.",
-  "tournament-setup": "34% empty today.",
-  "stats-list": "35% empty today.",
+  "history-empty": "BROKEN — filter chrome around one grey sentence, and the literal first screen a new user sees. 54% empty.",
+  "stats-empty": "BROKEN — same shape: four sort chips over nothing to sort. 54% empty.",
+  "history-one": "Fine. Short because one game has been played; grows on its own. 39% empty.",
+  "stats-list": "Fine. Four rows because there are four players. 35% empty.",
+  "tournament-setup": "Fine. A complete card — heading, stepper, primary action, secondary route out. 34% empty.",
 };
 
 /* index.html's CSS comments mention "</scr"+"ipt>", which would terminate the
@@ -221,8 +314,9 @@ const page = `<!doctype html>
 </head>
 <body>
 <div class="pagepad">
-  <h1>Vertical space &mdash; four options, real markup</h1>
+  <h1>Vertical space &mdash; five options, real markup</h1>
   <p class="lede">Real device viewports running the app's actual CSS and DOM. <span class="more">Nothing was redrawn by hand &mdash; the variants are stylesheet overlays on the shipped CSS. <strong>Parked; none of this is in <code>index.html</code>.</strong></span></p>
+  <p class="lede" style="margin-top:8px"><strong>Read the rows top to bottom.</strong> The first two screens look unfinished; the last three are simply short, and grow on their own. <code>E</code> changes only the first two &mdash; on the rest it renders identically to <code>A</code>, which is the argument for it. <code>B</code> changes all five, and the lower three are where to judge whether that is wanted: ruling the remainder under a finished card says more is coming.</p>
 </div>
 <div class="bar">
   <span>Theme</span>
@@ -240,7 +334,7 @@ const page = `<!doctype html>
 </div>
 <script>
 const APP_CSS = ${js(CSS)};
-const VARIANT_CSS = ${js(FILL_CSS + "\n" + TABS_CSS)};
+const VARIANT_CSS = ${js(FILL_CSS + "\n" + TABS_CSS + "\n" + EMPTY_CSS)};
 const TRANSFORM = ${js(TRANSFORM)};
 const SCREENS = ${js(SCREENS)};
 const VARIANTS = ${js(VARIANTS)};

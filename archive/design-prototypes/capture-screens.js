@@ -49,6 +49,18 @@ const grab = (page) =>
 
     await nav.goto(page, "History");
     out["history-empty"] = { title: "History — empty (first run)", html: await grab(page) };
+
+    /* Both zero-state boards, because they are the screens the vertical-space
+       question actually turns on and they behave differently from the rest:
+       every other screen here is short because its CONTENT is short, and grows
+       on its own. These two are short because there is nothing to show, and
+       they render filter chrome over it regardless. */
+    await page.locator(".seg-btn", { hasText: "Stats" }).click().catch(() => {});
+    await page.waitForTimeout(400);
+    out["stats-empty"] = { title: "Stats — empty (first run)", html: await grab(page) };
+    await page.locator(".seg-btn", { hasText: "Log" }).click().catch(() => {});
+    await page.waitForTimeout(300);
+
     await nav.goto(page, "Tournament");
     out["tournament-setup"] = { title: "Tournament — setup", html: await grab(page) };
 
