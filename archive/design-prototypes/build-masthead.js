@@ -22,7 +22,19 @@ const OUT = path.join(__dirname, "out");
 const DEST = path.join(OUT, "masthead.html");
 
 const APP = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-const CSS = APP.slice(APP.indexOf("<style>") + 7, APP.indexOf("</style>"));
+/* Anchor on the <style> tag alone on its own line. index.html also mentions
+   "<style>" inside a comment in the early inline theme script, and a plain
+   indexOf() finds that prose first -- the slice then starts mid-script and the
+   CSS parser discards everything up to the first selector it can resync on,
+   silently dropping the whole :root block (radius scale, font stacks, --plum,
+   --press-*). It looked fine for a long time because the tokens these pages
+   exercise mostly live in [data-theme] blocks, and an undefined
+   var(--font-display) happens to fall back to a serif. The assertion below is
+   the actual guard: a wrong slice must fail loudly, not render a lie. */
+const STYLE_AT = APP.search(/^<style>$/m);
+if (STYLE_AT < 0) throw new Error("no <style> element found in index.html");
+const CSS = APP.slice(STYLE_AT + 7, APP.indexOf("</style>", STYLE_AT));
+if (!/:root\s*\{/.test(CSS)) throw new Error("extracted CSS has no :root block");
 
 const HEADER = `<div class="wrap">
   <header>

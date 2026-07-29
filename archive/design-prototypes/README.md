@@ -3,13 +3,21 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Three experiments live here, at different stages:
+Four experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
 | **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
+| **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
+
+The masthead presses text into the **felt**, which inverts between themes, so
+`--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
+and `aubergine-light` is a token-for-token copy of `aubergine` apart from
+`--felt`/`--felt-deep` and the `--mast-*` family — so `--cream` and `--ink` are
+identical in both, and `--press-*` lives in `:root` as a single pair. The
+asymmetry is deliberate; see the comment beside the tokens.
 
 ## Running
 
@@ -25,6 +33,7 @@ node archive/design-prototypes/screenshot-app.js   # full screenshot sweep -> ou
 node archive/design-prototypes/capture-screens.js  # real DOM -> out/screens.json
 node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
 node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
+node archive/design-prototypes/build-press.js      # -> out/press.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -71,6 +80,17 @@ reports the device width, so the layout under test stays honest.
 
 Worth knowing before extending any of this.
 
+- **`APP.indexOf("<style>")` finds prose, not the element.** The early inline
+  theme script has a comment reading *"Runs before `<style>` is parsed…"*, and
+  that literal matches first. The slice then starts ~100KB early, mid-script,
+  and the CSS parser discards everything up to the first selector it can resync
+  on — which silently drops the **entire `:root` block**: the radius scale, the
+  font stacks, `--plum`, `--press-*`. It went unnoticed for three experiments
+  because the tokens they exercised (`--mast-*`) live in `[data-theme]` blocks,
+  and an undefined `var(--font-display)` happens to fall back to a serif that
+  looks close enough. The tell was a missing plum score bar. All generators now
+  anchor on `/^<style>$/m` and **assert** the result contains `:root` — a wrong
+  slice has to fail loudly rather than render a plausible lie.
 - **`</script>` inside `index.html`'s CSS comments.** The stylesheet is embedded
   into a `<script>` block as a JSON string; without escaping `<` as `<`,
   the HTML parser terminates the block early and the page silently renders
