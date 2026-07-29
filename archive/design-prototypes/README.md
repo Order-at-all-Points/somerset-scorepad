@@ -3,7 +3,7 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Five experiments live here, at different stages:
+Six experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
@@ -11,6 +11,7 @@ Five experiments live here, at different stages:
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
 | **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge` (1px ring, 4.5:1) and `--pad-seam` (dashed outline, 3.2:1) per theme. Fixes the light-theme finding below. A lighter ring and a heavier-shadow alternative are kept as the two things that look plausible until you see them side by side. |
+| **What carries the cream label** (`build-brass.js`) | **Shipped:** filled controls moved to a new `--brass-deep` (5.02:1, was 2.50). Keeps the rejected "darken the label instead" row, which passes in three themes and collapses to 1.77:1 in Classic Light. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
@@ -41,6 +42,7 @@ node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
 node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
 node archive/design-prototypes/build-press.js      # -> out/press.html
 node archive/design-prototypes/build-pad.js        # -> out/pad.html
+node archive/design-prototypes/build-brass.js      # -> out/brass.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -157,10 +159,15 @@ Worth knowing before extending any of this.
   a 1.04 floor, so a real disappearance still trips it. **Reading a flag as a
   finding without looking at the screen is what merged this with the pad
   problem, where 1.13 genuinely was the whole boundary.**
-- `--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
-  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.
-  `--brass-text` on cream measures 5.02:1, so the palette already contains the
-  fix.
+- ~~`--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
+  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.~~
+  **Fixed.** The palette did already contain the fix; the eleven fills were just
+  reaching for the accent tone instead of the deep one. They now use
+  `--brass-deep` (5.02 / 5.02 / 5.26 / 8.81), which holds the value that
+  `--brass-text` aliases to — so a fill no longer asks for a token named "text",
+  and the ~30 genuine text uses were untouched. `--brass` stays light where
+  nothing sits on it: rules, focus rings, the score bar. See `build-brass.js`,
+  including why darkening the label instead cannot work.
 - `--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
   is invisible. As a *fill* it is fine — `.stats-hero-champ` moved onto it (from
   `--felt-wash-strong`, a felt token that was being painted onto the pad, so the

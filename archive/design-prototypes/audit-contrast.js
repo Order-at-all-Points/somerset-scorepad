@@ -48,7 +48,7 @@ const AUDIT = () => {
   const NAMES = ["--felt", "--felt-deep", "--cream", "--cream-shade", "--rule", "--ink",
     "--ink-soft", "--red", "--brass", "--brass-text", "--control", "--mast", "--mast-soft",
     "--mast-hi", "--mast-lo", "--felt-wash", "--felt-wash-strong", "--plum",
-    "--pad-edge", "--pad-seam"];
+    "--pad-edge", "--pad-seam", "--brass-deep"];
 
   // Paint each token onto a probe element so var() aliases resolve to literals.
   const probe = document.createElement("div");
@@ -64,18 +64,21 @@ const AUDIT = () => {
   const felt = R("--felt").rgb;
   const cream = R("--cream").rgb;
   const checks = [];
-  /* `tint: true` marks a large fill whose shape is already drawn by its own
-     border -- an inactive nav tab, the OPTIONS pill. The 1.25 flag below is a
-     hairline/text heuristic and badly overstates those: a 132x44 filled tab at
-     1.11 reads perfectly well, as the dark themes have shipped for months. What
-     it is right about is a thin line, or a large fill carrying a boundary
-     UNAIDED -- which is exactly what the pad was doing at 1.13 before it got an
-     edge. Flagging both the same way is what made the pad and the wash look like
-     one finding when only the pad needed a fix. */
-  const add = (name, a, b, note, tint) => checks.push({ name, ratio: +ratio(a, b).toFixed(3), note, tint });
+  /* `soft` marks a row where a low ratio is not a failure, with the reason. The
+     1.25 flag is a hairline/text heuristic and overstates two whole categories:
+       - a large fill whose shape is already drawn by its own border (an inactive
+         nav tab at 1.11 reads fine, and has shipped that way for months);
+       - two adjacent fills that each carry their own AA-compliant text label,
+         where nothing is identified by the colour boundary between them.
+     What the flag IS right about is a thin line, or a large fill carrying a
+     boundary UNAIDED -- which is what the pad was doing at 1.13 before it got an
+     edge. Flagging those the same way is what made the pad and the wash read as
+     one finding when only the pad needed fixing; don't repeat it by adding a row
+     here without deciding which kind it is. */
+  const add = (name, a, b, note, soft) => checks.push({ name, ratio: +ratio(a, b).toFixed(3), note, soft });
 
-  add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"], true);
-  add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"], true);
+  add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"], "bordered fill");
+  add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"], "bordered fill");
   /* The pad's two edge treatments are per-theme tokens, so resolve them rather
      than restating their values here -- a copy would keep reporting the old
      cream tint after index.html moved on. Both are measured against --felt-deep
@@ -104,8 +107,18 @@ const AUDIT = () => {
   add("--mast-soft on felt (inactive nav label)", R("--mast-soft").rgb, felt);
   add("--ink-soft on cream (secondary text)", R("--ink-soft").rgb, cream);
   add("--brass-text on cream (dealer / labels)", R("--brass-text").rgb, cream);
-  add("--cream on --brass (PRIMARY BUTTON LABEL)", cream, R("--brass").rgb);
-  add("--cream on --brass-text (banner label)", cream, R("--brass-text").rgb);
+  /* Kept as a check even though nothing pairs them any more: --brass is still
+     the accent every fill is tempted to reach for, and this row is the reason
+     not to. If it ever drops back under 4.5 with a label on it, that is a
+     regression, not a new finding. */
+  add("--cream on --brass (NOT a label ground — see --brass-deep)", cream, R("--brass").rgb);
+  add("--cream on --brass-deep (primary button, banner, badges)", cream, R("--brass-deep").rgb);
+  /* Edit sits directly beside Delete in the deal-detail row and on swipe. The two
+     fills are close in luminance and differ mainly in hue -- which would matter
+     if the hue were carrying the meaning, and it never is: both buttons are
+     labelled in words at 5:1+ on their own ground. Classic Light has had the
+     harder version of this (green beside red) since long before --brass-deep. */
+  add("--red vs --brass-deep (Edit beside Delete)", R("--red").rgb, R("--brass-deep").rgb, null, "both labelled in words");
   add("--red on cream (set score)", R("--red").rgb, cream);
   add("--rule vs cream (borders)", R("--rule").rgb, cream);
   add("--cream-shade vs cream (row separators, championship badge fill)", R("--cream-shade").rgb, cream);
@@ -130,20 +143,20 @@ const AUDIT = () => {
       console.log("\n=== theme: " + theme + " ===");
       for (const c of checks) {
         if (c.ratio == null) { console.log("        —  " + c.name); continue; }
-        /* Bordered fills get a much lower bar than lines and text -- see the
-           `tint` note above. Below ~1.04 even a large fill has genuinely
-           vanished, so they are still checked, just not against 1.25. */
-        const floor = c.tint ? 1.04 : 1.25;
-        const flag = c.ratio < floor ? "  <<< INVISIBLE" : !c.tint && c.ratio < 3 ? "  (low)" : "";
+        /* `soft` rows get a much lower bar than lines and text -- see the note
+           above. Below ~1.04 even a large fill has genuinely vanished, so they
+           are still checked, just not against 1.25. */
+        const floor = c.soft ? 1.04 : 1.25;
+        const flag = c.ratio < floor ? "  <<< INVISIBLE" : !c.soft && c.ratio < 3 ? "  (low)" : "";
         console.log(
           "  " + c.ratio.toFixed(2).padStart(7) + "  " + c.name +
-          (c.note ? " [" + c.note + "]" : "") + flag
+          (c.note ? " [" + c.note + "]" : "") + (c.soft ? "  (ok: " + c.soft + ")" : "") + flag
         );
       }
     }
     console.log("\nAA needs 4.5:1 for normal text, 3:1 for large (>=18.66px bold / 24px regular).");
-    console.log("Rows marked as tints (the wash pair) are large fills with their own border and");
-    console.log("are flagged below 1.04, not 1.25 — see the note beside `tint` in this file.");
+    console.log("Rows marked (ok: …) are flagged below 1.04 rather than 1.25, for the stated");
+    console.log("reason — see the note beside `soft` in this file before adding another.");
   } finally {
     await browser.close();
     server.close();
