@@ -48,8 +48,7 @@ const AUDIT = () => {
   const NAMES = ["--felt", "--felt-deep", "--cream", "--cream-shade", "--rule", "--ink",
     "--ink-soft", "--red", "--brass", "--brass-text", "--control", "--mast", "--mast-soft",
     "--mast-hi", "--mast-lo", "--felt-wash", "--felt-wash-strong", "--plum",
-    "--pad-edge", "--pad-seam", "--brass-deep", "--rule-soft",
-    "--brass-fill", "--brass-label"];
+    "--pad-edge", "--pad-seam", "--rule-soft"];
 
   // Paint each token onto a probe element so var() aliases resolve to literals.
   const probe = document.createElement("div");
@@ -128,26 +127,22 @@ const AUDIT = () => {
   add("--mast-soft on felt (inactive nav label)", R("--mast-soft").rgb, felt);
   add("--ink-soft on cream (secondary text)", R("--ink-soft").rgb, cream);
   add("--brass-text on cream (dealer / labels)", R("--brass-text").rgb, cream);
-  /* The check that matters is the PAIR as the theme actually sets it: whatever
-     --brass-label is, on whatever --brass-fill is. Scoring a fixed cream-on-brass
-     assumes a label colour the theme may not use -- the live themes put --ink on
-     gold, Classic Light puts cream on green, Classic Dark puts cream on deep. */
-  add("--brass-label on --brass-fill (PRIMARY BUTTON — the pair as set)",
-    R("--brass-label").rgb, R("--brass-fill").rgb);
-  /* Kept as the trap it is: --brass is the accent every fill is tempted to reach
-     for, and a CREAM label on it is what measured 2.50. Informational -- it only
-     means something if a control actually pairs those two. */
-  add("--cream on --brass (the pairing that failed; no control uses it now)", cream, R("--brass").rgb, null,
-    "not a pairing in use");
-  add("--cream on --brass-deep (banner, Stats bars)", cream, R("--brass-deep").rgb);
+  /* 2.50:1 in the live themes, against AA's 4.5, and KEPT -- reviewed 2026-07-29
+     and judged to read fine in the hand. Soft so it stops presenting as an open
+     finding, because it is not one: it has been fixed twice and reverted twice.
+     The number is still printed, and still moves if --brass or --cream do, which
+     is the point of leaving the row in. Both alternatives are built and rendered
+     in build-brass.js; the arithmetic allows no third (see the note beside the
+     token in index.html). */
+  add("--cream on --brass (PRIMARY BUTTON — below AA, kept deliberately)", cream, R("--brass").rgb, null,
+    "reviewed 2026-07-29, reads fine in hand — see build-brass.js");
+  add("--cream on --brass-text (banner, Stats bars)", cream, R("--brass-text").rgb);
   /* Edit sits directly beside Delete in the deal-detail row and on swipe. Soft
-     because both buttons are labelled in words at 5:1+ on their own ground, so
-     nothing is identified by the boundary between them -- Classic Light has had
-     green beside red for as long as it has existed. Worth watching rather than
-     ignoring, though: it read 1.08 while the fills were all --brass-deep, and
-     2.16 in the live themes once they went back to gold. A number moving back
-     toward 1 here means the two actions are converging on one colour. */
-  add("--red vs --brass-fill (Edit beside Delete)", R("--red").rgb, R("--brass-fill").rgb, null, "both labelled in words");
+     because nothing is identified by the boundary between them -- both buttons
+     are labelled in words. Worth watching rather than ignoring: it read 1.08
+     during the spell when both fills were the deep brass, and a number drifting
+     back toward 1 means the two actions are converging on one colour. */
+  add("--red vs --brass (Edit beside Delete)", R("--red").rgb, R("--brass").rgb, null, "both labelled in words");
   add("--red on cream (set score)", R("--red").rgb, cream);
   /* These three are one ladder and only mean anything read together: the
      structural divider, the row separator that has to stay under it, and the

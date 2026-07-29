@@ -11,7 +11,7 @@ Seven experiments live here, at different stages:
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
 | **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge`, a 1px ring at 2.5:1, per theme; the seam untouched. Fixes the light-theme finding below. Keeps the crisper 4.5:1 ring and the darkened seam — both measure better and were rejected on looking at them. |
-| **What carries the label on a brass fill** (`build-brass.js`) | **Shipped:** a per-theme `--brass-fill`/`--brass-label` pair — ink on gold in the live themes (5.19), cream where the brass is already dark. Keeps the all-deep-brass version, which measures fine and turns the primary GO control olive. |
+| **What carries the label on a brass fill** (`build-brass.js`) | **Parked — decision recorded, nothing applied.** The 2.50:1 pairing ships. Both fixes were built, shipped and reverted; the generator holds all three states and the arithmetic showing there is no fourth. |
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
@@ -178,19 +178,21 @@ Worth knowing before extending any of this.
   a 1.04 floor, so a real disappearance still trips it. **Reading a flag as a
   finding without looking at the screen is what merged this with the pad
   problem, where 1.13 genuinely was the whole boundary.**
-- ~~`--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
-  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.~~
-  **Fixed** by a per-theme `--brass-fill`/`--brass-label` pair: ink on gold in the
-  live themes (5.19), cream on the green in Classic Light (7.30, which never
-  failed), cream on the deep brass in Classic Dark (5.26, the one theme where
-  neither label clears 4.5 on its gold). `--brass` stays light where nothing sits
-  on it — rules, focus rings, the score bar.
-  Worth knowing: **there is no version of this where the gold just darkens a
-  little.** A cream label at 4.5:1 forces its ground below luminance .152 and
-  `--brass` is .314, so the cream label is what makes a fill dark. Where the
-  brass is a light gold, the label is the thing that has to move. The first pass
-  put every fill on `--brass-deep`, which measures fine and turns the primary GO
-  control a dark olive; `build-brass.js` keeps it for comparison.
+- `--cream` on `--brass` is **2.50:1** in the live themes — every filled brass
+  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) is below AA.
+  **Reviewed 2026-07-29 and kept**, on the judgement that it reads fine in the
+  hand. Not an open finding, and please read `build-brass.js` before touching it
+  — it has been fixed twice and reverted twice:
+  - *Keep the light label, darken the ground* — measures 5.02, and turns
+    `.btn-record`, the primary GO control, a dark olive that stops out-weighing
+    `.btn-add` beside it.
+  - *Keep the gold, move the label* — measures 5.19, and the label has to go to
+    near-black.
+  There is **no third option**. `--brass` sits at luminance .314; a cream label
+  at 4.5:1 forces its ground below .152, and on that gold a passing label needs
+  luminance ≤ .031. Either the button stops being gold or the label stops being
+  light. The audit still prints the number, marked `soft` with the review date,
+  so a change to `--brass` or `--cream` still moves it.
 - ~~`--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
   is invisible.~~ **Fixed.** Third instance of the same shape as the two above:
   one token doing two jobs, and only one of them needing the contrast. As a
