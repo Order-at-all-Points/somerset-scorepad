@@ -144,14 +144,26 @@ Worth knowing before extending any of this.
   neither tone could move — so the ring is what carries the edge now, and the
   audit prints the two lines together for that reason. Both light themes were
   affected, not just the shipped one, since they share `--felt`.
-- `--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
-  nav tabs and the OPTIONS pill have no fill anywhere in the app. Note
-  `aubergine-light` inherited the dark themes' *white* wash verbatim
-  (`rgba(255,255,255,.04)` on light felt, 1.01:1) where Classic Light uses a
-  black one — the same copied-from-dark miss the pad edge turned out to be.
+- ~~`--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
+  nav tabs and the OPTIONS pill have no fill anywhere in the app.~~ **Half wrong,
+  and now fixed.** Only `aubergine-light` was actually broken: it inherited the
+  dark themes' *white* wash verbatim (`rgba(255,255,255,.04)`), which on light
+  felt lightens toward the pad's cream — the exact opposite of recessing a
+  control — and measured 1.01:1, so the inactive tabs had no fill and the active
+  one stopped reading as selected. It now uses Classic Light's black values.
+  The other three themes were fine all along at 1.11–1.12: a 132×44 filled tab
+  with its own border reads clearly at that ratio, which the 1.25 flag was never
+  meant to judge. `audit-contrast.js` now scores those two rows as tints against
+  a 1.04 floor, so a real disappearance still trips it. **Reading a flag as a
+  finding without looking at the screen is what merged this with the pad
+  problem, where 1.13 genuinely was the whole boundary.**
 - `--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
   control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.
   `--brass-text` on cream measures 5.02:1, so the palette already contains the
   fix.
 - `--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
-  is invisible.
+  is invisible. As a *fill* it is fine — `.stats-hero-champ` moved onto it (from
+  `--felt-wash-strong`, a felt token that was being painted onto the pad, so the
+  badge had no pill at all in the three white-wash themes) and reads as a badge.
+  The separators are the open part: a hairline at 1.14 is the case the tint
+  floor above deliberately does not excuse.

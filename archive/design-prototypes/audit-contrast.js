@@ -64,10 +64,18 @@ const AUDIT = () => {
   const felt = R("--felt").rgb;
   const cream = R("--cream").rgb;
   const checks = [];
-  const add = (name, a, b, note) => checks.push({ name, ratio: +ratio(a, b).toFixed(3), note });
+  /* `tint: true` marks a large fill whose shape is already drawn by its own
+     border -- an inactive nav tab, the OPTIONS pill. The 1.25 flag below is a
+     hairline/text heuristic and badly overstates those: a 132x44 filled tab at
+     1.11 reads perfectly well, as the dark themes have shipped for months. What
+     it is right about is a thin line, or a large fill carrying a boundary
+     UNAIDED -- which is exactly what the pad was doing at 1.13 before it got an
+     edge. Flagging both the same way is what made the pad and the wash look like
+     one finding when only the pad needed a fix. */
+  const add = (name, a, b, note, tint) => checks.push({ name, ratio: +ratio(a, b).toFixed(3), note, tint });
 
-  add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"]);
-  add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"]);
+  add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"], true);
+  add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"], true);
   /* The pad's two edge treatments are per-theme tokens, so resolve them rather
      than restating their values here -- a copy would keep reporting the old
      cream tint after index.html moved on. Both are measured against --felt-deep
@@ -100,7 +108,7 @@ const AUDIT = () => {
   add("--cream on --brass-text (banner label)", cream, R("--brass-text").rgb);
   add("--red on cream (set score)", R("--red").rgb, cream);
   add("--rule vs cream (borders)", R("--rule").rgb, cream);
-  add("--cream-shade vs cream (row separators)", R("--cream-shade").rgb, cream);
+  add("--cream-shade vs cream (row separators, championship badge fill)", R("--cream-shade").rgb, cream);
 
   return { theme: document.documentElement.getAttribute("data-theme"), checks };
 };
@@ -122,7 +130,11 @@ const AUDIT = () => {
       console.log("\n=== theme: " + theme + " ===");
       for (const c of checks) {
         if (c.ratio == null) { console.log("        —  " + c.name); continue; }
-        const flag = c.ratio < 1.25 ? "  <<< INVISIBLE" : c.ratio < 3 ? "  (low)" : "";
+        /* Bordered fills get a much lower bar than lines and text -- see the
+           `tint` note above. Below ~1.04 even a large fill has genuinely
+           vanished, so they are still checked, just not against 1.25. */
+        const floor = c.tint ? 1.04 : 1.25;
+        const flag = c.ratio < floor ? "  <<< INVISIBLE" : !c.tint && c.ratio < 3 ? "  (low)" : "";
         console.log(
           "  " + c.ratio.toFixed(2).padStart(7) + "  " + c.name +
           (c.note ? " [" + c.note + "]" : "") + flag
@@ -130,6 +142,8 @@ const AUDIT = () => {
       }
     }
     console.log("\nAA needs 4.5:1 for normal text, 3:1 for large (>=18.66px bold / 24px regular).");
+    console.log("Rows marked as tints (the wash pair) are large fills with their own border and");
+    console.log("are flagged below 1.04, not 1.25 — see the note beside `tint` in this file.");
   } finally {
     await browser.close();
     server.close();

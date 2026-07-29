@@ -193,12 +193,21 @@
     --control:#FCF6E6;
     --mast:var(--ink); --mast-soft:#675D4C;
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
-    --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
+    /* The wash recesses a control INTO the felt (inactive nav tabs, the OPTIONS
+       pill), so it has to move away from the felt's own lightness. Dark's white
+       wash does that on dark felt and the exact opposite here — it lightens light
+       felt toward the pad's cream, measured 1.01:1, which is why the inactive
+       tabs had no fill at all and the active one stopped reading as selected.
+       Classic Light's values verbatim: its felt is byte-identical to this one, so
+       an equal-luminance warm brown (rgba(70,52,30,.066)) was tried for
+       consistency with --pad-edge/--press-lo and is indistinguishable at this
+       alpha — not worth a second number to explain. */
+    --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
-    /* The one place this block deviates from the dark copy beyond --felt/--mast-*:
-       the pad's edge reads against the FELT, and the felt is light here. Dark's
-       transparent ring and cream-tinted seam are both no-ops on this ground
-       (1.13:1 and 1.05:1) — same class of miss as --mast-* would have been. */
+    /* Both remaining deviations from the dark copy are the same miss as the wash
+       above: values that silently assumed a dark ground. The pad's edge reads
+       against the FELT, and dark's transparent ring and cream-tinted seam are
+       both no-ops here (1.13:1 and 1.05:1). */
     --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
   }
   /* ARCHIVE — not wired into the Display sheet picker, reachable only by
@@ -823,8 +832,13 @@
   .stats-hero { text-align:center; padding:18px 16px 18px; border-bottom:1px solid var(--cream-shade); }
   .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
   .stats-hero-sub { font-size:13px; color:var(--ink-soft); margin:4px 0 0; }
+  /* --cream-shade, not --felt-wash-strong: this badge sits on the PAD, and the
+     wash tokens are tuned to shift the felt. The three themes with a white wash
+     were painting white onto cream and the pill had no fill at all — only
+     Classic Light's dark wash ever showed one. A shade of the paper is the token
+     that belongs on the paper. */
   .stats-hero-champ { display:inline-flex; align-items:center; gap:4px; margin-top:10px; font-size:12px; font-weight:600;
-    color:var(--brass-text); background:var(--felt-wash-strong); padding:4px 10px; border-radius:var(--r-pill); }
+    color:var(--brass-text); background:var(--cream-shade); padding:4px 10px; border-radius:var(--r-pill); }
 
   .stats-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--cream-shade); }
   /* An odd number of tiles leaves the last one dangling in a lone column — span it
