@@ -219,10 +219,39 @@
   .disp { }   /* legacy marker class — kept in markup; type is assigned per-role (body = SF Pro, display selectors = New York) */
 
   header { position:relative; text-align:center; margin-bottom:16px; }
-  .eyebrow { color:var(--mast-soft); letter-spacing:.35em; font-size:11px; margin:0; text-transform:uppercase; }
-  .eyebrow .rule-dash { display:inline-block; width:30px; height:1px; background:currentColor; vertical-align:middle; margin:0 .6em; }
-  /* letter-spacing adds a trailing .35em after the final letter; pull the trailing dash back so the gaps before/after the word match */
-  .eyebrow .rule-dash:last-child { margin-left:calc(.6em - .35em); }
+  /* Named .subtitle because that is what it is — it renders BELOW the wordmark.
+     It was called .eyebrow, which by convention means the line above a title;
+     anyone reading the CSS looking for the line under SOME-R-SET went past it.
+     The name was free: a genuinely dead <p class="subtitle" id="subtitle"> used
+     to sit under this one, blanked on every render and never written to by
+     anything. It was removed with this rename. */
+  /* --track is a variable rather than a literal because the trailing-dash
+     correction below has to subtract exactly this value. They were two
+     hardcoded .35em's that had to be changed together, with nothing saying so;
+     tuning the tracking and missing the second one skews the gaps either side
+     of the word, which is easy to do and hard to spot. */
+  .subtitle { --track:.26em;
+              color:var(--mast-soft); letter-spacing:var(--track); font-size:11px; margin:0; text-transform:uppercase;
+              text-shadow:0 -1px 1px var(--mast-lo), 0 1px 0 var(--mast-hi); }
+  /* Two things about the rules.
+     They are a painted background, not glyphs, so text-shadow does not reach
+     them — without a box-shadow carrying the same offsets they stay flat while
+     the letters between them gain depth, and the line stops reading as one
+     pressed object. Offsets match the h1 so the masthead is lit from one
+     direction.
+     They also sit at 65% of the text colour rather than full currentColor. At
+     full strength on the LIGHT themes, where --mast-soft is a flat warm grey,
+     the two dashes read as solid bars bracketing thin letters and the ornament
+     out-weighed the word. (On dark, where --mast-soft is the gold --rule, this
+     was never a problem — another instance of that token diverging by theme.)
+     The pressed highlight/shadow are stepped down by the same 65% or they end
+     up louder than the line they edge. */
+  .subtitle .rule-dash { display:inline-block; width:26px; height:1px; vertical-align:middle; margin:0 .6em;
+                         background:color-mix(in srgb, currentColor 65%, transparent);
+                         box-shadow:0 -1px 1px color-mix(in srgb, var(--mast-lo) 65%, transparent),
+                                    0 1px 0 color-mix(in srgb, var(--mast-hi) 65%, transparent); }
+  /* letter-spacing adds a trailing --track after the final letter; pull the trailing dash back so the gaps before/after the word match */
+  .subtitle .rule-dash:last-child { margin-left:calc(.6em - var(--track)); }
   /* Letterpress: the wordmark is pressed INTO the felt rather than printed onto
      it. Light reads as coming from above, so the upper inner wall of an
      impression falls into shadow while the lower lip catches the light — hence
@@ -237,7 +266,6 @@
      and not baked into the rule below. */
   h1 { color:var(--mast); font-family:var(--font-display); font-size:34px; margin:2px 0 0; font-weight:600; letter-spacing:.04em;
        text-shadow:0 -1px 1px var(--mast-lo), 0 1px 0 var(--mast-hi); }   /* Large Title; tracking OK — all-caps */
-  .subtitle { color:var(--mast-soft); font-family:var(--font-display); font-style:italic; font-size:13px; margin:2px 0 0; }
   .menu-btn { position:absolute; top:0; right:max(0px, env(safe-area-inset-right)); width:44px; height:44px;
     display:flex; align-items:center; justify-content:center; background:none; border:none;
     color:var(--mast-soft); cursor:pointer; padding:0; }
@@ -926,8 +954,7 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
     <h1 class="disp">SOME-R-SET</h1>
-    <p class="eyebrow disp"><span class="rule-dash"></span>Scorepad<span class="rule-dash"></span></p>
-    <p class="subtitle disp" id="subtitle"></p>
+    <p class="subtitle disp"><span class="rule-dash"></span>Scorepad<span class="rule-dash"></span></p>
   </header>
   <nav class="nav" id="nav"></nav>
   <div class="storage-warn disp" id="storageWarn">Heads up: scores can't be saved on this device (storage is full or blocked), so they'll be lost when you close the app.</div>
@@ -4516,7 +4543,6 @@ window.SOMERSET_FB_CONFIG = {
 
   // ---- Render ----
   var padEl = document.getElementById("pad");
-  var subtitleEl = document.getElementById("subtitle");
   var settingsPanelEl = document.getElementById("settingsPanel");
   var modalRoot = document.getElementById("modalRoot");
   var navEl = document.getElementById("nav");
@@ -4656,7 +4682,6 @@ window.SOMERSET_FB_CONFIG = {
     // which is what frozenAppliesHere() settles.
     var frozen = frozenAppliesHere();
     var isReadOnly = frozen || (_am && (_m && !_m.game && _m.winner !== null));
-    subtitleEl.textContent = "";
     var t = totals(), winDetail = winnerDetail(), win = winDetail.winner, dealNo = game.deals.length + 1;
 
     var pad = el("div", {});

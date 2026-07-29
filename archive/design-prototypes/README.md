@@ -3,11 +3,12 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Two experiments live here, at different stages:
+Three experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
 | **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
+| **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 ## Running
@@ -23,8 +24,14 @@ node archive/design-prototypes/measure-space.js    # dead space per screen per d
 node archive/design-prototypes/screenshot-app.js   # full screenshot sweep -> out/screens/
 node archive/design-prototypes/capture-screens.js  # real DOM -> out/screens.json
 node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
+node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
+
+Where a generator has a shipped variant, that row renders whatever `index.html`
+currently says rather than a copy of the values. The comparison stays honest as
+the file moves, and a shipped row that suddenly looks wrong is a signal, not a
+stale fixture.
 
 `out/` is generated and gitignored. The generators are the artifact; the pages
 are disposable and should be rebuilt against whatever `index.html` currently
