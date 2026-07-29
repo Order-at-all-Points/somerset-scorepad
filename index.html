@@ -104,23 +104,31 @@
        here resolves against whatever [data-theme] is on the html element. */
     --rule-soft:color-mix(in srgb, var(--rule) 60%, var(--cream));
   }
-  /* Every theme carries TWO brasses, and which one you want depends on what is
-     going on top of it, not on what it is:
+  /* Brass has three jobs, and reaching for the wrong one is what broke the
+     primary button at 2.50:1:
        --brass       hairline rules on cream, the double rules under view heads,
                      focus rings, the score-bar fill, borders. Nothing sits on
                      these, so the lighter, more saturated tone is free to be the
                      accent the palette is built around.
-       --brass-deep  anything that CARRIES something — a cream label on a filled
-                     control (.btn-record, .btn-new, .sheet-btn.primary, .chip.on,
-                     .hist-win-badge, .banner …), or brass-coloured text on the
-                     cream pad, which is the same requirement pointed the other
-                     way. --brass-text aliases to it and is kept because ~30 text
-                     rules read better naming the role than the depth.
-     Cream on --brass is 2.50:1 in both live themes; on --brass-deep it is 5.02.
-     A fill that reaches for --brass because "brass is the accent colour" is the
-     mistake this pair exists to prevent — see build-brass.js, which also has the
-     measurements for why darkening the label instead cannot work (Classic
-     Light's --brass is green, and ink on it is 1.77:1). */
+       --brass-deep  brass-coloured TEXT on the cream pad, and the few fills that
+                     want the deep tone in their own right (.banner, the Stats
+                     bars). --brass-text aliases to it; ~30 text rules read better
+                     naming the role than the depth.
+       --brass-fill  the ground under a FILLED control — .btn-record, .btn-new,
+       --brass-label .sheet-btn.primary, .chip.on, .hist-win-badge, .mbox-slot.win,
+                     the RR champion row, the GF header, the undo toast, the two
+                     edit buttons — paired with the label colour that sits on it.
+     The pair exists because the label and the ground can only be chosen together,
+     and the answer is not the same in every theme:
+       aubergine / aubergine-light   gold ground, --ink label      5.19
+       light (Classic Light)         green ground, --cream label   7.30
+       dark  (Classic Dark)          deep ground, --cream label    5.26
+     A cream label at 4.5:1 forces its ground below luminance .152, so "keep the
+     gold but darken it a little" does not exist — the cream label IS what makes
+     a fill dark. Where the palette's brass is a light gold, the label has to be
+     the thing that moves. Classic Dark is the one theme where neither label
+     clears 4.5 on its gold (cream 3.22, ink 3.71), so it alone keeps a deep
+     ground. Classic Light never failed at all. See build-brass.js. */
   /* Theme key naming convention (internal [data-theme] values, NOT the
      user-facing Display-sheet chip labels, which churn freely and are just
      documented inline where they're set):
@@ -156,6 +164,7 @@
     --felt:#4C2026; --felt-deep:#371318; --cream:#F7EDDC; --cream-shade:#EBDEC3;
     --rule:#CBAA82; --ink:#332B25; --ink-soft:#6F6052; --red:#A32C2C; --brass:#A57E28;
     --brass-deep:#7C5D1C; --brass-text:var(--brass-deep);
+    --brass-fill:var(--brass-deep); --brass-label:var(--cream);
     --control:#FCF5E6;
     --mast:var(--cream); --mast-soft:var(--rule);
     --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
@@ -179,6 +188,7 @@
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#B9AC85; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#2F5D48;
     --brass-deep:#27503D; --brass-text:var(--brass-deep);
+    --brass-fill:var(--brass); --brass-label:var(--cream);
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
@@ -201,6 +211,7 @@
     --felt:#2E1B3A; --felt-deep:#1A0E22; --cream:#F6EEDC; --cream-shade:#ECE0C2;
     --rule:#C9A868; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B39456;
     --brass-deep:#7A6234; --brass-text:var(--brass-deep);
+    --brass-fill:var(--brass); --brass-label:var(--ink);
     --control:#FCF6E6;
     --mast:var(--cream); --mast-soft:var(--rule);
     --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
@@ -230,6 +241,7 @@
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#F6EEDC; --cream-shade:#ECE0C2;
     --rule:#C9A868; --ink:#2C2620; --ink-soft:#6E6152; --red:#A83A4A; --brass:#B39456;
     --brass-deep:#7A6234; --brass-text:var(--brass-deep);
+    --brass-fill:var(--brass); --brass-label:var(--ink);
     --control:#FCF6E6;
     --mast:var(--ink); --mast-soft:#675D4C;
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
@@ -269,6 +281,7 @@
     --felt:#E8E1CE; --felt-deep:#DCD3BA; --cream:#FDFBF4; --cream-shade:#F0EADA;
     --rule:#C9A868; --ink:#322F28; --ink-soft:#7C7358; --red:#9B2226; --brass:#3D2B5C;
     --brass-deep:#251938; --brass-text:var(--brass-deep);
+    --brass-fill:var(--brass); --brass-label:var(--cream);
     --control:#FFFFFF;
     --mast:var(--ink); --mast-soft:#675D4C;
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
@@ -445,7 +458,7 @@
   .deal-detail { display:flex; border-bottom:1px solid var(--rule-soft); overflow:hidden; }
   .deal-detail-btn { flex:1; border:none; padding:10px 0; font-family:var(--font-text);
     font-size:13px; font-weight:600; color:var(--cream); cursor:pointer; }
-  .deal-detail-btn.edit { background:var(--brass-deep); border-right:1px solid rgba(0,0,0,.15); }
+  .deal-detail-btn.edit { background:var(--brass-fill); color:var(--brass-label); border-right:1px solid rgba(0,0,0,.15); }
   .deal-detail-btn.delete { background:var(--red); }
   .deal-detail-btn:active { filter:brightness(.92); }
   /* Swipe-to-edit/delete: the sliding foreground is a *separate* element from .deal-row
@@ -458,7 +471,7 @@
   .swipe-action-btn { flex:1; border:none; display:flex; align-items:center; justify-content:center;
     font-family:var(--font-text); font-size:13px; font-weight:600;
     color:var(--cream); cursor:pointer; }
-  .swipe-action-btn.edit { background:var(--brass-deep); }
+  .swipe-action-btn.edit { background:var(--brass-fill); color:var(--brass-label); }
   .swipe-action-btn.delete { background:var(--red); }
   .swipe-action-btn:active { filter:brightness(.92); }
   /* left/right+margin centering (not translateX) — the .fade keyframe ends at transform:none and would wipe a transform */
@@ -472,7 +485,7 @@
   .undo-toast-bar { position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--brass); transform-origin:left; animation:undo-deplete linear forwards; }
   @keyframes undo-deplete { from { transform:scaleX(1); } to { transform:scaleX(0); } }
   @media (prefers-reduced-motion: reduce) { .undo-toast-bar { animation:none; } }
-  .undo-toast button { background:var(--brass-deep); color:var(--cream); border:none; border-radius:var(--r-pill); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-text); padding:7px 14px; flex:0 0 auto; }
+  .undo-toast button { background:var(--brass-fill); color:var(--brass-label); border:none; border-radius:var(--r-pill); font-size:13px; font-weight:700; cursor:pointer; font-family:var(--font-text); padding:7px 14px; flex:0 0 auto; }
   .undo-toast button:active { opacity:.75; }
   /* No trailing Undo button on a plain confirmation toast (showInfoToast) -- match padding on both sides. */
   .undo-toast.info-only { padding-right:16px; }
@@ -524,9 +537,9 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease; }
   .chip:active:not(.on) { transform:scale(.93); background:var(--cream-shade); box-shadow:none; }
-  .chip.on { border-color:color-mix(in srgb, var(--brass-deep) 80%, black);
-    background:var(--brass-deep);
-    color:var(--cream);
+  .chip.on { border-color:color-mix(in srgb, var(--brass-fill) 80%, black);
+    background:var(--brass-fill);
+    color:var(--brass-label);
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .chip.on:active { transform:scale(.93); box-shadow:none; }
   .chip[disabled] { opacity:.45; cursor:default; box-shadow:none; }
@@ -550,8 +563,8 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1); }
   .btn-cancel:active { transform:scale(.97); background:var(--cream-shade); box-shadow:none; }
   .btn-record { flex:2; padding:12px 0; border:none;
-    background:var(--brass-deep);
-    color:var(--cream); font-size:17px; font-weight:600;
+    background:var(--brass-fill);
+    color:var(--brass-label); font-size:17px; font-weight:600;
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .btn-record:active { transform:scale(.97); box-shadow:none; }
   .btn-danger { flex:2; padding:12px 0; border:none;
@@ -566,8 +579,8 @@
   .btn-add:active { transform:scale(.98); box-shadow:none; }
   .btn-add[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
   .btn-new { width:100%; padding:16px 0; border:none;
-    background:var(--brass-deep);
-    color:var(--cream); font-size:17px; font-weight:600;
+    background:var(--brass-fill);
+    color:var(--brass-label); font-size:17px; font-weight:600;
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .btn-new:active { transform:scale(.98); box-shadow:none; }
   .btn-new[disabled], .btn-record[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
@@ -652,9 +665,9 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease, box-shadow .08s ease; }
   .sheet-btn:active:not(.primary):not(.ghost) { transform:scale(.98); background:var(--cream-shade); box-shadow:none; }
-  .sheet-btn.primary { border-color:color-mix(in srgb, var(--brass-deep) 80%, black); font-weight:600;
-    background:var(--brass-deep);
-    color:var(--cream);
+  .sheet-btn.primary { border-color:color-mix(in srgb, var(--brass-fill) 80%, black); font-weight:600;
+    background:var(--brass-fill);
+    color:var(--brass-label);
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .sheet-btn.primary:active { transform:scale(.98); box-shadow:none; }
   .sheet-btn.primary[disabled] { background:var(--cream-shade); color:var(--ink-soft); border-color:var(--rule); cursor:default; box-shadow:none; }
@@ -762,7 +775,7 @@
   .hist-line.stack .hist-win { text-align:right; white-space:normal; }
   /* Winner tag as a filled pill (echoes .chip.on) rather than plain colored text —
      gives the row one clear focal point instead of two same-weight text blocks. */
-  .hist-win-badge { display:inline-block; padding:3px 10px; border-radius:var(--r-pill); background:var(--brass-deep); color:var(--cream); }
+  .hist-win-badge { display:inline-block; padding:3px 10px; border-radius:var(--r-pill); background:var(--brass-fill); color:var(--brass-label); }
   .hist-win-badge.tie { background:var(--ink-soft); }
   .hist-meta { font-size:13px; color:var(--ink-soft); margin-top:6px; }
   .hist-detail { padding:8px 12px 16px; border-top:1px solid var(--rule-soft); }
@@ -825,7 +838,7 @@
   .mbox { border:1px solid var(--rule); border-radius:var(--r-control); overflow:hidden; background:var(--cream); box-shadow:0 1px 3px rgba(0,0,0,.14); }
   .mbox-slot { display:flex; justify-content:space-between; align-items:center; padding:8px; font-size:13px; color:var(--ink); border-bottom:1px solid var(--rule-soft); }
   .mbox-slot:last-child { border-bottom:none; }
-  .mbox-slot.win { background:var(--brass-deep); color:var(--cream); font-weight:600; }
+  .mbox-slot.win { background:var(--brass-fill); color:var(--brass-label); font-weight:600; }
   .mbox-slot.pick { cursor:pointer; }
   .mbox-slot.pick:active { background:var(--cream-shade); }
   .mbox-slot-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -991,7 +1004,7 @@
   .bracket-section-head { background:var(--ink); color:var(--cream); font-size:11px; font-weight:600;
     letter-spacing:.14em; text-transform:uppercase; padding:6px 12px; }
   .bracket-section-head.lb { background:var(--red); }
-  .bracket-section-head.gf { background:var(--brass-deep); }
+  .bracket-section-head.gf { background:var(--brass-fill); color:var(--brass-label); }
   .bracket-rounds { display:flex; gap:12px; padding:12px 8px 12px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .bracket-col { display:flex; flex-direction:column; gap:8px; min-width:130px; }
   .bracket-col-label { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft);
@@ -1007,7 +1020,7 @@
   .rr-standings th.num { text-align:center; }
   .rr-standings td { padding:6px 8px; border-bottom:1px solid var(--rule-soft); color:var(--ink); }
   .rr-standings td.num { text-align:center; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-weight:600; }
-  .rr-standings tr.rr-champ td { background:var(--brass-deep); color:var(--cream); font-weight:600; }
+  .rr-standings tr.rr-champ td { background:var(--brass-fill); color:var(--brass-label); font-weight:600; }
   .rr-standings tr.rr-finalist td { background:color-mix(in srgb, var(--brass) 12%, transparent); }
   .rr-schedule { padding:0; }
   .rr-row { display:flex; align-items:center; justify-content:space-between; gap:8px;

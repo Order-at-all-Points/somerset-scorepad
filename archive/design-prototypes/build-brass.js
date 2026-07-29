@@ -9,32 +9,40 @@
  * measures 2.50:1, against AA's 4.5. It is the app's primary GO control and the
  * one thing on screen you look at while holding cards.
  *
- * Three directions, and measurement kills one of them outright:
+ * Three directions:
  *
  *                        aubergine  aubergine-light   dark   light
- *   cream on --brass        2.50         2.50         3.22    7.30   <- shipped
- *   ink on --brass          5.19         5.19         3.71    1.77   <- dead
- *   cream on --brass-text   5.02         5.02         5.26    8.81   <- passes
+ *   cream on --brass        2.50         2.50         3.22    7.30   <- the bug
+ *   ink on --brass          5.19         5.19         3.71    1.77
+ *   cream on --brass-deep   5.02         5.02         5.26    8.81
  *
- * Darkening the LABEL to --ink and keeping the gold looks like the change that
- * preserves the most, and it does in three themes. But Classic Light's --brass
- * is not gold at all -- Linen Daylight promotes the felt's green to the accent
- * (#2F5D48), and dark ink on dark green is 1.77:1, far worse than what it
- * replaces. It would need a per-theme label colour, and it inverts the button's
- * light-label-on-colour grammar in exactly one theme. Row 2 renders that, so the
- * failure is visible rather than asserted.
+ * Read that table by ROW and it says "use the deep brass everywhere", which is
+ * what shipped first and was wrong to look at: the primary GO control turned a
+ * dark olive. Read it by COLUMN and it says something better -- no single
+ * pairing is right for all four themes, because --brass is not the same KIND of
+ * colour in all four. In the live themes it is a light gold; in Classic Light,
+ * Linen Daylight promotes the felt's green to the accent (#2F5D48), which is
+ * already dark enough to carry cream and always was (7.30 -- that theme never
+ * failed). Classic Dark is the awkward one: neither label clears 4.5 on its gold.
  *
- * Darkening --brass itself is the other obvious move and is not tried here:
- * --brass is also every hairline rule on cream, the double rules under view
- * heads, focus rings and the score-bar fill, where the lighter tone is correct
- * and already contrasts fine. The palette deliberately carries two brasses. This
- * is just the fills using the wrong one of them.
+ * So the fill and the label are one decision, made per theme:
+ *   aubergine / aubergine-light   gold ground, --ink label      5.19
+ *   light (Classic Light)         green ground, --cream label   7.30  (unchanged)
+ *   dark  (Classic Dark)          deep ground, --cream label    5.26
  *
- * SHIPPED: the deep brass, via a new --brass-deep. It holds the value and
- * --brass-text aliases to it, so the ~30 text uses are untouched and a fill can
- * stop asking for a token named "text". .banner already shipped this exact
- * pairing (deep brass ground, cream label), which is why row 3 needs no argument
- * that it fits -- it is already in the app, one element up from the score pad.
+ * There is no fourth option where the gold merely darkens a little. A cream
+ * label at 4.5:1 forces its ground below luminance .152 and --brass sits at .314
+ * -- the cream label IS what makes a fill dark. Where the brass is a light gold,
+ * the label is the thing that has to move.
+ *
+ * Darkening --brass itself is not tried: it is also every hairline rule on cream,
+ * the double rules under view heads, focus rings and the score-bar fill, where
+ * the lighter tone is correct and contrasts fine.
+ *
+ * SHIPPED: --brass-fill / --brass-label, per theme. --brass-deep stays for
+ * brass-coloured TEXT on the pad (--brass-text aliases to it) and for the few
+ * fills that want the deep tone in their own right -- .banner and the Stats bars,
+ * which are unchanged throughout.
  *
  *   node archive/design-prototypes/build-brass.js
  *   node archive/design-prototypes/serve.js   # then open /brass.html
@@ -80,20 +88,21 @@ const MARKUP = `<div class="wrap"><div class="pad">
 const FILLS = ".btn-record,.btn-new,.sheet-btn.primary,.chip.on,.hist-win-badge,.mbox-slot.win,.bracket-section-head.gf";
 
 const VARIANTS = [
-  { g: "The cream label on a brass fill",
-    t: "cream on --brass  (before this change — 2.50:1, AA wants 4.5)",
-    css: `${FILLS}{background:var(--brass);color:var(--cream)}.banner{background:var(--brass);color:var(--cream)}` },
-  { g: "The cream label on a brass fill",
-    t: "keep the gold, darken the label to --ink  (rejected: 1.77:1 in Classic Light, where --brass is green)",
-    css: `${FILLS}{background:var(--brass);color:var(--ink)}` },
-  { g: "The cream label on a brass fill",
-    t: "cream on the deep brass  (SHIPPED — what .banner above has always used)", css: `` },
+  { g: "What carries the label on a filled brass control",
+    t: "cream on --brass  (the bug — 2.50:1 in the live themes, AA wants 4.5)",
+    css: `${FILLS}{background:var(--brass);color:var(--cream)}` },
+  { g: "What carries the label on a filled brass control",
+    t: "cream on the deep brass  (shipped first, then rejected on looking: the primary GO control goes dark olive)",
+    css: `${FILLS}{background:var(--brass-deep);color:var(--cream)}` },
+  { g: "What carries the label on a filled brass control",
+    t: "the per-theme pair  (SHIPPED — ink on gold in the live themes, cream where the brass is already dark)",
+    css: `` },
 
   { g: "Next to the controls that did not change",
-    t: "primary vs .btn-cancel, and .chip.on vs an unselected .chip  (SHIPPED)", css: `` },
+    t: "primary vs .btn-cancel, .chip.on vs an unselected .chip  (SHIPPED)", css: `` },
   { g: "Next to the controls that did not change",
-    t: "same, with the old fill — the primary is brighter but not darker than its own label",
-    css: `${FILLS}{background:var(--brass);color:var(--cream)}` },
+    t: "same with the deep fill — note it stops out-weighing .btn-add, the neutral dark secondary",
+    css: `${FILLS}{background:var(--brass-deep);color:var(--cream)}` },
 ];
 
 const THEMES = [
