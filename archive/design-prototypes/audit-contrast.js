@@ -48,7 +48,7 @@ const AUDIT = () => {
   const NAMES = ["--felt", "--felt-deep", "--cream", "--cream-shade", "--rule", "--ink",
     "--ink-soft", "--red", "--brass", "--brass-text", "--control", "--mast", "--mast-soft",
     "--mast-hi", "--mast-lo", "--felt-wash", "--felt-wash-strong", "--plum",
-    "--pad-edge", "--pad-seam", "--brass-deep"];
+    "--pad-edge", "--pad-seam", "--brass-deep", "--rule-soft"];
 
   // Paint each token onto a probe element so var() aliases resolve to literals.
   const probe = document.createElement("div");
@@ -120,8 +120,14 @@ const AUDIT = () => {
      harder version of this (green beside red) since long before --brass-deep. */
   add("--red vs --brass-deep (Edit beside Delete)", R("--red").rgb, R("--brass-deep").rgb, null, "both labelled in words");
   add("--red on cream (set score)", R("--red").rgb, cream);
-  add("--rule vs cream (borders)", R("--rule").rgb, cream);
-  add("--cream-shade vs cream (row separators, championship badge fill)", R("--cream-shade").rgb, cream);
+  /* These three are one ladder and only mean anything read together: the
+     structural divider, the row separator that has to stay under it, and the
+     fill tone that is not a line at all. --cream-shade is deliberately last and
+     deliberately still low -- as a FILL that is correct, and the row it used to
+     fail was the separator job it no longer has. */
+  add("--rule vs cream (totals divider, entry pane, sync bar)", R("--rule").rgb, cream);
+  add("--rule-soft vs cream (row separators — must stay under --rule)", R("--rule-soft").rgb, cream);
+  add("--cream-shade vs cream (fill only: track, pressed, disabled, badge)", R("--cream-shade").rgb, cream, null, "fill, not a line");
 
   return { theme: document.documentElement.getAttribute("data-theme"), checks };
 };

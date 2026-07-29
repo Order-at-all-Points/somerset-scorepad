@@ -3,7 +3,7 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Six experiments live here, at different stages:
+Seven experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
@@ -12,6 +12,7 @@ Six experiments live here, at different stages:
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
 | **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge` (1px ring, 4.5:1) and `--pad-seam` (dashed outline, 3.2:1) per theme. Fixes the light-theme finding below. A lighter ring and a heavier-shadow alternative are kept as the two things that look plausible until you see them side by side. |
 | **What carries the cream label** (`build-brass.js`) | **Shipped:** filled controls moved to a new `--brass-deep` (5.02:1, was 2.50). Keeps the rejected "darken the label instead" row, which passes in three themes and collapses to 1.77:1 in Classic Light. |
+| **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
@@ -25,6 +26,17 @@ asymmetry is deliberate; see the comment beside the tokens.
 pad's outline *against the felt*, so like `--mast-*` they have to flip with it.
 Which side of that split a token falls on is decided by what it contrasts
 against, not by what it sits on.
+
+Three of the audit findings turned out to be the same shape, and it is worth
+recognising on sight: **one token doing two jobs, where only one job needs the
+contrast.** `--felt-wash` tinting the felt vs. filling a badge on the pad;
+`--brass` as an accent nothing sits on vs. as a ground under a cream label;
+`--cream-shade` as a fill vs. as a 1px separator. Each looked like "this value is
+too weak" and was really "this value is being asked for by something it was never
+tuned for" — so each fix was a second token (`--brass-deep`, `--rule-soft`)
+rather than a nudge to the first, which would have broken the job it was already
+doing correctly. Before adjusting a token because one usage looks wrong, check
+what else is asking for it.
 
 ## Running
 
@@ -43,6 +55,7 @@ node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
 node archive/design-prototypes/build-press.js      # -> out/press.html
 node archive/design-prototypes/build-pad.js        # -> out/pad.html
 node archive/design-prototypes/build-brass.js      # -> out/brass.html
+node archive/design-prototypes/build-rules.js      # -> out/rules.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -168,9 +181,11 @@ Worth knowing before extending any of this.
   and the ~30 genuine text uses were untouched. `--brass` stays light where
   nothing sits on it: rules, focus rings, the score bar. See `build-brass.js`,
   including why darkening the label instead cannot work.
-- `--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
-  is invisible. As a *fill* it is fine — `.stats-hero-champ` moved onto it (from
-  `--felt-wash-strong`, a felt token that was being painted onto the pad, so the
-  badge had no pill at all in the three white-wash themes) and reads as a badge.
-  The separators are the open part: a hairline at 1.14 is the case the tint
-  floor above deliberately does not excuse.
+- ~~`--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
+  is invisible.~~ **Fixed.** Third instance of the same shape as the two above:
+  one token doing two jobs, and only one of them needing the contrast. As a
+  *fill* 1.14 is correct and stays — pressed states, disabled buttons, the
+  score-bar track, the pending deal row, `.stats-hero-champ` (which moved onto it
+  from `--felt-wash-strong`, a felt token being painted on the pad). The 15
+  separator sites moved to `--rule-soft`. See `build-rules.js` for why the weight
+  was bounded on both sides rather than chosen.

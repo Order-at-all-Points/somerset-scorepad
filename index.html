@@ -80,6 +80,21 @@
        carved edge on 48px type and just a loss of stem definition by 17px,
        where it stops reading as an impression at all — see build-press.js. */
     --press-lo:rgba(70,52,30,.30); --press-hi:rgba(255,255,255,.90);
+    /* Row separators: the deal list, history groups, stats rank rows and the
+       tile grid. These used --cream-shade, which is right as a FILL (pressed
+       states, disabled buttons, the score-bar track, the pending row) and is
+       1.14:1 — invisible as a 1px line. --rule is not the answer either: it
+       draws the app's structural divisions (under the totals, the entry pane's
+       2px top, the sync and match bars, the seat rules) at ~2.0, and a deal row
+       is not one of those. Matching it flattens two levels into one.
+       Mixed toward the paper instead, so the line stays in each theme's own hue
+       family for free — including Classic Light's, whose --rule is a duller
+       olive-tan. 60% measures 1.44–1.55; a neutral grey at the same weight goes
+       cold against a warm pad, see build-rules.js.
+       One declaration covers every theme even though both operands are
+       per-theme: custom properties substitute where they are USED, so var(--rule)
+       here resolves against whatever [data-theme] is on the html element. */
+    --rule-soft:color-mix(in srgb, var(--rule) 60%, var(--cream));
   }
   /* Every theme carries TWO brasses, and which one you want depends on what is
      going on top of it, not on what it is:
@@ -363,7 +378,7 @@
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
 
   .empty { text-align:center; color:var(--ink-soft); padding:20px 16px; margin:0; }
-  .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
+  .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--rule-soft); cursor:pointer; }
   .deal-row.open { border-bottom-color:transparent; }
   /* The bid's been confirmed but the hand hasn't been recorded yet (game.pendingBid) —
      its score slot is a placeholder, not a real 0, so it's dimmed and tinted to read
@@ -411,7 +426,7 @@
   /* Edit/Delete as a full-width split button pair — same brass/red fills and
      left/right placement as the swipe actions below (makeSwipeRow), so tapping
      the row to reveal them reads as the same action grammar as swiping it. */
-  .deal-detail { display:flex; border-bottom:1px solid var(--cream-shade); overflow:hidden; }
+  .deal-detail { display:flex; border-bottom:1px solid var(--rule-soft); overflow:hidden; }
   .deal-detail-btn { flex:1; border:none; padding:10px 0; font-family:var(--font-text);
     font-size:13px; font-weight:600; color:var(--cream); cursor:pointer; }
   .deal-detail-btn.edit { background:var(--brass-deep); border-right:1px solid rgba(0,0,0,.15); }
@@ -540,7 +555,7 @@
     box-shadow:0 1px 2px rgba(0,0,0,.25); }
   .btn-new:active { transform:scale(.98); box-shadow:none; }
   .btn-new[disabled], .btn-record[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
-  .add-wrap { padding:16px 16px 20px; border-top:1px solid var(--cream-shade); display:flex; flex-direction:column; justify-content:center; }
+  .add-wrap { padding:16px 16px 20px; border-top:1px solid var(--rule-soft); display:flex; flex-direction:column; justify-content:center; }
 
   .settings-toggle { display:inline-block; border-radius:var(--r-pill); border:1px solid color-mix(in srgb, var(--rule) 50%, transparent);
     background:var(--felt-wash); color:var(--mast-soft); font-size:13px; letter-spacing:.08em; text-transform:uppercase;
@@ -692,7 +707,7 @@
   .hist-date-title { font-family:var(--font-display); font-size:18px; font-weight:600; color:var(--brass-text); }
   .hist-head-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
   .hist-date-sum { font-size:13px; color:var(--ink-soft); }
-  .hist-t-group { border-top:1px solid var(--cream-shade); padding-bottom:2px; }
+  .hist-t-group { border-top:1px solid var(--rule-soft); padding-bottom:2px; }
   .hist-t-head { display:flex; flex-direction:column; gap:2px; padding:8px 12px 6px 24px; cursor:pointer; }
   .hist-t-title { font-family:var(--font-display); font-size:14px; font-weight:600; color:var(--brass-text); }
   .hist-t-sum { font-size:13px; color:var(--ink-soft); margin-left:14px; }
@@ -734,7 +749,7 @@
   .hist-win-badge { display:inline-block; padding:3px 10px; border-radius:var(--r-pill); background:var(--brass-deep); color:var(--cream); }
   .hist-win-badge.tie { background:var(--ink-soft); }
   .hist-meta { font-size:13px; color:var(--ink-soft); margin-top:6px; }
-  .hist-detail { padding:8px 12px 16px; border-top:1px solid var(--cream-shade); }
+  .hist-detail { padding:8px 12px 16px; border-top:1px solid var(--rule-soft); }
   .hist-roster { font-size:13px; color:var(--ink); margin:0 0 6px; }
   /* The Bidder column (1fr) carries the whole "<player> bid <n>" line; the dealer
      column is content-sized (auto), right-aligned. */
@@ -792,7 +807,7 @@
   .tnext { text-align:center; font-size:15px; color:var(--ink); margin:12px; }
   .bracket-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; padding:12px 8px 16px; }
   .mbox { border:1px solid var(--rule); border-radius:var(--r-control); overflow:hidden; background:var(--cream); box-shadow:0 1px 3px rgba(0,0,0,.14); }
-  .mbox-slot { display:flex; justify-content:space-between; align-items:center; padding:8px; font-size:13px; color:var(--ink); border-bottom:1px solid var(--cream-shade); }
+  .mbox-slot { display:flex; justify-content:space-between; align-items:center; padding:8px; font-size:13px; color:var(--ink); border-bottom:1px solid var(--rule-soft); }
   .mbox-slot:last-child { border-bottom:none; }
   .mbox-slot.win { background:var(--brass-deep); color:var(--cream); font-weight:600; }
   .mbox-slot.pick { cursor:pointer; }
@@ -826,7 +841,7 @@
   .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum); }
   .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
 
-  .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--cream-shade); cursor:pointer; }
+  .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--rule-soft); cursor:pointer; }
   .rank-row:last-child { border-bottom:none; padding-bottom:20px; }
   .rank-row:active { background:var(--cream-shade); }
   .rank-num { flex:none; width:20px; text-align:center; font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink-soft); }
@@ -846,7 +861,7 @@
   .stats-player-head .back-btn { grid-column:1; justify-self:start; }
   .stats-player-head .stats-player-name { grid-column:2; font-family:var(--font-display); font-size:23px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 4px; }
 
-  .stats-hero { text-align:center; padding:18px 16px 18px; border-bottom:1px solid var(--cream-shade); }
+  .stats-hero { text-align:center; padding:18px 16px 18px; border-bottom:1px solid var(--rule-soft); }
   .stats-hero-record { font-family:var(--font-display); font-size:40px; font-weight:600; color:var(--ink); margin:0; }
   .stats-hero-sub { font-size:13px; color:var(--ink-soft); margin:4px 0 0; }
   /* --cream-shade, not --felt-wash-strong: this badge sits on the PAD, and the
@@ -857,7 +872,7 @@
   .stats-hero-champ { display:inline-flex; align-items:center; gap:4px; margin-top:10px; font-size:12px; font-weight:600;
     color:var(--brass-text); background:var(--cream-shade); padding:4px 10px; border-radius:var(--r-pill); }
 
-  .stats-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--cream-shade); }
+  .stats-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--rule-soft); }
   /* An odd number of tiles leaves the last one dangling in a lone column — span it
      across the full row instead of leaving a blank cell beside it. */
   .stats-tile-grid > .stats-tile:last-child:nth-child(odd) { grid-column:1 / -1; }
@@ -900,7 +915,7 @@
   .stats-trend-labels { display:flex; justify-content:space-between; font-size:10px; color:var(--ink-soft); margin-top:4px; }
 
   .stats-pair-list { padding-bottom:6px; }
-  .stats-pair-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--cream-shade); }
+  .stats-pair-row { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--rule-soft); }
   .stats-pair-row:last-child { border-bottom:none; }
   .stats-pair-row[role="button"] { cursor:pointer; }
   .stats-pair-row[role="button"]:active { background:var(--cream-shade); }
@@ -921,7 +936,7 @@
   .settings-row-state { margin-left:auto; font-size:15px; color:var(--ink-soft); display:inline-block; }
   .peer-list { max-height:42vh; overflow-y:auto; margin:2px 0 6px; }
   .peer-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding:10px 2px; border-bottom:1px solid var(--cream-shade); }
+    padding:10px 2px; border-bottom:1px solid var(--rule-soft); }
   .peer-row:last-child { border-bottom:none; }
   .peer-row.dim { opacity:.45; }
   .peer-id { min-width:0; text-align:left; }
@@ -930,7 +945,7 @@
   .peer-follow-btn { background:none; border:none; padding:3px 0 0; font-size:12px;
     color:var(--brass-text); cursor:pointer; text-decoration:underline dotted; text-align:left; }
 
-  .merge-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 2px; border-bottom:1px solid var(--cream-shade); }
+  .merge-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 2px; border-bottom:1px solid var(--rule-soft); }
   .merge-row:last-of-type { border-bottom:none; margin-bottom:10px; }
   .merge-row-txt { font-size:14px; color:var(--ink); }
   .merge-undo { flex:none; width:26px; height:26px; border-radius:50%; border:1px solid var(--rule); background:none;
@@ -974,13 +989,13 @@
   .rr-standings th { background:var(--ink); color:var(--cream); padding:6px 8px; font-weight:600;
     font-family:var(--font-text); text-align:left; font-size:13px; }
   .rr-standings th.num { text-align:center; }
-  .rr-standings td { padding:6px 8px; border-bottom:1px solid var(--cream-shade); color:var(--ink); }
+  .rr-standings td { padding:6px 8px; border-bottom:1px solid var(--rule-soft); color:var(--ink); }
   .rr-standings td.num { text-align:center; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-weight:600; }
   .rr-standings tr.rr-champ td { background:var(--brass-deep); color:var(--cream); font-weight:600; }
   .rr-standings tr.rr-finalist td { background:color-mix(in srgb, var(--brass) 12%, transparent); }
   .rr-schedule { padding:0; }
   .rr-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
-    padding:8px 12px; border-bottom:1px solid var(--cream-shade); font-size:13px; }
+    padding:8px 12px; border-bottom:1px solid var(--rule-soft); font-size:13px; }
   .rr-teams { flex:1; color:var(--ink); }
   .rr-vs { color:var(--ink-soft); margin:0 4px; }
   .rr-result { font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size:13px; color:var(--brass-text); white-space:nowrap; }
@@ -8769,7 +8784,7 @@ window.SOMERSET_FB_CONFIG = {
         ui.tSetup = { players: arr, format: "single", drawn: null, instantDeathMoon: loadInstantDeathMoon() }; render();
       } }, [ "Set up " + ui.tCount + " players" ])
     ]));
-    card.appendChild(el("div", { style:"padding:0 12px 28px; border-top:1px solid var(--cream-shade); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
+    card.appendChild(el("div", { style:"padding:0 12px 28px; border-top:1px solid var(--rule-soft); margin-top:2px; display:flex; flex-direction:column; align-items:center;" }, [
       el("p", { class:"join-divider disp" }, ["Already have a tournament?"]),
       el("button", { class:"btn btn-cancel disp", style:"padding:12px 24px;", onClick:function(){ ui.joinSheet = true; render(); } }, ["Join With Code"])
     ]));
