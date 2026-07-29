@@ -27,8 +27,18 @@ const AUDIT = () => {
     const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
     return (hi + 0.05) / (lo + 0.05);
   };
+  /* Two computed forms to handle. A plain colour resolves to rgb()/rgba() with
+     0-255 channels; a color-mix() -- which is how the dark themes tint the pad
+     seam -- resolves to color(srgb r g b / a) with 0-1 channels instead. Reading
+     only the first silently returned null and blew up downstream. */
   const parse = (s) => {
-    const m = String(s).match(/rgba?\(([^)]+)\)/);
+    const str = String(s);
+    const srgb = str.match(/color\(srgb\s+([^)]+)\)/);
+    if (srgb) {
+      const p = srgb[1].split(/[\s/]+/).filter(Boolean).map(Number);
+      return { rgb: [p[0], p[1], p[2]].map((c) => Math.round(c * 255)), a: p.length > 3 ? p[3] : 1 };
+    }
+    const m = str.match(/rgba?\(([^)]+)\)/);
     if (!m) return null;
     const p = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
     return { rgb: [p[0], p[1], p[2]], a: p.length > 3 ? p[3] : 1 };
@@ -37,7 +47,8 @@ const AUDIT = () => {
 
   const NAMES = ["--felt", "--felt-deep", "--cream", "--cream-shade", "--rule", "--ink",
     "--ink-soft", "--red", "--brass", "--brass-text", "--control", "--mast", "--mast-soft",
-    "--mast-hi", "--mast-lo", "--felt-wash", "--felt-wash-strong", "--plum"];
+    "--mast-hi", "--mast-lo", "--felt-wash", "--felt-wash-strong", "--plum",
+    "--pad-edge", "--pad-seam"];
 
   // Paint each token onto a probe element so var() aliases resolve to literals.
   const probe = document.createElement("div");
@@ -57,8 +68,28 @@ const AUDIT = () => {
 
   add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"]);
   add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"]);
-  add(".pad dashed outline vs felt", over({ rgb: cream, a: 0.4 }, felt), felt);
-  add("pad (cream) vs felt background", cream, felt);
+  /* The pad's two edge treatments are per-theme tokens, so resolve them rather
+     than restating their values here -- a copy would keep reporting the old
+     cream tint after index.html moved on. Both are measured against --felt-deep
+     as well: body is a radial gradient from felt to felt-deep, and the darker
+     end is the worst case for the warm line the light themes use. */
+  const deep = R("--felt-deep").rgb;
+  add(".pad dashed outline vs felt", over(R("--pad-seam"), felt), felt, resolved["--pad-seam"]);
+  add(".pad dashed outline vs felt-deep (gradient's dark end)", over(R("--pad-seam"), deep), deep);
+  /* A fully transparent ring is the dark themes' deliberate answer, not a miss --
+     scoring it would report 1.00 and flag the one case that needs no fix. */
+  const ring = R("--pad-edge");
+  if (ring.a === 0) {
+    checks.push({ name: ".pad edge ring — none, by design (cream vs felt below carries the edge)", ratio: null });
+  } else {
+    add(".pad edge ring vs felt", over(ring, felt), felt, resolved["--pad-edge"]);
+    add(".pad edge ring vs felt-deep (gradient's dark end)", over(ring, deep), deep);
+  }
+  /* Still ~1.1 on the light themes and that is not a defect to chase: --cream is
+     byte-identical across aubergine/aubergine-light by construction and --felt
+     carries --mast-soft's tuning, so neither tone can move. The ring above is
+     what carries the edge there -- read the two lines together. */
+  add("pad (cream) vs felt background — edge ring above carries this on light felt", cream, felt);
   add("--plum score bar vs cream-shade track", R("--plum").rgb, R("--cream-shade").rgb);
   add("--rule score bar vs cream-shade track", R("--rule").rgb, R("--cream-shade").rgb);
   add("--mast on felt (masthead)", R("--mast").rgb, felt);
@@ -90,6 +121,7 @@ const AUDIT = () => {
       const { checks } = await page.evaluate(AUDIT);
       console.log("\n=== theme: " + theme + " ===");
       for (const c of checks) {
+        if (c.ratio == null) { console.log("        —  " + c.name); continue; }
         const flag = c.ratio < 1.25 ? "  <<< INVISIBLE" : c.ratio < 3 ? "  (low)" : "";
         console.log(
           "  " + c.ratio.toFixed(2).padStart(7) + "  " + c.name +

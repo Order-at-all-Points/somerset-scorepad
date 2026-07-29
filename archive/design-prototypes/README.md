@@ -3,13 +3,14 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Four experiments live here, at different stages:
+Five experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
 | **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
+| **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge` (1px ring, 4.5:1) and `--pad-seam` (dashed outline, 3.2:1) per theme. Fixes the light-theme finding below. A lighter ring and a heavier-shadow alternative are kept as the two things that look plausible until you see them side by side. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
@@ -18,6 +19,11 @@ and `aubergine-light` is a token-for-token copy of `aubergine` apart from
 `--felt`/`--felt-deep` and the `--mast-*` family — so `--cream` and `--ink` are
 identical in both, and `--press-*` lives in `:root` as a single pair. The
 asymmetry is deliberate; see the comment beside the tokens.
+
+`--pad-edge`/`--pad-seam` are the third case and go **per-theme**: they draw the
+pad's outline *against the felt*, so like `--mast-*` they have to flip with it.
+Which side of that split a token falls on is decided by what it contrasts
+against, not by what it sits on.
 
 ## Running
 
@@ -34,6 +40,7 @@ node archive/design-prototypes/capture-screens.js  # real DOM -> out/screens.jso
 node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
 node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
 node archive/design-prototypes/build-press.js      # -> out/press.html
+node archive/design-prototypes/build-pad.js        # -> out/pad.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -110,17 +117,38 @@ Worth knowing before extending any of this.
 - **A prototype page needs its own `<!doctype>` and viewport meta.** Without
   them iOS lays out at 980px in quirks mode and the page is unusable on the
   device it is describing.
+- **Screenshots are not deterministic unless you disable `.fade`.** The 350ms
+  entry animation lands mid-flight, so hashing two shots of the *same* file
+  gives two different answers — which makes a before/after diff look like a
+  change everywhere and prove nothing. `newContext({ reducedMotion: "reduce" })`
+  hits the `prefers-reduced-motion` rule the app already honours; with it, the
+  same file twice hashes identically and a real diff stands out.
+- **`serve.js` refuses dot-paths, including your scratch baseline.** Writing a
+  `git show HEAD:index.html` comparison copy to `.before.html` gets a refusal,
+  and a screenshot of the error page hashes the same for every theme — which
+  reads as "nothing changed" rather than "nothing loaded". Give baselines an
+  ordinary name.
+- **`color-mix()` computes to `color(srgb …)`, not `rgb()`.** Channels come back
+  as 0–1 floats in a different function name, so a parser that only matches
+  `rgba?\(` returns null on exactly the tokens that use it (the dark themes'
+  `--pad-seam`). `audit-contrast.js` handles both forms.
 
 ## Findings these produced
 
-`audit-contrast.js` output, for reference — none of these are fixed:
+`audit-contrast.js` output, for reference. Only the pad one is fixed:
 
-- `--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
-  nav tabs and the OPTIONS pill have no fill anywhere in the app.
-- In `aubergine-light` the pad measures **1.13:1** against the felt and the
+- ~~In `aubergine-light` the pad measures **1.13:1** against the felt and the
   `.pad` dashed outline **1.05:1** — the cream-paper-on-felt metaphor does not
-  render in the shipped Light theme. The theme was copied token-for-token from
-  the dark one; several dark-specific values did not survive the flip.
+  render in the shipped Light theme.~~ **Fixed** via `--pad-edge`/`--pad-seam`;
+  see `build-pad.js`. The pad-vs-felt line still reads 1.13 and always will —
+  neither tone could move — so the ring is what carries the edge now, and the
+  audit prints the two lines together for that reason. Both light themes were
+  affected, not just the shipped one, since they share `--felt`.
+- `--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
+  nav tabs and the OPTIONS pill have no fill anywhere in the app. Note
+  `aubergine-light` inherited the dark themes' *white* wash verbatim
+  (`rgba(255,255,255,.04)` on light felt, 1.01:1) where Classic Light uses a
+  black one — the same copied-from-dark miss the pad edge turned out to be.
 - `--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
   control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.
   `--brass-text` on cream measures 5.02:1, so the palette already contains the

@@ -70,7 +70,9 @@
        per-theme because the FELT inverts; the pad never does, so one pair does
        the whole app. Moving these into the theme blocks to "match" --mast-*
        would press the very same cream two different ways depending on a setting
-       that doesn't touch it.
+       that doesn't touch it. --pad-edge/--pad-seam are the mirror case and do
+       live per-theme: they draw the pad's edge *against the felt*, so they have
+       to flip with it.
        Warm brown rather than black: a neutral shadow turns --ink grey and cold
        against cream. Near-opaque white because a light ground gives a faint
        highlight nothing to register against.
@@ -120,6 +122,7 @@
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
     --plum:var(--felt-deep);   /* this family's own deep wine, not the aubergine purple */
+    --pad-edge:transparent; --pad-seam:color-mix(in srgb, var(--cream) 40%, transparent);
   }
   /* Light default: Linen Daylight — felt goes pale for the first time, so text
      that sits on it has to flip dark (--mast/--mast-soft below) instead of
@@ -142,6 +145,7 @@
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
     --plum:var(--ink);   /* this family has no deep tone that carries cream text — keep the original near-black */
+    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
   }
   /* Rocket Fuel: originally an additional pinnable dark option alongside
      Mahogany Parlor (not tied to Auto) — eggplant baize, warm gold instead
@@ -162,6 +166,7 @@
     --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
+    --pad-edge:transparent; --pad-seam:color-mix(in srgb, var(--cream) 40%, transparent);
   }
   /* Rocket Fuel Light: promoted 2026-07-08 from the "aubergine-light-test"
      exploration — identical to Rocket Fuel dark (aubergine) token for
@@ -190,6 +195,11 @@
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
+    /* The one place this block deviates from the dark copy beyond --felt/--mast-*:
+       the pad's edge reads against the FELT, and the felt is light here. Dark's
+       transparent ring and cream-tinted seam are both no-ops on this ground
+       (1.13:1 and 1.05:1) — same class of miss as --mast-* would have been. */
+    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
   }
   /* ARCHIVE — not wired into the Display sheet picker, reachable only by
      setting data-theme="aubergine-light-archive-purple-primary" manually
@@ -210,6 +220,7 @@
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--brass);
+    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
@@ -291,9 +302,15 @@
     color:var(--mast-soft); cursor:pointer; padding:0; }
   .menu-btn:active { opacity:.6; }
 
-  /* The dashed outline floats 6px off the pad's edge — a stitched seam on the felt ground. */
-  .pad { background:var(--cream); border-radius:var(--r-card); box-shadow:0 1px 2px rgba(0,0,0,.15), 0 12px 32px rgba(0,0,0,.22); overflow:hidden;
-    outline:1.5px dashed color-mix(in srgb, var(--cream) 40%, transparent); outline-offset:6px; }
+  /* The dashed outline floats 6px off the pad's edge — a stitched seam on the felt ground.
+     --pad-edge is a 1px ring drawn just outside the border-box (spread, not a
+     border, so nothing inside the pad shifts by a pixel). On dark felt it's
+     transparent: --cream against --felt is 13.6:1 there and the sheet's edge
+     needs no help. On light felt the two tones are 1.13:1 and the ring is the
+     only thing saying where the paper stops — see build-pad.js. */
+  .pad { background:var(--cream); border-radius:var(--r-card);
+    box-shadow:0 0 0 1px var(--pad-edge), 0 1px 2px rgba(0,0,0,.15), 0 12px 32px rgba(0,0,0,.22); overflow:hidden;
+    outline:1.5px dashed var(--pad-seam); outline-offset:6px; }
   .fade { animation: fade .35s ease both; }
   @keyframes fade { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
   @media (prefers-reduced-motion: reduce) { .fade { animation:none; } }
