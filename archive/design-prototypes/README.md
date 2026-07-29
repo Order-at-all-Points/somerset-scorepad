@@ -3,7 +3,7 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Eight experiments live here, at different stages:
+Nine experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
@@ -15,6 +15,7 @@ Eight experiments live here, at different stages:
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
+| **Depth on the seat tiles** (`build-seats.js`) | **Open — nothing applied.** The four `.seat` tiles are the flattest objects on the pad. Laddered on four axes — lift, inner edge, face texture, and the combinations — every variant styling `.seat` alone. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -41,6 +42,14 @@ rather than a nudge to the first, which would have broken the job it was already
 doing correctly. Before adjusting a token because one usage looks wrong, check
 what else is asking for it.
 
+The shape also shows up *forwards*, as a proposal rather than a bug, which is
+easier to catch: `build-seats.js` row E3 paints `--felt` inside the pad to make
+the seat diagram look like a card table. Same move — a token tuned as the ground
+the paper sits **on**, asked to be a fill **in** it — and it takes the `--brass`
+dealer tag and arrow down with it, since those were picked to sit on cream.
+**A token borrowed across the pad/felt boundary drags everything already tuned
+for the old ground.**
+
 ## Running
 
 Playwright is a local dev dependency, and `package.json` is gitignored — so on
@@ -61,6 +70,7 @@ node archive/design-prototypes/build-brass.js      # -> out/brass.html
 node archive/design-prototypes/build-rules.js      # -> out/rules.html
 node archive/design-prototypes/build-button.js     # -> out/button.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
+node archive/design-prototypes/build-seats.js      # -> out/seats.html           (needs capture first)
 ```
 
 Where a generator has a shipped variant, that row renders whatever `index.html`
@@ -154,6 +164,21 @@ Worth knowing before extending any of this.
   and a screenshot of the error page hashes the same for every theme — which
   reads as "nothing changed" rather than "nothing loaded". Give baselines an
   ordinary name.
+- **A two-theme grid can be a no-op by construction.** `aubergine` and
+  `aubergine-light` differ only in `--felt`/`--felt-deep`, `--mast-*`,
+  `--felt-wash*` and `--pad-edge`. `--cream`, `--cream-shade`, `--rule`, `--ink`,
+  `--ink-soft`, `--control` and `--seat-rule` are byte-identical. So anything
+  living entirely **on the pad** renders the same in both, and a side-by-side
+  proves nothing unless a variant reaches for a felt token — which is exactly
+  what makes it worth keeping: in `build-seats.js` the only row whose two columns
+  differ is the only row doing something wrong. Check which side of the boundary
+  an experiment sits on before assuming the toggle is telling you anything.
+- **`.seat.dealer` owns its own `box-shadow`.** It carries
+  `inset 0 0 0 2px var(--brass)` for the dealer ring, so any depth added to
+  `.seat` is silently dropped on the one tile the eye goes to first — and the
+  diagram ends up with three deep tiles and one flat one. Every variant in
+  `build-seats.js` restates the dealer. Same trap anywhere a state class
+  re-declares a shorthand.
 - **`color-mix()` computes to `color(srgb …)`, not `rgb()`.** Channels come back
   as 0–1 floats in a different function name, so a parser that only matches
   `rgba?\(` returns null on exactly the tokens that use it (the dark themes'

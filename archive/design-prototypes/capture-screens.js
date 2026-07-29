@@ -75,10 +75,20 @@ const grab = (page) =>
       { s: 0, b: 9, t: 5 }, { s: 1, b: 6, t: 8 }, { s: 2, b: 8, t: 11 }, { s: 3, b: 6, t: 3 },
       { s: 0, b: 7, t: 9 }, { s: 1, b: 6, t: 8 }, { s: 2, b: 9, t: 12 },
     ];
-    for (const d of deals) {
+    for (let i = 0; i < deals.length; i++) {
+      const d = deals[i];
       if (await newGame.playAgainOfferVisible(page)) break;
       if ((await handEntry.recordDealState(page)).state !== "ready") break;
       await handEntry.playDeal(page, { bidder: { seat: d.s }, bid: d.b, pointsTaken: d.t });
+
+      /* The seat diagram in its working state, for build-seats.js: named seats, a
+         dealer somewhere other than the bottom, live totals above and deal rows
+         below. Taken here rather than off a fresh board because the question that
+         generator asks is how much depth the tiles want, and on an empty board
+         they are the only thing on the pad — anything added to them looks better
+         there than it will in the hand. Three deals in, the dealer has rotated
+         and the rows have started to crowd the diagram from below. */
+      if (i === 2) out["game-play"] = { title: "Game — in play", html: await grab(page) };
     }
     if (await newGame.playAgainOfferVisible(page)) await newGame.dismissPlayAgainOffer(page);
 

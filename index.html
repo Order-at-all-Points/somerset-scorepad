@@ -634,17 +634,40 @@
      overflow:hidden. Kept separate so the floating .dealer-tag (a sibling of .seat,
      positioned above it) never gets clipped by that overflow:hidden. */
   .seat-wrap { position:absolute; transform:translate(-50%,-50%); width:96px; max-width:42%; }
+  /* The tiles are meant to read as players sitting at a table, and flat they read
+     as four labels. Two things give them depth, and neither adds an element —
+     drawing an actual table under them was tried and is the wrong answer (the pad
+     is already paper on a card table; see build-seats.js, group E).
+     The shadow is TWO layers, which is the whole difference. The app's existing
+     weights are 0 1px 2px/.1 for a secondary control (.btn-cancel casts exactly
+     this, which is what .seat had) and /.25 for the raised fills — both are a
+     button standing on the surface. A card is a thin object lying ON it: a tight
+     contact shadow plus a longer, weaker one it sits inside. Single-layer at any
+     weight just makes the tile look like a button, which is a different claim.
+     The gradient runs toward --cream-shade so the face has a direction. It has to
+     be background-image rather than folded into the shorthand, because
+     .seat.dealer re-declares `background` — see the note there. */
   .seat { text-align:center;
     background:var(--control);
+    background-image:linear-gradient(var(--control) 0%, color-mix(in srgb, var(--control) 62%, var(--cream-shade)) 100%);
     border:1.5px solid var(--seat-rule); border-radius:var(--r-control); padding:6px 4px; cursor:pointer; overflow:hidden;
-    box-shadow:0 1px 2px rgba(0,0,0,.1);
+    box-shadow:0 1px 1px rgba(0,0,0,.14), 0 3px 8px rgba(0,0,0,.10);
     transition:transform .08s ease; }
   .seat:active { transform:scale(.93); box-shadow:none; }
   .seat .pname { font-family:var(--font-text); font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .seat .pteam { font-family:var(--font-text); font-size:11px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:clip; }   /* 11px = HIG minimum (was 10px) */
+  /* Two traps here, both about this rule re-declaring what .seat already set.
+     It used to repeat `background:var(--control)`, which was a no-op against an
+     identical value above — until .seat gained a gradient, at which point the
+     shorthand would have reset background-image to none and left the dealer the
+     one flat tile in the diagram. Removed rather than restated: there is no
+     reason for the dealer's face to differ from the others.
+     The box-shadow is the same hazard and cannot be removed, because the brass
+     ring lives in it. So the lift has to be repeated here verbatim, with the ring
+     first — get this wrong and the tile the eye goes to first is the only one
+     that doesn't sit on the paper. If .seat's shadow changes, change it here. */
   .seat.dealer { border-color:var(--brass-text);
-    background:var(--control);
-    box-shadow:inset 0 0 0 2px var(--brass), 0 1px 2px rgba(0,0,0,.12); }
+    box-shadow:inset 0 0 0 2px var(--brass), 0 1px 1px rgba(0,0,0,.14), 0 3px 8px rgba(0,0,0,.10); }
   /* Plain-language backup for the arrow/ring: names the dealer outright so nobody
      has to decode a symbol to find them. Floats above the tile rather than adding
      a line inside it, so the tile's height/centering never shifts when the dealer
