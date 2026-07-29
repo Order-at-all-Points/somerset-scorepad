@@ -3,13 +3,16 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Four experiments live here, at different stages:
+Seven experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
 | **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
+| **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge`, a 1px ring at 2.5:1, per theme; the seam untouched. Fixes the light-theme finding below. Keeps the crisper 4.5:1 ring and the darkened seam — both measure better and were rejected on looking at them. |
+| **What carries the label on a brass fill** (`build-brass.js`) | **Parked — decision recorded, nothing applied.** The 2.50:1 pairing ships. Both fixes were built, shipped and reverted; the generator holds all three states and the arithmetic showing there is no fourth. |
+| **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
@@ -18,6 +21,24 @@ and `aubergine-light` is a token-for-token copy of `aubergine` apart from
 `--felt`/`--felt-deep` and the `--mast-*` family — so `--cream` and `--ink` are
 identical in both, and `--press-*` lives in `:root` as a single pair. The
 asymmetry is deliberate; see the comment beside the tokens.
+
+`--pad-edge` is the third case and goes **per-theme**: it draws the pad's edge
+*against the felt*, so like `--mast-*` it has to flip with it. `--pad-seam` stays
+in `:root` — it is the paper's own colour in every theme, and the fact that this
+makes it invisible on light felt is the decision, not an oversight. Which side of
+the split a token falls on is decided by what it contrasts against, not by what
+it sits on.
+
+Three of the audit findings turned out to be the same shape, and it is worth
+recognising on sight: **one token doing two jobs, where only one job needs the
+contrast.** `--felt-wash` tinting the felt vs. filling a badge on the pad;
+`--brass` as an accent nothing sits on vs. as a ground under a cream label;
+`--cream-shade` as a fill vs. as a 1px separator. Each looked like "this value is
+too weak" and was really "this value is being asked for by something it was never
+tuned for" — so each fix was a second token (`--brass-deep`, `--rule-soft`)
+rather than a nudge to the first, which would have broken the job it was already
+doing correctly. Before adjusting a token because one usage looks wrong, check
+what else is asking for it.
 
 ## Running
 
@@ -34,6 +55,9 @@ node archive/design-prototypes/capture-screens.js  # real DOM -> out/screens.jso
 node archive/design-prototypes/build-masthead.js   # -> out/masthead.html
 node archive/design-prototypes/build-subhead.js    # -> out/subhead.html
 node archive/design-prototypes/build-press.js      # -> out/press.html
+node archive/design-prototypes/build-pad.js        # -> out/pad.html
+node archive/design-prototypes/build-brass.js      # -> out/brass.html
+node archive/design-prototypes/build-rules.js      # -> out/rules.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -110,20 +134,70 @@ Worth knowing before extending any of this.
 - **A prototype page needs its own `<!doctype>` and viewport meta.** Without
   them iOS lays out at 980px in quirks mode and the page is unusable on the
   device it is describing.
+- **Screenshots are not deterministic unless you disable `.fade`.** The 350ms
+  entry animation lands mid-flight, so hashing two shots of the *same* file
+  gives two different answers — which makes a before/after diff look like a
+  change everywhere and prove nothing. `newContext({ reducedMotion: "reduce" })`
+  hits the `prefers-reduced-motion` rule the app already honours; with it, the
+  same file twice hashes identically and a real diff stands out.
+- **`serve.js` refuses dot-paths, including your scratch baseline.** Writing a
+  `git show HEAD:index.html` comparison copy to `.before.html` gets a refusal,
+  and a screenshot of the error page hashes the same for every theme — which
+  reads as "nothing changed" rather than "nothing loaded". Give baselines an
+  ordinary name.
+- **`color-mix()` computes to `color(srgb …)`, not `rgb()`.** Channels come back
+  as 0–1 floats in a different function name, so a parser that only matches
+  `rgba?\(` returns null on exactly the tokens that use it (the dark themes'
+  `--pad-seam`). `audit-contrast.js` handles both forms.
 
 ## Findings these produced
 
-`audit-contrast.js` output, for reference — none of these are fixed:
+`audit-contrast.js` output, for reference. Only the pad one is fixed:
 
-- `--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
-  nav tabs and the OPTIONS pill have no fill anywhere in the app.
-- In `aubergine-light` the pad measures **1.13:1** against the felt and the
+- ~~In `aubergine-light` the pad measures **1.13:1** against the felt and the
   `.pad` dashed outline **1.05:1** — the cream-paper-on-felt metaphor does not
-  render in the shipped Light theme. The theme was copied token-for-token from
-  the dark one; several dark-specific values did not survive the flip.
-- `--cream` on `--brass` is **2.50:1** in both live themes — every filled brass
-  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) fails AA.
-  `--brass-text` on cream measures 5.02:1, so the palette already contains the
-  fix.
-- `--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
-  is invisible.
+  render in the shipped Light theme.~~ **Fixed** via `--pad-edge`; see
+  `build-pad.js`. Both light themes were affected, not just the shipped one,
+  since they share `--felt`.
+  The pad-vs-felt line still reads 1.13 and always will — neither tone could
+  move — and the seam's 1.05 is now deliberate too, so **neither number is the
+  check any more**. The audit asserts the thing that actually matters instead:
+  *exactly one* of ring/seam carries the edge on a given ground (seam on dark,
+  ring on light), and the row that can fail is the pair being absent. Scoring
+  them independently just reports INVISIBLE on whichever one is meant to be.
+- ~~`--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
+  nav tabs and the OPTIONS pill have no fill anywhere in the app.~~ **Half wrong,
+  and now fixed.** Only `aubergine-light` was actually broken: it inherited the
+  dark themes' *white* wash verbatim (`rgba(255,255,255,.04)`), which on light
+  felt lightens toward the pad's cream — the exact opposite of recessing a
+  control — and measured 1.01:1, so the inactive tabs had no fill and the active
+  one stopped reading as selected. It now uses Classic Light's black values.
+  The other three themes were fine all along at 1.11–1.12: a 132×44 filled tab
+  with its own border reads clearly at that ratio, which the 1.25 flag was never
+  meant to judge. `audit-contrast.js` now scores those two rows as tints against
+  a 1.04 floor, so a real disappearance still trips it. **Reading a flag as a
+  finding without looking at the screen is what merged this with the pad
+  problem, where 1.13 genuinely was the whole boundary.**
+- `--cream` on `--brass` is **2.50:1** in the live themes — every filled brass
+  control (`.btn-record`, `.btn-new`, `.chip.on`, `.hist-win-badge`) is below AA.
+  **Reviewed 2026-07-29 and kept**, on the judgement that it reads fine in the
+  hand. Not an open finding, and please read `build-brass.js` before touching it
+  — it has been fixed twice and reverted twice:
+  - *Keep the light label, darken the ground* — measures 5.02, and turns
+    `.btn-record`, the primary GO control, a dark olive that stops out-weighing
+    `.btn-add` beside it.
+  - *Keep the gold, move the label* — measures 5.19, and the label has to go to
+    near-black.
+  There is **no third option**. `--brass` sits at luminance .314; a cream label
+  at 4.5:1 forces its ground below .152, and on that gold a passing label needs
+  luminance ≤ .031. Either the button stops being gold or the label stops being
+  light. The audit still prints the number, marked `soft` with the review date,
+  so a change to `--brass` or `--cream` still moves it.
+- ~~`--cream-shade` on `--cream` is **1.14:1**, so every row separator in the app
+  is invisible.~~ **Fixed.** Third instance of the same shape as the two above:
+  one token doing two jobs, and only one of them needing the contrast. As a
+  *fill* 1.14 is correct and stays — pressed states, disabled buttons, the
+  score-bar track, the pending deal row, `.stats-hero-champ` (which moved onto it
+  from `--felt-wash-strong`, a felt token being painted on the pad). The 15
+  separator sites moved to `--rule-soft`. See `build-rules.js` for why the weight
+  was bounded on both sides rather than chosen.
