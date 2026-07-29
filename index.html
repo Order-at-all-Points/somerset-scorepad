@@ -58,6 +58,26 @@
        a 46px chip; it read as too assertive against the cream pad, especially
        on the score bar. Keeping the background-weight tone deliberately. */
     --plum:#2E1B3A;
+    /* Letterpress for text on the CREAM PAD — the deboss pair the masthead's
+       --mast-hi/--mast-lo are to the felt. Same optics: light reads as coming
+       from above, so the shadow goes up (upper inner wall of the impression)
+       and the highlight down (lower lip catching light).
+       Here, not in the theme blocks, for the same reason as --plum above: the
+       pad doesn't vary across the themes anyone can pick. aubergine-light is a
+       token-for-token copy of aubergine apart from --felt/--felt-deep and the
+       --mast-* family, so --cream and --ink are identical in both, and the two
+       retired classic themes differ only in shade of light. --mast-* has to be
+       per-theme because the FELT inverts; the pad never does, so one pair does
+       the whole app. Moving these into the theme blocks to "match" --mast-*
+       would press the very same cream two different ways depending on a setting
+       that doesn't touch it.
+       Warm brown rather than black: a neutral shadow turns --ink grey and cold
+       against cream. Near-opaque white because a light ground gives a faint
+       highlight nothing to register against.
+       Sized for display numerals and nothing smaller. A 1px offset pair is a
+       carved edge on 48px type and just a loss of stem definition by 17px,
+       where it stops reading as an impression at all — see build-press.js. */
+    --press-lo:rgba(70,52,30,.30); --press-hi:rgba(255,255,255,.90);
   }
   /* Theme key naming convention (internal [data-theme] values, NOT the
      user-facing Display-sheet chip labels, which churn freely and are just
@@ -294,7 +314,8 @@
     line-height:1.2; cursor:default; }
   /* When one team's name wraps, both stack the partner onto its own line. */
   .team-name-ro.tn-stack .tn-b { display:block; }
-  .score { font-family:var(--font-display); font-variant-numeric:tabular-nums; font-size:48px; font-weight:600; line-height:1.1; margin-top:4px; }   /* overrides .mono (same specificity, later rule) — big totals are display numerals */
+  .score { font-family:var(--font-display); font-variant-numeric:tabular-nums; font-size:48px; font-weight:600; line-height:1.1; margin-top:4px;
+    text-shadow:0 -1px 1px var(--press-lo), 0 1px 0 var(--press-hi); }   /* overrides .mono (same specificity, later rule) — big totals are display numerals, pressed into the pad (see --press-lo/--press-hi) */
   .track { height:6px; background:var(--cream-shade); border-radius:3px; margin:8px 12px 0; overflow:hidden; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 15%, transparent); }
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
 
