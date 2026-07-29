@@ -427,6 +427,19 @@
   .track > span { display:block; height:100%; border-radius:3px; transition:width .4s ease; }
 
   .empty { text-align:center; color:var(--ink-soft); padding:20px 16px; margin:0; }
+  /* History and Stats on first run are the only screens where the empty message
+     IS the screen rather than a caption under a list. .empty's 20px is right for
+     the caption and leaves the board reading as chrome with nothing in it, so
+     those two get a composed block instead. The pad still shrink-wraps: the felt
+     below it is a card table, and stretching a card to 100dvh to fill it says
+     more is coming. See build-vertical.js — the measurement said all five short
+     screens were the same defect and only these two were. */
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; padding:46px 24px 42px; text-align:center; }
+  .empty-state svg { color:var(--rule); margin-bottom:12px; }
+  .empty-state h4 { margin:0; font-family:var(--font-display); font-size:20px; font-weight:600; color:var(--ink); }
+  .empty-state p { margin:5px 0 20px; font-size:13px; color:var(--ink-soft); max-width:30ch; line-height:1.45; }
+  .empty-state .btn-new { width:auto; padding:13px 26px; border-radius:var(--r-pill); }
   .deal-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--rule-soft); cursor:pointer; }
   .deal-row.open { border-bottom-color:transparent; }
   /* The bid's been confirmed but the hand hasn't been recorded yet (game.pendingBid) —
@@ -4446,6 +4459,38 @@ window.SOMERSET_FB_CONFIG = {
   }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+  // el() builds with createElement, which makes an inert HTMLUnknownElement out
+  // of <svg> — SVG needs its namespace or it renders nothing at all. Used by the
+  // bracket diagram and the zero-state icons.
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svgIcon(px, shapes) {
+    var s = document.createElementNS(SVGNS, "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("width", px); s.setAttribute("height", px);
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor");
+    s.setAttribute("stroke-width", "1.3");
+    s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    s.setAttribute("aria-hidden", "true");
+    shapes.forEach(function (sh) {
+      var n = document.createElementNS(SVGNS, sh[0]);
+      Object.keys(sh[1]).forEach(function (k) { n.setAttribute(k, sh[1][k]); });
+      s.appendChild(n);
+    });
+    return s;
+  }
+
+  // The zero state for a board with nothing in it yet. Both callers offer the
+  // same way out because there is only one: the thing that fills either board is
+  // finishing a game, so the action is not a choice between routes.
+  function emptyState(icon, heading, body) {
+    return el("div", { class:"empty-state" }, [
+      icon,
+      el("h4", { class:"disp" }, [heading]),
+      el("p", {}, [body]),
+      el("button", { class:"btn-new disp", onClick:function(){ gotoView("game"); } }, ["Start a Game"])
+    ]);
+  }
+
   function stepper(value, onChange, min, max, label) {
     var input = el("input", {
       class:"step-val step-input mono", type:"text", inputmode:"numeric", pattern:"[0-9]*",
@@ -4778,11 +4823,24 @@ window.SOMERSET_FB_CONFIG = {
     renderModal(modalNoFade);
   }
 
+  // Switching top-level views. Factored out of the nav buttons so the zero-state
+  // boards' "Start a Game" lands in exactly the state tapping the Game tab does
+  // — the transient flags below are easy to miss and leaving one set strands the
+  // next render (a stale ui.activeMatch in particular renders the wrong board).
+  function gotoView(v) {
+    releaseMyHandLock();
+    ui.view = v;
+    if (v === "history") { ui.historySub = null; ui.statsPlayer = null; }
+    ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null;
+    ui.showEntry = false; ui.editNames = false;
+    render();
+  }
+
   function renderNav() {
     navEl.innerHTML = "";
     [["game","Game"],["history","History"],["tournament","Tournament"]].forEach(function (v) {
       navEl.appendChild(el("button", { class:"nav-btn disp" + (ui.view === v[0] ? " on" : ""),
-        onClick:function(){ releaseMyHandLock(); ui.view = v[0]; if (v[0] === "history") { ui.historySub = null; ui.statsPlayer = null; } ui.confirmEndT = false; ui.activeMatch = null; ui.matchMenu = null; ui.showEntry = false; ui.editNames = false; render(); } }, [v[1]]));
+        onClick:function(){ gotoView(v[0]); } }, [v[1]]));
     });
   }
 
@@ -7034,12 +7092,24 @@ window.SOMERSET_FB_CONFIG = {
       if (fileInput.files && fileInput.files[0]) importHistoryFile(fileInput.files[0]);
       fileInput.value = "";
     } }, []);
-    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      renderHistoryViewToggle("log"),
-      renderHistoryFilterRow()
-    ]);
+    // The filter row is gated on the LOG being empty, not on the filtered result
+    // being empty. Chips over a set with no members are chrome filtering nothing,
+    // but "No games match this filter" below keeps its chips deliberately — drop
+    // them there and the filter that hid everything is also the one you can no
+    // longer change, with no way back to All.
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") },
+      gameHistory.length
+        ? [renderHistoryViewToggle("log"), renderHistoryFilterRow()]
+        : [renderHistoryViewToggle("log")]);
     if (!gameHistory.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet."]));
+      card.appendChild(emptyState(
+        svgIcon(46, [
+          ["rect", { x:"4", y:"2.5", width:"16", height:"19", rx:"2.5" }],
+          ["path", { d:"M8 8h8M8 12h8M8 16h4" }]
+        ]),
+        "No games yet",
+        "Finished games land here, so you'll be able to review a detailed hand-by-hand record for every game you have played."
+      ));
     } else {
       var filterDef = HISTORY_FILTERS.find(function (f) { return f[0] === ui.historyFilter; }) || HISTORY_FILTERS[0];
       var filtered = gameHistory.filter(filterDef[2]);
@@ -7391,16 +7461,24 @@ window.SOMERSET_FB_CONFIG = {
     });
     var maxMetric = Math.max(1, players.length ? sortDef[2](players[0]) : 0);
 
-    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") }, [
-      renderHistoryViewToggle("stats"),
-      el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
-        return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
-          onClick:function(){ ui.statsSort = s[0]; softRender(); } }, [s[1]]);
-      }))
-    ]);
+    // Same gate as the log's filter row: nothing to sort, so no sort chips.
+    // Unlike the log there is no filtered-but-empty case here — the rank list is
+    // every player who has played, so players.length is the only emptiness.
+    var card = el("div", { class:"pad" + (suppressFade ? "" : " fade") },
+      players.length
+        ? [renderHistoryViewToggle("stats"),
+           el("div", { class:"stat-sort-row" }, STAT_SORTS.map(function (s) {
+             return el("button", { class:"stat-sort-chip" + (sortDef[0] === s[0] ? " on" : ""),
+               onClick:function(){ ui.statsSort = s[0]; softRender(); } }, [s[1]]);
+           }))]
+        : [renderHistoryViewToggle("stats")]);
 
     if (!players.length) {
-      card.appendChild(el("p", { class:"empty disp" }, ["No finished games yet.", el("br", {}, []), "Play a few to start building stats."]));
+      card.appendChild(emptyState(
+        svgIcon(46, [["path", { d:"M4.5 20.5V13M9.5 20.5V8.5M14.5 20.5v-6M19.5 20.5V4.5" }]]),
+        "No stats yet",
+        "Win rates, moons and streaks build up here, with a hand-by-hand breakdown for every player."
+      ));
     } else {
       players.forEach(function (p, idx) { card.appendChild(renderRankRow(p, idx, sortDef, maxMetric)); });
     }
@@ -9309,7 +9387,6 @@ window.SOMERSET_FB_CONFIG = {
     suppressFade = false;
   }
 
-  var SVGNS = "http://www.w3.org/2000/svg";
   function renderBracketDiagram(t) {
     var rounds = t.rounds, rowH = 74, colW = 150, boxW = 130, boxH = 52;
     var n0 = rounds[0].length, totalH = n0 * rowH, width = rounds.length * colW + 16;
