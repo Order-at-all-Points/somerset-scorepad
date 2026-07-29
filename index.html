@@ -46,8 +46,13 @@
        on-device, so typography works offline and costs no network request. */
     --font-display: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif;
     --font-text: -apple-system, system-ui, 'Helvetica Neue', sans-serif;
-    /* Deep accent used as a FILL under --cream text: the leading team's score
-       bar and the active view-filter/sort pill. Lives here, not in a theme
+    /* Deep accent used as a FILL under --cream text: the VIEWER'S OWN team's
+       score bar and the active view-filter/sort pill. (Said "the leading team's"
+       until 2026-07-29 and never meant it — renderScorePad picks the fill on
+       teamViewOrder position, not on score, so plum is whichever team renders
+       left: yours once you have identified, team 0 otherwise. The other team's
+       bar is --rule at 1.72:1 against its track, quiet on purpose, which only
+       reads as a bug if you believe the old comment.) Lives here, not in a theme
        block, because it doesn't vary across the themes anyone can actually
        pick — both aubergine variants share this exact value (it's their
        --felt). Deliberately NOT written as var(--felt): these are fills on
@@ -103,6 +108,30 @@
        per-theme: custom properties substitute where they are USED, so var(--rule)
        here resolves against whatever [data-theme] is on the html element. */
     --rule-soft:color-mix(in srgb, var(--rule) 60%, var(--cream));
+    /* Bevel for RAISED filled controls — .btn-record/.btn-new/.btn-add,
+       .btn-danger, .sheet-btn.primary, .chip.on, .who button.on. The third
+       depth treatment in the app and the only one that reads as coming UP off
+       the surface: --mast-* presses text into the felt and --press-* presses it
+       into the pad, both shadow-up/highlight-down. A raised edge is that
+       inverted — the top inner lip catches the light, the bottom falls into
+       shade — so these go highlight-first.
+       Warm rather than neutral, mixed from --cream and --ink instead of white
+       and black, for the reason --press-lo is warm: a neutral pair cools a
+       saturated fill, and every control this lands on is saturated (brass, red)
+       or near-black (--ink). At these alphas the difference is small, but it is
+       free, and it keeps the whole depth system in one family.
+       The useful range is narrow and both ends were found by rendering at TRUE
+       device scale, not zoomed — a 1px lip is the one thing a zoomed comparison
+       will lie to you about. Below ~25% the bevel is imperceptible on a phone
+       and ships as a no-op that only looks like a decision; past ~45% it reads
+       as a glossy key-cap, which is a different product from a baize scorepad.
+       These sit in the middle. Note what does NOT constrain it: the inner shadow
+       never reaches the label's glyphs even at double this weight, so the cream
+       label's 2.50:1 (see the note below) is not spent here. See build-button.js.
+       Nothing needed on :active: every one of these controls already sets
+       box-shadow:none when pressed, which drops the bevel with the lift. */
+    --bevel-hi:color-mix(in srgb, var(--cream) 32%, transparent);
+    --bevel-lo:color-mix(in srgb, var(--ink) 26%, transparent);
   }
   /* KNOWN, DELIBERATE: --cream on --brass measures 2.50:1 on every filled brass
      control (.btn-record, .btn-new, .sheet-btn.primary, .chip.on, .hist-win-badge,
@@ -506,7 +535,7 @@
   .who button.on { border-color:var(--ink);
     background:var(--ink);
     color:var(--cream);
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .who button.on:active { transform:scale(.96); box-shadow:none; }
 
   .stepper { display:flex; align-items:center; gap:8px; }
@@ -531,7 +560,7 @@
   .chip.on { border-color:color-mix(in srgb, var(--brass) 80%, black);
     background:var(--brass);
     color:var(--cream);
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .chip.on:active { transform:scale(.93); box-shadow:none; }
   .chip[disabled] { opacity:.45; cursor:default; box-shadow:none; }
   .chip[disabled]:active { transform:none; }
@@ -556,23 +585,23 @@
   .btn-record { flex:2; padding:12px 0; border:none;
     background:var(--brass);
     color:var(--cream); font-size:17px; font-weight:600;
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .btn-record:active { transform:scale(.97); box-shadow:none; }
   .btn-danger { flex:2; padding:12px 0; border:none;
     background:var(--red);
     color:var(--cream); font-size:17px; font-weight:600;
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .btn-danger:active { transform:scale(.97); box-shadow:none; }
   .btn-add { width:100%; padding:16px 0; border:none;
     background:var(--ink);
     color:var(--cream); font-size:17px; font-weight:600;
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .btn-add:active { transform:scale(.98); box-shadow:none; }
   .btn-add[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
   .btn-new { width:100%; padding:16px 0; border:none;
     background:var(--brass);
     color:var(--cream); font-size:17px; font-weight:600;
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .btn-new:active { transform:scale(.98); box-shadow:none; }
   .btn-new[disabled], .btn-record[disabled] { background:var(--cream-shade); color:var(--ink-soft); cursor:default; box-shadow:none; }
   .add-wrap { padding:16px 16px 20px; border-top:1px solid var(--rule-soft); display:flex; flex-direction:column; justify-content:center; }
@@ -659,7 +688,7 @@
   .sheet-btn.primary { border-color:color-mix(in srgb, var(--brass) 80%, black); font-weight:600;
     background:var(--brass);
     color:var(--cream);
-    box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .sheet-btn.primary:active { transform:scale(.98); box-shadow:none; }
   .sheet-btn.primary[disabled] { background:var(--cream-shade); color:var(--ink-soft); border-color:var(--rule); cursor:default; box-shadow:none; }
   .sheet-btn.ghost { border:none; background:transparent; color:var(--ink-soft); margin-bottom:0; min-height:40px; box-shadow:none; }

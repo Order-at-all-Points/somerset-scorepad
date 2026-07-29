@@ -3,7 +3,7 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Seven experiments live here, at different stages:
+Eight experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
@@ -13,6 +13,7 @@ Seven experiments live here, at different stages:
 | **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge`, a 1px ring at 2.5:1, per theme; the seam untouched. Fixes the light-theme finding below. Keeps the crisper 4.5:1 ring and the darkened seam — both measure better and were rejected on looking at them. |
 | **What carries the label on a brass fill** (`build-brass.js`) | **Parked — decision recorded, nothing applied.** The 2.50:1 pairing ships. Both fixes were built, shipped and reverted; the generator holds all three states and the arithmetic showing there is no fourth. |
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
+| **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
@@ -58,6 +59,7 @@ node archive/design-prototypes/build-press.js      # -> out/press.html
 node archive/design-prototypes/build-pad.js        # -> out/pad.html
 node archive/design-prototypes/build-brass.js      # -> out/brass.html
 node archive/design-prototypes/build-rules.js      # -> out/rules.html
+node archive/design-prototypes/build-button.js     # -> out/button.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 ```
 
@@ -131,6 +133,13 @@ Worth knowing before extending any of this.
   `align-items: stretch`. Without an explicit `width: 100%` the wrap collapses
   to its content width and the whole app narrows. Cost an hour in
   `build-vertical.js`.
+- **A zoomed comparison lies about 1px effects.** `build-button.js` frames are
+  390px wide and unscaled for this reason. A 1px bevel separates convincingly at
+  3× and can be completely imperceptible on the phone it ships to — the first
+  bevel value was picked from a zoomed render and was a no-op in the app. Any
+  hairline (bevels, rings, seams, separators) has to be judged at true device
+  scale, which is also why `screenshot-app.js` renders at 390×844 rather than
+  something roomier.
 - **A prototype page needs its own `<!doctype>` and viewport meta.** Without
   them iOS lays out at 980px in quirks mode and the page is unusable on the
   device it is describing.
