@@ -25,20 +25,31 @@
  *
  * So the edge has to be drawn rather than implied -- which is what paper on a
  * pale table actually looks like: you read the cut edge and the shadow under it,
- * not a change of colour. That makes the edge treatment a per-theme concern for
- * the same reason --mast-* is: its contrast partner is the FELT, and the felt
- * inverts. Hence --pad-edge/--pad-seam in the theme blocks rather than :root,
- * the mirror image of --press-* (pad-on-pad, so one pair covers every theme).
+ * not a change of colour. That makes --pad-edge a per-theme concern for the same
+ * reason --mast-* is: its contrast partner is the FELT, and the felt inverts.
+ * The mirror image of --press-*, which is pad-on-pad and so needs one value for
+ * every theme.
  *
  * Values are solved against --felt-deep, not --felt: body is a radial gradient
  * from felt at 18% to felt-deep at the bottom, so the darker end is where a warm
  * line has least to work with. Quoted ratios below are the worst case.
  *
- * SHIPPED: --pad-edge at .76 alpha (4.5:1) and --pad-seam at .62 (3.2:1) on the
- * light themes; dark themes keep a transparent edge and the cream seam they
- * already had. The rejected rows are kept because "the ring alone is enough" and
- * "a heavier shadow instead" are both plausible until you see them next to each
- * other at phone width.
+ * SHIPPED: --pad-edge at .506 alpha (2.5:1) on the light themes, transparent on
+ * the dark ones; the seam untouched everywhere, still the paper's own colour at
+ * 40%.
+ *
+ * The seam was the interesting part. Darkening it so it reads on light felt is
+ * the obvious move, it measures well (3.2:1, matching what it already does on
+ * dark felt), and it is wrong: 6px out in open felt, a dark dashed line stops
+ * reading as a stitched edge and becomes a box drawn around the pad. Rows A and
+ * E below are that, and the tell is that E -- seam only, no ring -- still looks
+ * bordered while C -- ring only -- does not. So on light felt the seam simply
+ * does not appear, and --pad-edge carries the edge alone.
+ *
+ * Which also means the ring wants to be quieter than the strongest option that
+ * passes. 4.5:1 is a crisper edge and reads as drawn; 2.5:1 is the quietest
+ * setting where the sheet still sits on the felt instead of floating above it.
+ * Both are below, adjacent, which is the only way that comparison means anything.
  *
  *   node archive/design-prototypes/build-pad.js
  *   node archive/design-prototypes/serve.js   # then open /pad.html
@@ -88,30 +99,33 @@ const seam = (a) => `[data-theme]{--pad-seam:${a}}`;
 
 /* `css: ""` means "as index.html currently ships", so a shipped row always
    renders the real file rather than a copy of it that can rot. */
+const DARK_SEAM = seam(BROWN(".62"));
+
 const VARIANTS = [
   { g: "The paper's edge — what tells you where the sheet stops",
-    t: "no edge, tone alone  (before this change — the dark panel is the whole argument)",
-    css: edge("transparent") + seam("color-mix(in srgb, var(--cream) 40%, transparent)") },
+    t: "no edge, tone alone  (before any of this — the dark panel is the whole argument)",
+    css: edge("transparent") },
   { g: "The paper's edge — what tells you where the sheet stops",
-    t: "hairline ring, 3.2:1  (rejected: matches the seam's weight, so the sheet has two equal outlines)",
-    css: edge(BROWN(".619")) },
+    t: "hairline ring, 2.5:1  (SHIPPED)", css: `` },
   { g: "The paper's edge — what tells you where the sheet stops",
     t: "hairline ring, 4.0:1", css: edge(BROWN(".714")) },
   { g: "The paper's edge — what tells you where the sheet stops",
-    t: "hairline ring, 4.5:1  (SHIPPED)", css: `` },
+    t: "hairline ring, 4.5:1  (rejected on review: measures best, reads as a border drawn around the pad)",
+    css: edge(BROWN(".764")) },
   { g: "The paper's edge — what tells you where the sheet stops",
     t: "no ring, heavier cast shadow instead  (rejected: reads as a hover state, and blurs the edge it is meant to define)",
     css: edge("transparent") +
       `.pad{box-shadow:0 2px 4px rgba(70,52,30,.28), 0 14px 34px rgba(70,52,30,.42)}` },
 
-  { g: "The stitched seam — decorative, and it has to stay subordinate",
-    t: "cream at 40%, as the dark themes tint it  (before this change: 1.05:1 on light felt)",
-    css: seam("color-mix(in srgb, var(--cream) 40%, transparent)") },
-  { g: "The stitched seam — decorative, and it has to stay subordinate",
-    t: "warm at 3.2:1, matching what the seam measures on dark felt  (SHIPPED)", css: `` },
-  { g: "The stitched seam — decorative, and it has to stay subordinate",
-    t: "warm at 4.5:1, same weight as the ring  (rejected: stitching louder than the sheet)",
-    css: seam(BROWN(".764")) },
+  { g: "The stitched seam — why it stays invisible on light felt",
+    t: "the paper's own colour at 40%, every theme  (SHIPPED — 3.3:1 on dark felt, 1.05:1 on light)",
+    css: `` },
+  { g: "The stitched seam — why it stays invisible on light felt",
+    t: "darkened to 3.2:1 so it reads on light felt too  (rejected: a box around the pad, not a stitched edge)",
+    css: DARK_SEAM },
+  { g: "The stitched seam — why it stays invisible on light felt",
+    t: "the same dark seam with NO ring — the tell: this still looks bordered, where a ring alone does not",
+    css: DARK_SEAM + edge("transparent") },
 ];
 
 /* Dark first as the control -- it is the look the light themes are failing to

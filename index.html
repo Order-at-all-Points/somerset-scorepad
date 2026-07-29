@@ -70,9 +70,9 @@
        per-theme because the FELT inverts; the pad never does, so one pair does
        the whole app. Moving these into the theme blocks to "match" --mast-*
        would press the very same cream two different ways depending on a setting
-       that doesn't touch it. --pad-edge/--pad-seam are the mirror case and do
-       live per-theme: they draw the pad's edge *against the felt*, so they have
-       to flip with it.
+       that doesn't touch it. --pad-edge below is the mirror case and does live
+       per-theme: it draws the pad's edge *against the felt*, so it has to flip
+       with it. --pad-seam sits here instead — see its own note.
        Warm brown rather than black: a neutral shadow turns --ink grey and cold
        against cream. Near-opaque white because a light ground gives a faint
        highlight nothing to register against.
@@ -80,6 +80,14 @@
        carved edge on 48px type and just a loss of stem definition by 17px,
        where it stops reading as an impression at all — see build-press.js. */
     --press-lo:rgba(70,52,30,.30); --press-hi:rgba(255,255,255,.90);
+    /* The dashed seam floating 6px off the pad. Tinted with the paper's own
+       colour, which is what a stitch looks like on dark felt — and on light felt
+       is 1.05:1, i.e. nothing. That is deliberate: a dark seam out in open felt
+       reads as a box drawn around the pad rather than a stitched edge, and was
+       tried and rejected (see build-pad.js, option A). The light themes separate
+       the pad with --pad-edge alone, so the seam is the same expression in every
+       theme and belongs here rather than in the theme blocks. */
+    --pad-seam:color-mix(in srgb, var(--cream) 40%, transparent);
     /* Row separators: the deal list, history groups, stats rank rows and the
        tile grid. These used --cream-shade, which is right as a FILL (pressed
        states, disabled buttons, the score-bar track, the pending row) and is
@@ -154,7 +162,7 @@
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
     --plum:var(--felt-deep);   /* this family's own deep wine, not the aubergine purple */
-    --pad-edge:transparent; --pad-seam:color-mix(in srgb, var(--cream) 40%, transparent);
+    --pad-edge:transparent;
   }
   /* Light default: Linen Daylight — felt goes pale for the first time, so text
      that sits on it has to flip dark (--mast/--mast-soft below) instead of
@@ -177,7 +185,7 @@
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
     --plum:var(--ink);   /* this family has no deep tone that carries cream text — keep the original near-black */
-    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
+    --pad-edge:rgba(70,52,30,.506);
   }
   /* Rocket Fuel: originally an additional pinnable dark option alongside
      Mahogany Parlor (not tied to Auto) — eggplant baize, warm gold instead
@@ -198,7 +206,7 @@
     --mast-hi:rgba(255,255,255,.16); --mast-lo:rgba(0,0,0,.62);
     --felt-wash:rgba(255,255,255,.04); --felt-wash-strong:rgba(255,255,255,.09);
     --seat-rule:var(--rule);
-    --pad-edge:transparent; --pad-seam:color-mix(in srgb, var(--cream) 40%, transparent);
+    --pad-edge:transparent;
   }
   /* Rocket Fuel Light: promoted 2026-07-08 from the "aubergine-light-test"
      exploration — identical to Rocket Fuel dark (aubergine) token for
@@ -236,11 +244,16 @@
        alpha — not worth a second number to explain. */
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
-    /* Both remaining deviations from the dark copy are the same miss as the wash
-       above: values that silently assumed a dark ground. The pad's edge reads
-       against the FELT, and dark's transparent ring and cream-tinted seam are
-       both no-ops here (1.13:1 and 1.05:1). */
-    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
+    /* The other deviation from the dark copy, and the same miss as the wash
+       above: a value that silently assumed a dark ground. The pad's edge reads
+       against the FELT, and dark carries no ring at all because --cream on a
+       dark --felt is already 13.6:1. Here the two are 1.13:1, so the ring is the
+       only thing saying where the paper stops. 2.5:1 rather than the 4.5:1 first
+       tried: a crisper edge measured better but read as a border drawn around
+       the pad, which is not what paper on a table looks like. See build-pad.js —
+       this is the quietest setting that still keeps the sheet sitting on the
+       felt rather than floating above it. */
+    --pad-edge:rgba(70,52,30,.506);
   }
   /* ARCHIVE — not wired into the Display sheet picker, reachable only by
      setting data-theme="aubergine-light-archive-purple-primary" manually
@@ -261,7 +274,7 @@
     --mast-hi:rgba(255,255,255,.92); --mast-lo:rgba(70,52,30,.34);
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--brass);
-    --pad-edge:rgba(70,52,30,.76); --pad-seam:rgba(70,52,30,.62);
+    --pad-edge:rgba(70,52,30,.506);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; }
@@ -343,12 +356,15 @@
     color:var(--mast-soft); cursor:pointer; padding:0; }
   .menu-btn:active { opacity:.6; }
 
-  /* The dashed outline floats 6px off the pad's edge — a stitched seam on the felt ground.
+  /* The dashed outline floats 6px off the pad's edge — a stitched seam on the felt
+     ground. It reads on dark felt and not on light (--pad-seam's note explains
+     why that stays true rather than being corrected).
      --pad-edge is a 1px ring drawn just outside the border-box (spread, not a
      border, so nothing inside the pad shifts by a pixel). On dark felt it's
      transparent: --cream against --felt is 13.6:1 there and the sheet's edge
-     needs no help. On light felt the two tones are 1.13:1 and the ring is the
-     only thing saying where the paper stops — see build-pad.js. */
+     needs no help. On light felt the two tones are 1.13:1, so the ring carries
+     the edge by itself — the seam is not a second line to fall back on there.
+     Kept deliberately quiet at 2.5:1; see build-pad.js. */
   .pad { background:var(--cream); border-radius:var(--r-card);
     box-shadow:0 0 0 1px var(--pad-edge), 0 1px 2px rgba(0,0,0,.15), 0 12px 32px rgba(0,0,0,.22); overflow:hidden;
     outline:1.5px dashed var(--pad-seam); outline-offset:6px; }

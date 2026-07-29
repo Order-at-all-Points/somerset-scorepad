@@ -10,7 +10,7 @@ Seven experiments live here, at different stages:
 | **Tactile masthead** (`build-masthead.js`) | **B · Letterpress shipped.** See the `h1` comment in `index.html`. The other five treatments are kept so the comparison can be re-run rather than rebuilt from memory. |
 | **SCOREPAD subtitle** (`build-subhead.js`) | **Shipped:** `.26em` tracking, rules at 65% colour and 26px. See the `.subtitle` block. Both rejected ends of the ladder are kept — they are what make the shipped value legible as a choice. |
 | **Scoreboard letterpress** (`build-press.js`) | **Shipped on the 48px `.score` only,** via `--press-lo`/`--press-hi`. Team names at 17px were tried and rejected — the impression stops registering at that size and only costs stem definition. |
-| **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge` (1px ring, 4.5:1) and `--pad-seam` (dashed outline, 3.2:1) per theme. Fixes the light-theme finding below. A lighter ring and a heavier-shadow alternative are kept as the two things that look plausible until you see them side by side. |
+| **The pad's edge on light felt** (`build-pad.js`) | **Shipped:** `--pad-edge`, a 1px ring at 2.5:1, per theme; the seam untouched. Fixes the light-theme finding below. Keeps the crisper 4.5:1 ring and the darkened seam — both measure better and were rejected on looking at them. |
 | **What carries the cream label** (`build-brass.js`) | **Shipped:** filled controls moved to a new `--brass-deep` (5.02:1, was 2.50). Keeps the rejected "darken the label instead" row, which passes in three themes and collapses to 1.77:1 in Classic Light. |
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Vertical space** (`build-vertical.js`) | **Parked.** Nothing applied. Four options for the dead felt below short screens. |
@@ -22,10 +22,12 @@ and `aubergine-light` is a token-for-token copy of `aubergine` apart from
 identical in both, and `--press-*` lives in `:root` as a single pair. The
 asymmetry is deliberate; see the comment beside the tokens.
 
-`--pad-edge`/`--pad-seam` are the third case and go **per-theme**: they draw the
-pad's outline *against the felt*, so like `--mast-*` they have to flip with it.
-Which side of that split a token falls on is decided by what it contrasts
-against, not by what it sits on.
+`--pad-edge` is the third case and goes **per-theme**: it draws the pad's edge
+*against the felt*, so like `--mast-*` it has to flip with it. `--pad-seam` stays
+in `:root` — it is the paper's own colour in every theme, and the fact that this
+makes it invisible on light felt is the decision, not an oversight. Which side of
+the split a token falls on is decided by what it contrasts against, not by what
+it sits on.
 
 Three of the audit findings turned out to be the same shape, and it is worth
 recognising on sight: **one token doing two jobs, where only one job needs the
@@ -154,11 +156,15 @@ Worth knowing before extending any of this.
 
 - ~~In `aubergine-light` the pad measures **1.13:1** against the felt and the
   `.pad` dashed outline **1.05:1** — the cream-paper-on-felt metaphor does not
-  render in the shipped Light theme.~~ **Fixed** via `--pad-edge`/`--pad-seam`;
-  see `build-pad.js`. The pad-vs-felt line still reads 1.13 and always will —
-  neither tone could move — so the ring is what carries the edge now, and the
-  audit prints the two lines together for that reason. Both light themes were
-  affected, not just the shipped one, since they share `--felt`.
+  render in the shipped Light theme.~~ **Fixed** via `--pad-edge`; see
+  `build-pad.js`. Both light themes were affected, not just the shipped one,
+  since they share `--felt`.
+  The pad-vs-felt line still reads 1.13 and always will — neither tone could
+  move — and the seam's 1.05 is now deliberate too, so **neither number is the
+  check any more**. The audit asserts the thing that actually matters instead:
+  *exactly one* of ring/seam carries the edge on a given ground (seam on dark,
+  ring on light), and the row that can fail is the pair being absent. Scoring
+  them independently just reports INVISIBLE on whichever one is meant to be.
 - ~~`--felt-wash` measures 1.01–1.12 against felt in **every** theme, so inactive
   nav tabs and the OPTIONS pill have no fill anywhere in the app.~~ **Half wrong,
   and now fixed.** Only `aubergine-light` was actually broken: it inherited the

@@ -79,23 +79,43 @@ const AUDIT = () => {
 
   add("felt-wash fill vs felt (inactive nav tab, OPTIONS pill)", over(R("--felt-wash"), felt), felt, resolved["--felt-wash"], "bordered fill");
   add("felt-wash-strong vs felt (pressed state)", over(R("--felt-wash-strong"), felt), felt, resolved["--felt-wash-strong"], "bordered fill");
-  /* The pad's two edge treatments are per-theme tokens, so resolve them rather
-     than restating their values here -- a copy would keep reporting the old
-     cream tint after index.html moved on. Both are measured against --felt-deep
-     as well: body is a radial gradient from felt to felt-deep, and the darker
-     end is the worst case for the warm line the light themes use. */
+  /* The pad has two possible edge treatments and the real invariant is that
+     exactly ONE of them carries the edge on any given ground:
+       dark felt   the dashed seam reads (~3.3); no ring, because --cream on a
+                   dark --felt is already 13.6:1 and needs no help.
+       light felt  the ring reads (~2.5); the seam is the paper's own colour and
+                   deliberately does NOT appear, because a dark dashed line 6px
+                   out in open felt reads as a box around the pad rather than a
+                   stitched edge (see build-pad.js).
+     Scoring the two independently reports an INVISIBLE on whichever one is
+     deliberately absent -- the same false alarm the felt-wash rows used to
+     produce. So each is measured, the absent one is marked soft with its reason,
+     and the row that can actually fail is the pair: if NEITHER carries, the pad
+     has no edge on that ground and that is a real regression.
+     Both are measured against --felt-deep as well: body is a radial gradient,
+     and the darker end is the worst case for a warm line. */
   const deep = R("--felt-deep").rgb;
-  add(".pad dashed outline vs felt", over(R("--pad-seam"), felt), felt, resolved["--pad-seam"]);
-  add(".pad dashed outline vs felt-deep (gradient's dark end)", over(R("--pad-seam"), deep), deep);
-  /* A fully transparent ring is the dark themes' deliberate answer, not a miss --
-     scoring it would report 1.00 and flag the one case that needs no fix. */
-  const ring = R("--pad-edge");
+  const CARRIES = 2.0;
+  const seam = R("--pad-seam"), ring = R("--pad-edge");
+  const seamR = +ratio(over(seam, felt), felt).toFixed(3);
+  const ringR = ring.a === 0 ? 0 : +ratio(over(ring, felt), felt).toFixed(3);
+
+  add(".pad dashed seam vs felt", over(seam, felt), felt, resolved["--pad-seam"],
+    seamR < CARRIES ? "not the edge on this ground — the ring is" : null);
+  add(".pad dashed seam vs felt-deep (gradient's dark end)", over(seam, deep), deep, null,
+    seamR < CARRIES ? "not the edge on this ground" : null);
+
   if (ring.a === 0) {
-    checks.push({ name: ".pad edge ring — none, by design (cream vs felt below carries the edge)", ratio: null });
+    checks.push({ name: ".pad edge ring — none, by design (the seam is the edge on dark felt)", ratio: null });
   } else {
     add(".pad edge ring vs felt", over(ring, felt), felt, resolved["--pad-edge"]);
     add(".pad edge ring vs felt-deep (gradient's dark end)", over(ring, deep), deep);
   }
+  checks.push({
+    name: ".pad HAS an edge (seam or ring carries it — " +
+      (seamR >= CARRIES ? "seam " + seamR.toFixed(2) : ringR >= CARRIES ? "ring " + ringR.toFixed(2) : "NEITHER") + ")",
+    ratio: Math.max(seamR, ringR),
+  });
   /* Still ~1.1 on the light themes and that is not a defect to chase: --cream is
      byte-identical across aubergine/aubergine-light by construction and --felt
      carries --mast-soft's tuning, so neither tone can move. The ring above is
