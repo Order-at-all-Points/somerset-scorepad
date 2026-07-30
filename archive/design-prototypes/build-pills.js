@@ -18,9 +18,13 @@
  * a row rather than on top of it.
  *
  * That count is what made this look like a consistency gap. It was not one -- read the
- * SETTLED section before reusing the argument. The pill now carries the lip and not
- * the lift, so the seven-vs-one framing above is how the question ARRIVED, not how it
- * resolved.
+ * SETTLED section before reusing the argument. The pill still carries no depth at all,
+ * so the seven-vs-one framing above is how the question ARRIVED, not how it resolved.
+ * (This sentence said "the pill now carries the lip and not the lift" for one commit,
+ * left behind by the B1 retreat after B1 was itself dropped. It flatly contradicted
+ * the REJECTED note sixty lines down. Kept as a marker: a generator that preserves
+ * rejected options has to be re-read END TO END after a reversal, because the stale
+ * line is never in the section you are editing.)
  *
  * TWO OBJECTIONS, ONE OF WHICH IS ALREADY DEAD. The first was geometry: a 1px inner
  * lip on a fully-rounded shape should read as gloss rather than as a lip, which is
@@ -62,9 +66,14 @@
  * more to bite into on a warm fill than on a purple one.
  *
  * (That same commit is why the question came up. It made this pill's fill byte-
- * identical to the bidder tile's -- both resolve to --ink, rgb(44,38,32) -- so two
- * controls now share a fill while one is raised and one is flat. The inconsistency
- * predates the change; the change is what made it visible.)
+ * identical to the bidder tile's ON LIGHT -- both resolved to --ink, rgb(44,38,32) --
+ * so two controls shared a fill while one was raised and one was flat. The
+ * inconsistency predates the change; the change is what made it visible.
+ * They now share a fill in EVERY theme, and from the other direction: on 2026-07-29
+ * .who button.on moved to --plum, so the tile followed the pill rather than the pill
+ * following the tile. See the coda at the bottom -- it is the same two controls and
+ * the opposite answer, and the difference between the two is worth understanding
+ * before touching either.)
  *
  * JUDGE AT TRUE DEVICE SCALE. Frames are 390px and unscaled. These are 1px effects
  * on a 32px control and a zoomed frame is precisely what lies about those -- the
@@ -130,6 +139,43 @@
  * and more spread. But d389923 justified that treatment by the tile REPRESENTING a
  * physical card. A filter pill is a control, not an object, so the button vocabulary
  * is the one it belongs to.
+ *
+ * CODA, 2026-07-29: THE SAME PAIR, THE OTHER DIRECTION, AND IT WAS FINE.
+ * Hours after this was dropped, .who button.on took the pill's FILL -- --plum,
+ * replacing --ink -- so on dark the selected bidder tile is now the same purple as
+ * the active filter pill, which is aubergine dark's --felt: a window through the pad
+ * to the table. Nothing here was reopened and no depth moved.
+ *
+ * That is not a reversal, and the difference is the whole lesson of this file. What
+ * was rejected twice above was giving the pill the BEVEL -- a treatment whose meaning
+ * comes from being scarce, so extending it spends it. A fill is not scarce. --plum
+ * was already on the score bar and the pill; a third user does not dilute anything,
+ * because nothing was reading "plum therefore filter" the way something reads "raised
+ * therefore acts". Colour here says WEIGHT (the deepest tone the palette carries cream
+ * on); depth says ROLE. Sharing a weight is free. Sharing a role is not.
+ * Which also means the seven-vs-one count above is untouched: the tile did not join
+ * or leave the bevel set, and the pill still has no depth.
+ *
+ * Two things fell out of doing it that belong here rather than in index.html.
+ *
+ * A TOKEN SWAP WAS THE WHOLE CHANGE, because --plum is overridden per theme and
+ * already means "deepest tone that carries cream". So one edit landed the purple on
+ * aubergine, landed Classic Dark's own --felt-deep wine on Classic Dark, and was a
+ * BYTE-IDENTICAL NO-OP on both light themes, where --plum is already var(--ink).
+ * Verified by walking every element in the Step-1 tree on main and on the branch and
+ * comparing six computed paint properties: 1 of 90 elements differs on aubergine, 1
+ * of 90 on Classic Dark, 0 of 90 on both light themes. Worth the ten minutes -- "it
+ * only affects dark" was a claim about four theme blocks and one :root fallback, and
+ * this session had already been wrong once about which themes a plum change reaches.
+ *
+ * AND --bevel-lo HAS NEVER DONE ANYTHING ON AN --ink FILL. It is --ink at 26%, so
+ * over a fill of --ink it composites to --ink: 1.00:1, the pair collapsed to its
+ * highlight. .who button.on was in that state in every theme until the swap, which
+ * means the bevel comparisons in the variants below were against a tile whose lower
+ * lip was already absent. .btn-add still is. Nothing was changed for it -- the lip is
+ * invisible at this alpha either way -- but if you ever tune --bevel-lo, note that
+ * two of the seven controls were never showing it, and index.html's --bevel-* comment
+ * now says so.
  *
  *   node archive/design-prototypes/capture-screens.js   # first, once
  *   node archive/design-prototypes/build-pills.js
@@ -332,6 +378,8 @@ const page = `<!doctype html>
   <p class="lede"><strong>B versus C was a second axis, and not a weight.</strong> <code>.chip</code> and <code>.who button</code> are already objects at rest, so selecting one raises something already raised. <code>.stat-sort-chip</code> at rest is <code>background:none</code> with no shadow &mdash; an outline on the paper. Group B changes the selected pill only; group C raises the whole row into parity with the <code>.chips</code> row. C lost on its own terms too: <code>--control</code> is <em>lighter</em> than the sheet, so the strip brightens into five buttons competing with the rank rows below it.</p>
   <p class="lede"><strong>Judge at this size.</strong> Frames are 390px and unscaled. The app's first bevel value shipped from a zoomed render and did nothing in the hand.</p>
   <p class="lede"><strong>The two columns differ here</strong>, unlike <code>seats.html</code>. Since <code>962ac26</code> the fill is <code>--ink</code> on light and <code>:root</code>'s <code>#2E1B3A</code> on dark, and <code>--bevel-lo</code> is mixed from <code>--ink</code> &mdash; so the lower lip has more to bite into on the warm fill than on the purple one.</p>
+  <p class="lede"><strong>Coda, and it is not a reversal.</strong> Hours after this was dropped, <code>.who button.on</code> took the pill's <em>fill</em> &mdash; <code>--plum</code> in place of <code>--ink</code> &mdash; so on dark the selected bidder tile is now the same purple as the active pill, which is aubergine dark's <code>--felt</code>: a window through the pad to the table. No depth moved and the seven-vs-one count above is untouched. <strong>A fill is not scarce and a treatment is.</strong> Colour here says <em>weight</em> (the deepest tone the palette carries cream on, which is why it resolves to <code>--ink</code> on light); depth says <em>role</em>. Sharing a weight is free; sharing a role is what was rejected twice.</p>
+  <p class="lede"><strong>One thing that swap exposed, which affects the frames below.</strong> <code>--bevel-lo</code> is <code>--ink</code> at 26%, so over a fill of <code>--ink</code> it composites to <code>--ink</code> exactly &mdash; 1.00:1, the pair collapsed to its highlight. <code>.who button.on</code> was in that state in every theme while these variants were being judged, so the bidder tile they were compared against had no lower lip either. <code>.btn-add</code> still has none. Invisible at this alpha either way, but it means two of the seven were never showing the shadow half.</p>
 </div>
 <div id="out"></div>
 <div class="foot">

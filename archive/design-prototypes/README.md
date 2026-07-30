@@ -16,7 +16,7 @@ Ten experiments live here, at different stages:
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
 | **Depth on the seat tiles** (`build-seats.js`) | **Shipped:** a two-layer card shadow plus a gradient face on `.seat`, restated on `.seat.dealer` so the brass ring composes with it. Laddered on four axes — lift, inner edge, face texture, combinations. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
-| **Depth on the filter pill** (`build-pills.js`) | **Rejected — nothing applied.** `.stat-sort-chip.on` stays flat. Full parity shipped to a preview and came back off; the lip alone, with the lift removed, was turned down for the same reason. Two rejections at two weights, so the axis is spoken for rather than the value too strong — see below. Found along the way that the bevel's documented floor is **per size**, not absolute. |
+| **Depth on the filter pill** (`build-pills.js`) | **Rejected — nothing applied.** `.stat-sort-chip.on` stays flat. Full parity shipped to a preview and came back off; the lip alone, with the lift removed, was turned down for the same reason. Two rejections at two weights, so the axis is spoken for rather than the value too strong — see below. Found along the way that the bevel's documented floor is **per size**, not absolute. Its coda records the *fill* half of the same question, asked from the other end and answered yes: `.who button.on` took `--plum`, no depth moved. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -78,6 +78,19 @@ distinction, stated about the fill. It was read, quoted into the analysis, and
 argued past on the grounds that colour carried it and depth did not. It carried on
 both. When the file already argues against a change, that is evidence, not
 context.
+
+**The corollary landed hours later, and it is what makes the finding usable.**
+The same two controls were unified anyway — from the other direction. `.who
+button.on` took the pill's *fill*, `--plum` in place of `--ink`, so on dark the
+selected bidder tile is now the same purple as the active filter pill. Nothing
+was reopened; no depth moved. Because **a fill is not scarce and a treatment is.**
+`--plum` was already on the score bar and the pill, and nothing read "plum
+therefore filter" the way something reads "raised therefore acts". Colour here
+carries **weight** — the deepest tone the palette puts cream on, which is why it
+resolves to `--ink` on the light themes. Depth carries **role**. Sharing a weight
+costs nothing; sharing a role spends it. So "extending a treatment spends the
+information" is not an argument against consistency — it is an argument for
+asking *which axis* a property is speaking on before you extend it along it.
 
 The one-token-two-jobs shape also shows up *forwards*, as a proposal rather than
 a bug, which is easier to catch: `build-seats.js` row E3 paints `--felt` inside
@@ -232,7 +245,17 @@ Worth knowing before extending any of this.
   with. `build-pills.js` is therefore the first generator whose two columns differ
   on the element under test, and that is a real signal there rather than a bug:
   `--bevel-lo` is mixed from `--ink` and has more to bite into on light's warm
-  fill than on dark's purple one.
+  fill than on dark's purple one. Since `.who button.on` also moved to `--plum`,
+  the *bidder tile* is now on the differing side of that boundary too — a
+  generator that renders the entry pane can no longer assume its two columns are
+  a formality.
+- **`--bevel-lo` is invisible on an `--ink` fill, by arithmetic.** It is `--ink`
+  at 26%, so over a fill of `--ink` it composites to `--ink` exactly: 1.00:1, and
+  the highlight/shadow pair is only ever the highlight. `.btn-add` is in that
+  state in all five themes, and `.who button.on` was until it moved to `--plum`.
+  So two of the seven bevel controls were never showing the lower lip, which
+  matters twice: don't read a missing bottom edge on those as damage, and don't
+  use them as the reference when judging a bevel you are adding somewhere else.
 - **`.seat.dealer` owns its own `box-shadow`.** It carries
   `inset 0 0 0 2px var(--brass)` for the dealer ring, so any depth added to
   `.seat` is silently dropped on the one tile the eye goes to first — and the
