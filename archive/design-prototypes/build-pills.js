@@ -70,34 +70,43 @@
  * on a 32px control and a zoomed frame is precisely what lies about those -- the
  * app's first bevel value shipped from a zoomed render and did nothing in the hand.
  *
- * SETTLED -- B1 shipped: the --bevel-* lip with NO lift, and the row left as
- * outlines.
+ * REJECTED -- NOTHING APPLIED. The pill still carries no box-shadow, and A1 renders
+ * live from index.html so this page keeps telling the truth about that.
  *
- * B3 SHIPPED FIRST AND WAS TAKEN BACK OFF, which is the finding worth keeping here.
- * Full parity looks correct in isolation -- it is byte-identical to two shipped
- * precedents, needs no new value, and reads cleanly at 32px. What it costs does not
- * appear in a diff or in any single frame: the seven controls carrying that stack
- * all ACT (record, add, delete, confirm, commit a setting), and the lift is how the
- * app says so. Adding a view filter as the eighth spends the signal. The report that
- * killed it was "the bidder buttons changed" -- and they had not, provably: all six
- * .who rules were text-identical and computed identically in both themes. What
- * changed was that they stopped being one of the few things wearing that treatment.
+ * TWO ATTEMPTS, BOTH TURNED DOWN, AND THE SECOND ONE IS THE FINDING. B3 (full
+ * parity, the exact three-layer stack the other seven controls carry) shipped to a
+ * preview and came back off. B1 (the same lip with the lift removed, so the pill
+ * gains an edge without standing up) was the retreat, and it was rejected for the
+ * same reason: it takes something away from the bidder tiles.
  *
- * SO CONSISTENCY WAS THE WRONG AXIS TO MEASURE ON. The pill was never the odd one
- * out for lacking depth; it was on the correct side of a line the app draws between
- * controls that act and chrome that changes what you are looking at. Its own comment
- * in index.html already said as much about the FILL -- "brass marks a SETTING you've
- * committed to, whereas these only change what you're looking at" -- and that
- * argument was read, noted, and then argued past on the grounds that only colour
- * carried the distinction. It carried on the depth axis too. When an audit finds one
- * member of a set missing a treatment, check whether the set is the real set.
+ * SO WEIGHT WAS NEVER THE VARIABLE. One rejection could have meant "too heavy" and
+ * would have left a ladder to walk down -- B4, B5, a lighter pair. Two rejections at
+ * two different weights, for one reason, says the axis itself is spoken for. There is
+ * no quieter version of joining a set; you are either in it or not. Any depth on this
+ * pill spends something that belongs to .who button.on, so the fill does the work
+ * alone, which it was already doing.
  *
- * B1 is what that leaves: the lip gives the fill a top-lit edge and keeps it flush
- * with the paper, so the pill gains dimension without standing up as an object. It
- * is also why --bevel-* is now used two ways -- inside a raised stack for seven
- * controls, alone as a flush edge for this one. Benign, unlike the cases the README
- * collects: the optical ask is identical either way, a top-lit inner edge, so
- * nothing is being asked of a token that was tuned for a different ground.
+ * WHAT WENT WRONG WAS THE MEASUREMENT, NOT THE VALUE. The gap was found by counting:
+ * seven filled pressable controls carry --bevel-*, one does not, so the one is
+ * inconsistent. That is only a finding if the seven are the real set. They are not a
+ * list of filled controls, they are the controls that ACT -- record, add, delete,
+ * confirm, commit a setting -- and the treatment reads as meaning that partly BECAUSE
+ * few things wear it. A view filter changes what you are looking at. The pill was
+ * never the odd one out; it was on the correct side of a line.
+ *
+ * index.html already said so, about the fill, in the comment directly above the rule:
+ * "brass marks a SETTING you've committed to ... whereas these only change what
+ * you're looking at". That was read, quoted into the analysis, and argued past on the
+ * grounds that colour carried the distinction and depth did not. It carried on both.
+ * WHEN THE FILE ALREADY ARGUES AGAINST THE CHANGE, THAT IS EVIDENCE, NOT CONTEXT.
+ *
+ * The first report was "the bidder buttons changed" -- and they had not, provably:
+ * all six .who rules text-identical to main, both states computing identically in
+ * both themes, the only computed difference on the branch being the pill's own
+ * box-shadow. What changed was that they stopped being one of the few things wearing
+ * the treatment. A diff cannot show that, and neither can any single frame on this
+ * page: every variant below looks defensible in isolation. That is the trap this
+ * generator exists to record.
  *
  * Two more things the rendering decided that the argument could not.
  *
@@ -228,14 +237,18 @@ const GC = "C - The ROW: unselected pills become objects at rest too, as .chip a
 const GD = "D - Bounds, kept";
 
 const VARIANTS = [
-  { g: GA, t: "A1 - Current: box-shadow:none. The only filled pressable control in the app with no depth at all",
+  /* WHAT SHIPS, and it is what shipped before any of this. Empty css so the row
+     renders whatever index.html currently says rather than a copy that can rot --
+     same convention as build-button.js and build-seats.js. */
+  { g: GA, t: "A1 - SHIPPED (unchanged): box-shadow:none. The only filled pressable control in the app with no depth, and after two attempts, deliberately so. Renders live from index.html",
     css: `` },
 
-  /* SHIPPED. Empty css so this row renders whatever index.html currently says
-     rather than a copy of it that can rot -- same convention as build-button.js
-     and build-seats.js. If the live rule changes, this row changes with it. */
-  { g: GB, t: "B1 - SHIPPED: the lip with NO lift. The fill gets a top-lit edge and stays flush with the paper, so the pill gains dimension without joining the set of controls that stand up off it. Renders live from index.html, not a copy",
-    css: `` },
+  /* ALSO REJECTED, and the row that makes the page worth keeping. B1 was the
+     retreat from B3 -- same lip, lift removed, so the pill stops standing up and
+     merely gains an edge. It was rejected for the SAME reason B3 was, which is
+     what settles the question: weight is not the variable. */
+  { g: GB, t: "B1 - REJECTED: the lip with NO lift -- an edge on the fill, flush with the paper, not an object. Built as the retreat from B3 and turned down for the same reason: it still takes something from the bidder tiles. Two rejections at different weights is what makes this a question of KIND, not degree",
+    css: pill({ inset: EDGE.ship }) },
   { g: GB, t: "B2 - Lift only, no lip: the mirror image of B1, and the pair worth comparing first -- B1 has the lip and no lift, this has the lift and no lip. One reads as an edge on the paper, the other as an object above it",
     css: pill({ lift: LIFT.fill }) },
   /* SHIPPED, THEN REJECTED -- the important row on this page. Kept explicit rather
@@ -274,7 +287,7 @@ const page = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SomeRSet &mdash; should the filter pill be raised?  (no &mdash; a lip, not a lift)</title>
+<title>SomeRSet &mdash; should the filter pill be raised?  (no &mdash; twice)</title>
 <style>
   :root{color-scheme:dark}
   *{box-sizing:border-box} html,body{margin:0}
@@ -311,19 +324,19 @@ const page = `<!doctype html>
     <tr><th>control</th><th>size</th><th>radius</th><th>selected-state depth</th></tr>
     <tr><td><code>.who button.on</code> &mdash; bidder</td><td>179&times;44</td><td>8px</td><td>bevel + 0 1px 2px/.25</td></tr>
     <tr><td><code>.chip.on</code> &mdash; a setting</td><td>89&times;42</td><td>999px</td><td>bevel + 0 1px 2px/.25</td></tr>
-    <tr><td><code>.stat-sort-chip.on</code> &mdash; a filter, as found</td><td>61&times;32</td><td>999px</td><td class="no">none</td></tr>
-    <tr><td><code>.stat-sort-chip.on</code> &mdash; <strong>what ships (B1)</strong></td><td>61&times;32</td><td>999px</td><td>bevel only &mdash; <em>no lift</em></td></tr>
+    <tr><td><code>.stat-sort-chip.on</code> &mdash; a filter, <strong>then and now</strong></td><td>61&times;32</td><td>999px</td><td class="no">none</td></tr>
   </table>
-  <p class="lede"><strong>Answered: no.</strong> Full parity (<strong>B3</strong>) shipped to a preview first and was taken back off. It is byte-identical to two shipped precedents and reads cleanly at 32px &mdash; and the seven controls carrying that stack all <em>act</em>: record, add, delete, confirm, commit a setting. The lift is how the app says so, and making a view filter the eighth member spends the signal. What ships is the lip alone: dimension, flush with the paper, without joining that set. <strong>Compare B1 against B2</strong> &mdash; lip-without-lift versus lift-without-lip &mdash; that pair is the whole decision.</p>
+  <p class="lede"><strong>Answered: no &mdash; and nothing shipped.</strong> Full parity (<strong>B3</strong>) went to a preview and came back off. <strong>B1</strong>, the same lip with the lift removed, was the retreat and was turned down for the same reason: it still takes something away from the bidder tiles. <em>Two rejections at two different weights, for one reason, means the axis is spoken for rather than the value being too strong.</em> There is no quieter way to join a set. The pill keeps doing its work with fill alone.</p>
+  <p class="lede"><strong>Every frame below looks defensible in isolation</strong>, which is the trap this page records. The gap was found by counting &mdash; seven filled controls carry the bevel, one does not &mdash; and that is only a finding if the seven are the real set. They are not "filled controls"; they are the controls that <em>act</em>. The treatment means that partly <em>because</em> few things wear it.</p>
   <p class="lede"><strong>The radius objection is dead.</strong> <code>.chip.on</code> is <code>--r-pill</code> at radius 999px and has carried the identical bevel since <code>fa01439</code>, so a 1px lip on a fully-rounded shape is proven in shipped code. Size was the live question: the bevel range was tuned on 44px controls and this is 32px, so <strong>B5</strong> re-asks the lower bound. It reads here, where at 44px it was a documented no-op &mdash; that bound is per size, not absolute.</p>
-  <p class="lede"><strong>B versus C is a second axis, and not a weight.</strong> <code>.chip</code> and <code>.who button</code> are already objects at rest, so selecting one raises something already raised. <code>.stat-sort-chip</code> at rest is <code>background:none</code> with no shadow &mdash; an outline on the paper. Group B changes the selected pill only; group C raises the whole row into parity with the <code>.chips</code> row. C lost: <code>--control</code> is <em>lighter</em> than the sheet, so the strip brightens into five buttons competing with the rank rows below it.</p>
+  <p class="lede"><strong>B versus C was a second axis, and not a weight.</strong> <code>.chip</code> and <code>.who button</code> are already objects at rest, so selecting one raises something already raised. <code>.stat-sort-chip</code> at rest is <code>background:none</code> with no shadow &mdash; an outline on the paper. Group B changes the selected pill only; group C raises the whole row into parity with the <code>.chips</code> row. C lost on its own terms too: <code>--control</code> is <em>lighter</em> than the sheet, so the strip brightens into five buttons competing with the rank rows below it.</p>
   <p class="lede"><strong>Judge at this size.</strong> Frames are 390px and unscaled. The app's first bevel value shipped from a zoomed render and did nothing in the hand.</p>
   <p class="lede"><strong>The two columns differ here</strong>, unlike <code>seats.html</code>. Since <code>962ac26</code> the fill is <code>--ink</code> on light and <code>:root</code>'s <code>#2E1B3A</code> on dark, and <code>--bevel-lo</code> is mixed from <code>--ink</code> &mdash; so the lower lip has more to bite into on the warm fill than on the purple one.</p>
 </div>
 <div id="out"></div>
 <div class="foot">
   <p>Both rows are in every variant because the treatment lands on both and they keep different company: the Stats sort row sits above rank rows with their own gold progress bars, the log's filter row above date headers and game cards. A weight that reads as trim on one can read as a second row of buttons on the other.</p>
-  <p>Every depth variant also emits <code>.stat-sort-chip.on:active{transform:scale(.96);box-shadow:none}</code>. No such rule existed before this work &mdash; correct while the pill was flat, since re-tapping the active filter is a no-op and there was nothing to drop. It ships with the lip; without it the pill would be the one control in the app that keeps its edge under your thumb.</p>
+  <p>Every depth variant also emits <code>.stat-sort-chip.on:active{transform:scale(.96);box-shadow:none}</code>, because any of them would need it: every beveled control in the app drops its shadow when pressed, and both pill-shaped precedents also scale. No such rule is in the app, which is correct now that nothing shipped &mdash; a flat pill has nothing to drop, and re-tapping the active filter is a no-op anyway. Anyone reviving one of these variants needs that rule with it.</p>
 </div>
 <script>
 const APP_CSS=${js(CSS)}, SCREENS=${js(SCREEN_KEYS.map((k) => ({ k, title: SCREENS[k].title, html: SCREENS[k].html })))},

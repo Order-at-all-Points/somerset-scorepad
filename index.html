@@ -119,21 +119,21 @@
        per-theme: custom properties substitute where they are USED, so var(--rule)
        here resolves against whatever [data-theme] is on the html element. */
     --rule-soft:color-mix(in srgb, var(--rule) 60%, var(--cream));
-    /* Bevel for filled controls — .btn-record/.btn-new/.btn-add, .btn-danger,
-       .sheet-btn.primary, .chip.on, .who button.on, .stat-sort-chip.on. The third
+    /* Bevel for RAISED filled controls — .btn-record/.btn-new/.btn-add,
+       .btn-danger, .sheet-btn.primary, .chip.on, .who button.on. The third
        depth treatment in the app and the only one that reads as coming UP off
        the surface: --mast-* presses text into the felt and --press-* presses it
        into the pad, both shadow-up/highlight-down. A raised edge is that
        inverted — the top inner lip catches the light, the bottom falls into
        shade — so these go highlight-first.
-       Said "RAISED filled controls" until 2026-07-30, when .stat-sort-chip.on
-       took this pair WITHOUT the 0 1px 2px/.25 lift the other seven pair it with.
-       That is a real distinction and not a slip: the lift marks a control that
-       acts, and a view filter does not act, so the pill gets a lip flush with the
-       paper instead of being stood up as an object (see its own comment). The
-       token is doing one job in two settings, which is the benign version of the
-       shape the prototypes README warns about — the optical ask is identical, a
-       top-lit inner edge, so nothing here was tuned for a ground it is not on.
+       SEVEN CONTROLS, AND THAT IS PART OF WHAT IT SAYS. Every one of them acts —
+       record, add, delete, confirm, or commit a setting — and the treatment reads
+       as meaning that partly because the set is small. .stat-sort-chip.on is the
+       one filled pressable control deliberately left out; it was given this pair
+       twice in 2026-07-30 prototypes, once over the full lift and once as a bare
+       lip, and both were rejected for taking something away from the bidder tiles.
+       Before adding an eighth member, read build-pills.js — a treatment that is
+       information because it is scarce gets cheaper every time it is reused.
        Warm rather than neutral, mixed from --cream and --ink instead of white
        and black, for the reason --press-lo is warm: a neutral pair cools a
        saturated fill, and every control this lands on is saturated (brass, red)
@@ -148,12 +148,12 @@
        never reaches the label's glyphs even at double this weight, so the cream
        label's 2.50:1 (see the note below) is not spent here. See build-button.js.
        THAT RANGE IS PER SIZE, not absolute — it was measured on the 42-44px
-       controls this first shipped to. build-pills.js re-asked the lower bound on
-       the 32px .stat-sort-chip and 22/18 reads there, faintly but really, where
-       at 44px it was the documented no-op. The floor drops as the control does,
-       because the same 1px lip is a larger share of a shorter edge. It did not
-       change these values: the 32px pill took this pair unmodified, with room
-       left before the key-cap end, so nothing was gained by a second weight.
+       controls this shipped to. build-pills.js re-asked the lower bound on a 32px
+       control and 22/18 reads there, faintly but really, where at 44px it was the
+       documented no-op. The floor drops as the control does, because the same 1px
+       lip is a larger share of a shorter edge. Nothing was changed here — that
+       prototype shipped no CSS at all — but the numbers above are a measurement
+       AT A SIZE, so re-render before reusing them on something smaller.
        Nothing needed on :active: every one of these controls already sets
        box-shadow:none when pressed, which drops the bevel with the lift. */
     --bevel-hi:color-mix(in srgb, var(--cream) 32%, transparent);
@@ -971,39 +971,20 @@
      tournament format, Moon Shot mode — see .chip.on), whereas these only
      change what you're looking at. Keeping the two fills distinct keeps that
      read; it just no longer has to be near-black to do it.
-     The box-shadow is the --bevel-* lip WITHOUT the lift, and the missing layer
-     is the whole point. This was the eighth filled pressable control in the app
-     and the only one with no depth at all, so the obvious fix was the three-layer
-     stack .chip.on and .who button.on carry. That was built, shipped to a preview
-     and rejected on looking at it, for a reason a diff cannot show: the seven
-     controls carrying that stack all ACT — record, add, delete, confirm, or commit
-     a setting — and the lift is how the app says so. Making a view filter the
-     eighth member spends the signal, and the bidder tile reads as well as it does
-     partly BECAUSE the set is small. Consistency was the wrong axis: these pills
-     were never the odd one out, they were on the correct side of a line.
-     So the pill takes the lip, which gives the fill a top-lit edge and leaves it
-     flush with the paper, and refuses the lift, which would stand it up as an
-     object. Dimension without joining the club. Note this makes --bevel-* the one
-     token pair used two ways — inside a raised stack, and alone as a flush edge —
-     which is fine because both ask it for the same thing optically; see its own
-     comment. build-pills.js has the full stack kept as B3.
-     The row is untouched for a separate reason. .chip and .who button are objects
-     at rest (a --control fill plus 0 1px 2px/.1); these stay outlines, because
-     giving four unselected pills a fill lighter than the sheet turns filter chrome
-     into five buttons competing with the rank rows under it. */
-  .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum);
-    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo); }
+     NO box-shadow, and that is a decision taken twice rather than an omission.
+     This is the one filled pressable control in the app with no depth at all,
+     which looks like a gap the moment you count: the other seven carry --bevel-*
+     over 0 1px 2px/.25. Both halves of that were built and judged on device —
+     the full stack first, then the lip alone with the lift removed — and both
+     were rejected for the same reason, that they take something away from the
+     bidder tiles. Weight was never the variable, so there is no lighter version
+     left to try. The lift marks a control that ACTS, and it reads that way partly
+     because few things wear it; a view filter only changes what you are looking
+     at, and it already says so with its fill. See build-pills.js — eleven
+     variants, both attempts, and why counting members found a gap that was not
+     one. */
+  .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum); }
   .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
-  /* Not optional dressing. There was no .on:active rule at all while the pill was
-     flat — correct then, since re-tapping the active filter is a no-op and there
-     was no shadow to drop. Now there is: every beveled control in the app sets
-     box-shadow:none when pressed (the --bevel-* note depends on exactly that),
-     and both pill-shaped precedents scale as well. Without this the selected pill
-     is the one raised control in the app that stays raised under your thumb.
-     No transition to match: .stat-sort-chip has never had one, unlike .chip and
-     .who button, so its press has always been instant. Adding one here would
-     change the unselected pill's feel too, which is not what this is. */
-  .stat-sort-chip.on:active { transform:scale(.96); box-shadow:none; }
 
   .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--rule-soft); cursor:pointer; }
   .rank-row:last-child { border-bottom:none; padding-bottom:20px; }

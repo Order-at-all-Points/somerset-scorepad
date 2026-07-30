@@ -16,7 +16,7 @@ Ten experiments live here, at different stages:
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
 | **Depth on the seat tiles** (`build-seats.js`) | **Shipped:** a two-layer card shadow plus a gradient face on `.seat`, restated on `.seat.dealer` so the brass ring composes with it. Laddered on four axes — lift, inner edge, face texture, combinations. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
-| **Depth on the filter pill** (`build-pills.js`) | **Shipped:** `.stat-sort-chip.on` takes the `--bevel-*` lip **without** the lift, plus the `:active` rule that drops it. Full parity shipped first and was reverted — see below; the lift is reserved for controls that act. The row stays outlines: raising the unselected pills brightens the strip into five buttons. Also found that the bevel's documented floor is **per size**, not absolute. |
+| **Depth on the filter pill** (`build-pills.js`) | **Rejected — nothing applied.** `.stat-sort-chip.on` stays flat. Full parity shipped to a preview and came back off; the lip alone, with the lift removed, was turned down for the same reason. Two rejections at two weights, so the axis is spoken for rather than the value too strong — see below. Found along the way that the bevel's documented floor is **per size**, not absolute. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -46,30 +46,43 @@ what else is asking for it.
 A fourth finding is a different shape and worth separating from those, because
 the fix for the three above — apply the treatment consistently — is exactly what
 caused it. **A visual treatment can be information because it is scarce, and
-extending it for consistency spends the information.** `build-pills.js` found
-`.stat-sort-chip.on` to be the only filled pressable control with no depth, gave
-it the same three-layer stack the other seven carry, and shipped it. The report
-back was *"the bidder buttons changed"* — and they provably had not: all six
-`.who` rules were text-identical and computed identically in both themes. What
-changed was that they stopped being one of the few things wearing that treatment.
-The seven controls with the lift all **act** — record, add, delete, confirm,
-commit a setting — and a view filter does not. The pill was never the odd one
-out; it was on the correct side of a line the app draws, and its own comment in
-`index.html` already said so about the *fill* ("brass marks a SETTING you've
-committed to, whereas these only change what you're looking at") before that
-argument was read, noted, and argued past. It shipped the lip alone instead:
-dimension without joining the set.
+extending it for consistency spends the information.**
+
+`build-pills.js` found `.stat-sort-chip.on` to be the only filled pressable
+control with no depth, gave it the same three-layer stack the other seven carry,
+and shipped it. The report back was *"the bidder buttons changed"* — and they
+provably had not: all six `.who` rules were text-identical and computed
+identically in both themes. What changed was that they stopped being one of the
+few things wearing the treatment. **A diff cannot show that, and neither can any
+single frame** — every variant on that page looks defensible in isolation.
+
+Then the useful part. The retreat was the same lip with the lift removed, so the
+pill gained an edge without standing up, and **that was rejected too, for the
+same reason.** One rejection means "too heavy" and leaves a ladder to walk down.
+Two rejections at two weights for one reason means the axis is spoken for: there
+is no quieter way to join a set. Nothing shipped, and the flat pill is now a
+decision rather than an omission.
 
 **So before closing a consistency gap, check whether the set is the real set.**
-An audit that counts members can only tell you a treatment is unevenly applied,
-never whether the unevenness is the point. The three findings above were one
-token asked to do two jobs; this one was one *signal* asked to mean two things,
-and the tell is that the fix looked correct in every isolated frame and wrong in
-the app.
+The seven controls carrying the lift are not "the filled controls" — they are the
+controls that **act**: record, add, delete, confirm, commit a setting. A view
+filter changes what you are looking at. An audit that counts members can tell you
+a treatment is unevenly applied; it can never tell you the unevenness is the
+point. The three findings above were one token asked to do two jobs; this one was
+one *signal* asked to mean two things.
+
+And the cheapest lesson in it: **`index.html` already argued against it.**
+The comment directly above the rule reads *"brass marks a SETTING you've
+committed to … whereas these only change what you're looking at"* — the exact
+distinction, stated about the fill. It was read, quoted into the analysis, and
+argued past on the grounds that colour carried it and depth did not. It carried on
+both. When the file already argues against a change, that is evidence, not
+context.
 
 The one-token-two-jobs shape also shows up *forwards*, as a proposal rather than
-a bug, which is easier to catch: `build-seats.js` row E3 paints `--felt` inside the pad to make
-the seat diagram look like a card table. Same move — a token tuned as the ground
+a bug, which is easier to catch: `build-seats.js` row E3 paints `--felt` inside
+the pad to make the seat diagram look like a card table. Same move — a token
+tuned as the ground
 the paper sits **on**, asked to be a fill **in** it — and it takes the `--brass`
 dealer tag and arrow down with it, since those were picked to sit on cream.
 **A token borrowed across the pad/felt boundary drags everything already tuned
@@ -184,9 +197,9 @@ Worth knowing before extending any of this.
   drops as the control shrinks, because the same 1px lip is a larger share of a
   shorter edge. So a recorded hairline bound is a measurement *at a size*, not a
   property of the token — re-render before reusing one on something smaller or
-  larger. (It changed no values: 32px took the shipped pair unmodified with room
-  left before the key-cap end, which is why a second, lighter pair would have been
-  a value to name and defend for nothing.)
+  larger. Nothing was changed on the strength of it — that prototype shipped no
+  CSS at all — which is exactly why it is written down here rather than left in a
+  commit message.
 - **A prototype page needs its own `<!doctype>` and viewport meta.** Without
   them iOS lays out at 980px in quirks mode and the page is unusable on the
   device it is describing.
