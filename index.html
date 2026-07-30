@@ -139,6 +139,13 @@
        These sit in the middle. Note what does NOT constrain it: the inner shadow
        never reaches the label's glyphs even at double this weight, so the cream
        label's 2.50:1 (see the note below) is not spent here. See build-button.js.
+       THAT RANGE IS PER SIZE, not absolute — it was measured on the 42-44px
+       controls this first shipped to. build-pills.js re-asked the lower bound on
+       the 32px .stat-sort-chip and 22/18 reads there, faintly but really, where
+       at 44px it was the documented no-op. The floor drops as the control does,
+       because the same 1px lip is a larger share of a shorter edge. It did not
+       change these values: the 32px pill took this pair unmodified, with room
+       left before the key-cap end, so nothing was gained by a second weight.
        Nothing needed on :active: every one of these controls already sets
        box-shadow:none when pressed, which drops the bevel with the lift. */
     --bevel-hi:color-mix(in srgb, var(--cream) 32%, transparent);
@@ -955,9 +962,32 @@
   /* --plum, not --brass: brass marks a SETTING you've committed to (theme,
      tournament format, Moon Shot mode — see .chip.on), whereas these only
      change what you're looking at. Keeping the two fills distinct keeps that
-     read; it just no longer has to be near-black to do it. */
-  .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum); }
+     read; it just no longer has to be near-black to do it.
+     The box-shadow is the same three layers .chip.on and .who button.on carry,
+     copied rather than adapted: this was the eighth filled pressable control in
+     the app and the only one with no depth at all, which is a thing you notice
+     rather than a thing you can name. Deliberately NOT a new lighter pair for a
+     smaller control — see build-pills.js, where 32px turns out to have headroom
+     to spare before the key-cap failure, so a second weight would be a value to
+     name and defend for no gain. What was NOT copied is the row: .chip and
+     .who button are objects at rest (a --control fill plus 0 1px 2px/.1) and
+     these stay outlines on the paper, because giving four unselected pills a
+     fill lighter than the sheet turns filter chrome into five buttons competing
+     with the rank rows under it. One object rising out of a flat row is the
+     whole intent. */
+  .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum);
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
+  /* Not optional dressing. There was no .on:active rule at all while the pill was
+     flat — correct then, since re-tapping the active filter is a no-op and there
+     was no shadow to drop. Now there is: every beveled control in the app sets
+     box-shadow:none when pressed (the --bevel-* note depends on exactly that),
+     and both pill-shaped precedents scale as well. Without this the selected pill
+     is the one raised control in the app that stays raised under your thumb.
+     No transition to match: .stat-sort-chip has never had one, unlike .chip and
+     .who button, so its press has always been instant. Adding one here would
+     change the unselected pill's feel too, which is not what this is. */
+  .stat-sort-chip.on:active { transform:scale(.96); box-shadow:none; }
 
   .rank-row { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--rule-soft); cursor:pointer; }
   .rank-row:last-child { border-bottom:none; padding-bottom:20px; }
