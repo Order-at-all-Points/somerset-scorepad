@@ -264,3 +264,44 @@ Worth knowing before extending any of this.
   from `--felt-wash-strong`, a felt token being painted on the pad). The 15
   separator sites moved to `--rule-soft`. See `build-rules.js` for why the weight
   was bounded on both sides rather than chosen.
+
+## Noted, not acted on
+
+Things measured and written down without a generator or a fix. Reviewed
+2026-07-29.
+
+- **The dotted "tap me" underline is dense enough on the stats sheet that it
+  stops carrying information.** One player's sheet renders **16** of them —
+  11 `.stats-tile-label`, 4 `.stats-pair-label`, 1 `.stats-section-title` — against
+  4 comparable labels with none. All 16 mean the same thing (*tapping this opens
+  an explanation*) and all 16 are already `role="button"` with an `aria-label`, so
+  the underline is carrying no accessibility load.
+
+  The useful part is *where* it discriminates, since a marker only informs when
+  some siblings lack it:
+
+  | Group | Tappable | Underline does |
+  | --- | --- | --- |
+  | Tile grids | 11 of 11 | nothing — it's a property of "tile" |
+  | Pair rows | 4 of 4 | nothing — same |
+  | Section titles | **1 of 5** | real work: `Games by month` opens, `Recent form` doesn't |
+
+  So the treatment earns its place in the one group where it is rarest and is
+  ornament in the two where it is dense — the inverse of what you want. There is
+  also a third implementation of the same signal: `.peer-follow-btn` uses
+  `text-decoration:underline dotted` rather than a `border-bottom` (Stats Sharing
+  sheet, so not among the 16).
+
+  **Do not just delete the 15.** The `:active` background only appears once you
+  are already pressing, so the underline is the only at-rest cue that the tiles
+  explain themselves at all — subtracting it removes discoverability along with
+  the noise. The real question is whether 11 tiles that behave identically want 11
+  markers or one statement, which wants a prototype rather than an edit. Cheapest
+  honest version if it comes up: keep it on section titles, drop it from the two
+  uniform groups, add one line under the first grid saying the tiles explain
+  themselves.
+
+  Counted by computed style on a real two-game sheet, not by reading the CSS —
+  `.stats-tile[role="button"]` and friends are conditional on an `explain` string
+  being passed, so grepping the stylesheet tells you the rule exists, not how many
+  elements match it.

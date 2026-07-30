@@ -52,16 +52,27 @@
        teamViewOrder position, not on score, so plum is whichever team renders
        left: yours once you have identified, team 0 otherwise. The other team's
        bar is --rule at 1.72:1 against its track, quiet on purpose, which only
-       reads as a bug if you believe the old comment.) Lives here, not in a theme
-       block, because it doesn't vary across the themes anyone can actually
-       pick — both aubergine variants share this exact value (it's their
-       --felt). Deliberately NOT written as var(--felt): these are fills on
-       --cream cards, and aliasing them to the page background would make them
-       vanish the day one moves onto felt. The two retired classic themes
-       override it below so a revived palette doesn't inherit a foreign purple.
+       reads as a bug if you believe the old comment.)
+       This value IS [data-theme="aubergine"]'s --felt, byte for byte, and that
+       is the whole reason it works there: on dark the filled pill is not an
+       accent, it's a hole punched through the pad to the table underneath
+       (1.01:1 against the felt). Deliberately NOT written as var(--felt) even
+       so — these are fills on --cream cards, and aliasing them to the page
+       background would make them vanish the day one moves onto felt.
+       Read this as aubergine's value with a fallback's job, not as a default:
+       every other theme anyone can pick overrides it below. It stays in :root
+       rather than moving into that block only so an unlisted or archive theme
+       still resolves to something, since with no --plum at all the fill
+       disappears silently. The comment here used to claim the opposite — that
+       it "doesn't vary across the themes anyone can pick" because "both
+       aubergine variants share this exact value (it's their --felt)" — which
+       was only ever true of the dark one, and is why aubergine-light carried a
+       purple for the three weeks after its felt went warm.
        A lighter mid-plum (#4E2C63) was tried so the hue would register more on
        a 46px chip; it read as too assertive against the cream pad, especially
-       on the score bar. Keeping the background-weight tone deliberately. */
+       on the score bar. Keeping the background-weight tone deliberately — and
+       note that MORE purple is the branch already tested and rejected, so a
+       light theme that doesn't want this hue has to go warm, not brighter. */
     --plum:#2E1B3A;
     /* Letterpress for text on the CREAM PAD — the deboss pair the masthead's
        --mast-hi/--mast-lo are to the felt. Same optics: light reads as coming
@@ -277,6 +288,28 @@
        alpha — not worth a second number to explain. */
     --felt-wash:rgba(0,0,0,.05); --felt-wash-strong:rgba(0,0,0,.10);
     --seat-rule:var(--rule);
+    /* A third instance of the same miss as the wash above and --pad-edge below,
+       and the one that hid longest — because unlike those two it isn't declared
+       in this block at all. :root's --plum is aubergine DARK's --felt, which is
+       what makes the filled pill work there: a hole through the pad to the
+       table. Here felt is warm linen and that purple is 12.06:1 against it,
+       leaving the app's only cool hue (277deg, against 30-44 for every other
+       token in this block) sitting on the stats sheet.
+       It was not always an orphan, which is why it survived: under the palette
+       now archived at [data-theme="aubergine-light-archive-purple-primary"] —
+       live 2026-07-06 to 07-08 — this theme's PRIMARY was purple (--brass
+       #3D2B5C, hue 262 sat 36 against plum's 277/36, same family 15deg apart).
+       The pill was in-family then. Rewriting this block as a token-for-token
+       copy of dark moved --brass to 40deg and left --plum behind at 277.
+       Classic Light's fix verbatim, for the reason it gives: this family has no
+       deep tone that carries cream text. It costs nothing visually — #2E1B3A
+       and --ink are 1.05:1 apart, dL 0.0036 — which is also exactly why the
+       purple grated. With no lightness or weight separating it from body ink,
+       the foreign hue was the only thing marking the pill as selected, so it
+       read as ink that came out wrong rather than as an accent. The brass-vs-
+       plum split .stat-sort-chip.on relies on survives: ink is still not brass.
+       Affects the score bar's own-team fill too, not just the pill. */
+    --plum:var(--ink);
     /* The other deviation from the dark copy, and the same miss as the wash
        above: a value that silently assumed a dark ground. The pad's edge reads
        against the FELT, and dark carries no ring at all because --cream on a
