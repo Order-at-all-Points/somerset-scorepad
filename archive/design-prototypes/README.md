@@ -3,7 +3,7 @@
 Tooling for looking at SomeRSet's visual design without changing it. Everything
 here reads `index.html`; nothing writes to it.
 
-Nine experiments live here, at different stages:
+Ten experiments live here, at different stages:
 
 | | Status |
 | --- | --- |
@@ -15,7 +15,8 @@ Nine experiments live here, at different stages:
 | **Row separator weight** (`build-rules.js`) | **Shipped:** `--rule-soft`, `--rule` mixed 60% toward the paper (1.44–1.55, was 1.14). Keeps the ladder either side, plus the conventional neutral-grey hairline at a matched weight — the one that looks wrong here. |
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
-| **Depth on the seat tiles** (`build-seats.js`) | **Open — nothing applied.** The four `.seat` tiles are the flattest objects on the pad. Laddered on four axes — lift, inner edge, face texture, and the combinations — every variant styling `.seat` alone. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
+| **Depth on the seat tiles** (`build-seats.js`) | **Shipped:** a two-layer card shadow plus a gradient face on `.seat`, restated on `.seat.dealer` so the brass ring composes with it. Laddered on four axes — lift, inner edge, face texture, combinations. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
+| **Depth on the filter pill** (`build-pills.js`) | **Rejected — nothing applied.** `.stat-sort-chip.on` stays flat. Full parity shipped to a preview and came back off; the lip alone, with the lift removed, was turned down for the same reason. Two rejections at two weights, so the axis is spoken for rather than the value too strong — see below. Found along the way that the bevel's documented floor is **per size**, not absolute. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -42,9 +43,46 @@ rather than a nudge to the first, which would have broken the job it was already
 doing correctly. Before adjusting a token because one usage looks wrong, check
 what else is asking for it.
 
-The shape also shows up *forwards*, as a proposal rather than a bug, which is
-easier to catch: `build-seats.js` row E3 paints `--felt` inside the pad to make
-the seat diagram look like a card table. Same move — a token tuned as the ground
+A fourth finding is a different shape and worth separating from those, because
+the fix for the three above — apply the treatment consistently — is exactly what
+caused it. **A visual treatment can be information because it is scarce, and
+extending it for consistency spends the information.**
+
+`build-pills.js` found `.stat-sort-chip.on` to be the only filled pressable
+control with no depth, gave it the same three-layer stack the other seven carry,
+and shipped it. The report back was *"the bidder buttons changed"* — and they
+provably had not: all six `.who` rules were text-identical and computed
+identically in both themes. What changed was that they stopped being one of the
+few things wearing the treatment. **A diff cannot show that, and neither can any
+single frame** — every variant on that page looks defensible in isolation.
+
+Then the useful part. The retreat was the same lip with the lift removed, so the
+pill gained an edge without standing up, and **that was rejected too, for the
+same reason.** One rejection means "too heavy" and leaves a ladder to walk down.
+Two rejections at two weights for one reason means the axis is spoken for: there
+is no quieter way to join a set. Nothing shipped, and the flat pill is now a
+decision rather than an omission.
+
+**So before closing a consistency gap, check whether the set is the real set.**
+The seven controls carrying the lift are not "the filled controls" — they are the
+controls that **act**: record, add, delete, confirm, commit a setting. A view
+filter changes what you are looking at. An audit that counts members can tell you
+a treatment is unevenly applied; it can never tell you the unevenness is the
+point. The three findings above were one token asked to do two jobs; this one was
+one *signal* asked to mean two things.
+
+And the cheapest lesson in it: **`index.html` already argued against it.**
+The comment directly above the rule reads *"brass marks a SETTING you've
+committed to … whereas these only change what you're looking at"* — the exact
+distinction, stated about the fill. It was read, quoted into the analysis, and
+argued past on the grounds that colour carried it and depth did not. It carried on
+both. When the file already argues against a change, that is evidence, not
+context.
+
+The one-token-two-jobs shape also shows up *forwards*, as a proposal rather than
+a bug, which is easier to catch: `build-seats.js` row E3 paints `--felt` inside
+the pad to make the seat diagram look like a card table. Same move — a token
+tuned as the ground
 the paper sits **on**, asked to be a fill **in** it — and it takes the `--brass`
 dealer tag and arrow down with it, since those were picked to sit on cream.
 **A token borrowed across the pad/felt boundary drags everything already tuned
@@ -71,6 +109,7 @@ node archive/design-prototypes/build-rules.js      # -> out/rules.html
 node archive/design-prototypes/build-button.js     # -> out/button.html
 node archive/design-prototypes/build-vertical.js   # -> out/vertical-space.html  (needs capture first)
 node archive/design-prototypes/build-seats.js      # -> out/seats.html           (needs capture first)
+node archive/design-prototypes/build-pills.js      # -> out/pills.html           (needs capture first)
 ```
 
 Where a generator has a shipped variant, that row renders whatever `index.html`
@@ -150,6 +189,17 @@ Worth knowing before extending any of this.
   hairline (bevels, rings, seams, separators) has to be judged at true device
   scale, which is also why `screenshot-app.js` renders at 390×844 rather than
   something roomier.
+- **A 1px bound measured on one control size does not transfer to another.**
+  `build-button.js` records 22/18 as a bevel that ships as a no-op, and
+  `index.html` states the useful range as "below ~25% … imperceptible". True —
+  on the 42–44px controls it was measured on. `build-pills.js` re-asked it on the
+  **32px** `.stat-sort-chip` and 22/18 reads there, faintly but really. The floor
+  drops as the control shrinks, because the same 1px lip is a larger share of a
+  shorter edge. So a recorded hairline bound is a measurement *at a size*, not a
+  property of the token — re-render before reusing one on something smaller or
+  larger. Nothing was changed on the strength of it — that prototype shipped no
+  CSS at all — which is exactly why it is written down here rather than left in a
+  commit message.
 - **A prototype page needs its own `<!doctype>` and viewport meta.** Without
   them iOS lays out at 980px in quirks mode and the page is unusable on the
   device it is describing.
@@ -165,14 +215,24 @@ Worth knowing before extending any of this.
   reads as "nothing changed" rather than "nothing loaded". Give baselines an
   ordinary name.
 - **A two-theme grid can be a no-op by construction.** `aubergine` and
-  `aubergine-light` differ only in `--felt`/`--felt-deep`, `--mast-*`,
-  `--felt-wash*` and `--pad-edge`. `--cream`, `--cream-shade`, `--rule`, `--ink`,
-  `--ink-soft`, `--control` and `--seat-rule` are byte-identical. So anything
-  living entirely **on the pad** renders the same in both, and a side-by-side
-  proves nothing unless a variant reaches for a felt token — which is exactly
-  what makes it worth keeping: in `build-seats.js` the only row whose two columns
-  differ is the only row doing something wrong. Check which side of the boundary
-  an experiment sits on before assuming the toggle is telling you anything.
+  `aubergine-light` differ in `--felt`/`--felt-deep`, `--mast-*`, `--felt-wash*`,
+  `--pad-edge` — and, since `962ac26`, `--plum`. `--cream`, `--cream-shade`,
+  `--rule`, `--ink`, `--ink-soft`, `--control` and `--seat-rule` are
+  byte-identical. So anything living entirely **on the pad** renders the same in
+  both, and a side-by-side proves nothing unless a variant reaches for a felt
+  token — which is exactly what makes it worth keeping: in `build-seats.js` the
+  only row whose two columns differ is the only row doing something wrong. Check
+  which side of the boundary an experiment sits on before assuming the toggle is
+  telling you anything.
+  **`--plum` is the exception that proves the rule was about grounds, not
+  locations.** It is a pad token — a fill under cream text on the paper — and it
+  now differs per theme anyway, because its *value* was dark-aubergine's `--felt`
+  borrowed inward. Every other pad token is shared because the pad genuinely does
+  not change; this one had to split because it was never a pad colour to begin
+  with. `build-pills.js` is therefore the first generator whose two columns differ
+  on the element under test, and that is a real signal there rather than a bug:
+  `--bevel-lo` is mixed from `--ink` and has more to bite into on light's warm
+  fill than on dark's purple one.
 - **`.seat.dealer` owns its own `box-shadow`.** It carries
   `inset 0 0 0 2px var(--brass)` for the dealer ring, so any depth added to
   `.seat` is silently dropped on the one tile the eye goes to first — and the
