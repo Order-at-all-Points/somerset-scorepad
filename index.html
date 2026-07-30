@@ -119,13 +119,21 @@
        per-theme: custom properties substitute where they are USED, so var(--rule)
        here resolves against whatever [data-theme] is on the html element. */
     --rule-soft:color-mix(in srgb, var(--rule) 60%, var(--cream));
-    /* Bevel for RAISED filled controls — .btn-record/.btn-new/.btn-add,
-       .btn-danger, .sheet-btn.primary, .chip.on, .who button.on. The third
+    /* Bevel for filled controls — .btn-record/.btn-new/.btn-add, .btn-danger,
+       .sheet-btn.primary, .chip.on, .who button.on, .stat-sort-chip.on. The third
        depth treatment in the app and the only one that reads as coming UP off
        the surface: --mast-* presses text into the felt and --press-* presses it
        into the pad, both shadow-up/highlight-down. A raised edge is that
        inverted — the top inner lip catches the light, the bottom falls into
        shade — so these go highlight-first.
+       Said "RAISED filled controls" until 2026-07-30, when .stat-sort-chip.on
+       took this pair WITHOUT the 0 1px 2px/.25 lift the other seven pair it with.
+       That is a real distinction and not a slip: the lift marks a control that
+       acts, and a view filter does not act, so the pill gets a lip flush with the
+       paper instead of being stood up as an object (see its own comment). The
+       token is doing one job in two settings, which is the benign version of the
+       shape the prototypes README warns about — the optical ask is identical, a
+       top-lit inner edge, so nothing here was tuned for a ground it is not on.
        Warm rather than neutral, mixed from --cream and --ink instead of white
        and black, for the reason --press-lo is warm: a neutral pair cools a
        saturated fill, and every control this lands on is saturated (brass, red)
@@ -963,20 +971,28 @@
      tournament format, Moon Shot mode — see .chip.on), whereas these only
      change what you're looking at. Keeping the two fills distinct keeps that
      read; it just no longer has to be near-black to do it.
-     The box-shadow is the same three layers .chip.on and .who button.on carry,
-     copied rather than adapted: this was the eighth filled pressable control in
-     the app and the only one with no depth at all, which is a thing you notice
-     rather than a thing you can name. Deliberately NOT a new lighter pair for a
-     smaller control — see build-pills.js, where 32px turns out to have headroom
-     to spare before the key-cap failure, so a second weight would be a value to
-     name and defend for no gain. What was NOT copied is the row: .chip and
-     .who button are objects at rest (a --control fill plus 0 1px 2px/.1) and
-     these stay outlines on the paper, because giving four unselected pills a
-     fill lighter than the sheet turns filter chrome into five buttons competing
-     with the rank rows under it. One object rising out of a flat row is the
-     whole intent. */
+     The box-shadow is the --bevel-* lip WITHOUT the lift, and the missing layer
+     is the whole point. This was the eighth filled pressable control in the app
+     and the only one with no depth at all, so the obvious fix was the three-layer
+     stack .chip.on and .who button.on carry. That was built, shipped to a preview
+     and rejected on looking at it, for a reason a diff cannot show: the seven
+     controls carrying that stack all ACT — record, add, delete, confirm, or commit
+     a setting — and the lift is how the app says so. Making a view filter the
+     eighth member spends the signal, and the bidder tile reads as well as it does
+     partly BECAUSE the set is small. Consistency was the wrong axis: these pills
+     were never the odd one out, they were on the correct side of a line.
+     So the pill takes the lip, which gives the fill a top-lit edge and leaves it
+     flush with the paper, and refuses the lift, which would stand it up as an
+     object. Dimension without joining the club. Note this makes --bevel-* the one
+     token pair used two ways — inside a raised stack, and alone as a flush edge —
+     which is fine because both ask it for the same thing optically; see its own
+     comment. build-pills.js has the full stack kept as B3.
+     The row is untouched for a separate reason. .chip and .who button are objects
+     at rest (a --control fill plus 0 1px 2px/.1); these stay outlines, because
+     giving four unselected pills a fill lighter than the sheet turns filter chrome
+     into five buttons competing with the rank rows under it. */
   .stat-sort-chip.on { background:var(--plum); color:var(--cream); border-color:var(--plum);
-    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
+    box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo); }
   .stat-sort-chip:active:not(.on) { transform:scale(.96); background:var(--cream-shade); }
   /* Not optional dressing. There was no .on:active rule at all while the pill was
      flat — correct then, since re-tapping the active filter is a no-op and there

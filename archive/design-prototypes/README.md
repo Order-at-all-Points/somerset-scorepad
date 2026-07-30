@@ -16,7 +16,7 @@ Ten experiments live here, at different stages:
 | **Raised-control bevel** (`build-button.js`) | **Shipped:** `--bevel-hi`/`--bevel-lo`, a 1px warm lip on the seven filled controls. Keeps the ladder either side — including the value that shipped for one commit and turned out to be invisible at phone scale. |
 | **Vertical space** (`build-vertical.js`) | **Shipped:** `.empty-state` on the two zero-state boards, chip rows gated on the underlying set being empty. The original four options answered the wrong question — B/C/D are kept, and B is the one to render rather than read about. |
 | **Depth on the seat tiles** (`build-seats.js`) | **Shipped:** a two-layer card shadow plus a gradient face on `.seat`, restated on `.seat.dealer` so the brass ring composes with it. Laddered on four axes — lift, inner edge, face texture, combinations. Keeps three rows of the *earlier, wrong* question (a drawn surface under the seats) for the one finding they produced. |
-| **Depth on the filter pill** (`build-pills.js`) | **Shipped:** `.stat-sort-chip.on` takes the same three-layer shadow `.chip.on` and `.who button.on` already carry, unmodified, plus the `:active` rule that drops it. The row stays outlines — raising the unselected pills was the open question and rendering killed it. Found that the bevel's documented floor is **per size**, not absolute. |
+| **Depth on the filter pill** (`build-pills.js`) | **Shipped:** `.stat-sort-chip.on` takes the `--bevel-*` lip **without** the lift, plus the `:active` rule that drops it. Full parity shipped first and was reverted — see below; the lift is reserved for controls that act. The row stays outlines: raising the unselected pills brightens the strip into five buttons. Also found that the bevel's documented floor is **per size**, not absolute. |
 
 The masthead presses text into the **felt**, which inverts between themes, so
 `--mast-hi`/`--mast-lo` are per-theme. The scoreboard presses into the **pad**,
@@ -43,8 +43,32 @@ rather than a nudge to the first, which would have broken the job it was already
 doing correctly. Before adjusting a token because one usage looks wrong, check
 what else is asking for it.
 
-The shape also shows up *forwards*, as a proposal rather than a bug, which is
-easier to catch: `build-seats.js` row E3 paints `--felt` inside the pad to make
+A fourth finding is a different shape and worth separating from those, because
+the fix for the three above — apply the treatment consistently — is exactly what
+caused it. **A visual treatment can be information because it is scarce, and
+extending it for consistency spends the information.** `build-pills.js` found
+`.stat-sort-chip.on` to be the only filled pressable control with no depth, gave
+it the same three-layer stack the other seven carry, and shipped it. The report
+back was *"the bidder buttons changed"* — and they provably had not: all six
+`.who` rules were text-identical and computed identically in both themes. What
+changed was that they stopped being one of the few things wearing that treatment.
+The seven controls with the lift all **act** — record, add, delete, confirm,
+commit a setting — and a view filter does not. The pill was never the odd one
+out; it was on the correct side of a line the app draws, and its own comment in
+`index.html` already said so about the *fill* ("brass marks a SETTING you've
+committed to, whereas these only change what you're looking at") before that
+argument was read, noted, and argued past. It shipped the lip alone instead:
+dimension without joining the set.
+
+**So before closing a consistency gap, check whether the set is the real set.**
+An audit that counts members can only tell you a treatment is unevenly applied,
+never whether the unevenness is the point. The three findings above were one
+token asked to do two jobs; this one was one *signal* asked to mean two things,
+and the tell is that the fix looked correct in every isolated frame and wrong in
+the app.
+
+The one-token-two-jobs shape also shows up *forwards*, as a proposal rather than
+a bug, which is easier to catch: `build-seats.js` row E3 paints `--felt` inside the pad to make
 the seat diagram look like a card table. Same move — a token tuned as the ground
 the paper sits **on**, asked to be a fill **in** it — and it takes the `--brass`
 dealer tag and arrow down with it, since those were picked to sit on cream.

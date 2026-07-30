@@ -3,19 +3,24 @@
  * Should the selected filter pill be raised like the bidder tile? -> out/pills.html
  *
  * `.stat-sort-chip.on` -- the active pill in the History log's filter row and the
- * Stats sheet's sort row -- carries `box-shadow:none`. Not a lighter treatment than
- * the other filled controls: none at all. Measured, not eyeballed:
+ * Stats sheet's sort row -- carried `box-shadow:none` when this page was built. Not a
+ * lighter treatment than the other filled controls: none at all. Measured as found:
  *
  *   .who button.on   (bidder)   179x44px  radius   8px  bevel + 0 1px 2px/.25
  *   .chip.on         (setting)   89x42px  radius 999px  bevel + 0 1px 2px/.25
  *   .stat-sort-chip.on (filter)  61x32px  radius 999px  NONE
  *
- * Seven rules in index.html carry --bevel-hi. `.stat-sort-chip.on` is the eighth
- * filled, pressable, free-standing control and the only one without it. The other
- * cream-on-fill rules with no bevel are all correctly excluded: badges you do not
- * press (.hist-win-badge, .mbox-slot.win, .stats-form-pill), table headers, and the
- * swipe-revealed .deal-detail-btn/.swipe-action-btn, which sit UNDER a row rather
- * than on top of it.
+ * Seven rules carried --bevel-hi at that point. `.stat-sort-chip.on` was the eighth
+ * filled, pressable, free-standing control and the only one with no depth of any
+ * kind. The other cream-on-fill rules without a bevel are all correctly excluded:
+ * badges you do not press (.hist-win-badge, .mbox-slot.win, .stats-form-pill), table
+ * headers, and the swipe-revealed .deal-detail-btn/.swipe-action-btn, which sit UNDER
+ * a row rather than on top of it.
+ *
+ * That count is what made this look like a consistency gap. It was not one -- read the
+ * SETTLED section before reusing the argument. The pill now carries the lip and not
+ * the lift, so the seven-vs-one framing above is how the question ARRIVED, not how it
+ * resolved.
  *
  * TWO OBJECTIONS, ONE OF WHICH IS ALREADY DEAD. The first was geometry: a 1px inner
  * lip on a fully-rounded shape should read as gloss rather than as a lip, which is
@@ -30,20 +35,19 @@
  * transfer, in either direction, which is why the lower bound is re-asked in B5
  * rather than assumed settled.
  *
- * THE ROW IS THE ACTUAL DECISION, NOT THE WEIGHT. `.chip` and `.who button` are
- * already objects AT REST -- a --control fill plus 0 1px 2px/.1 -- so selecting one
- * raises something already raised. `.stat-sort-chip` at rest is `background:none`
- * with no shadow: an outline drawn on the paper. Adding the full treatment to `.on`
- * alone (group B) makes the selected pill the only three-dimensional object in a row
- * of flat outlines, which may read as it detaching from the row rather than rising
- * within it. Group C raises the whole row instead, which is true structural parity
- * with the .chips row -- and risks turning filter chrome you are meant to look past
- * into five pieces of furniture on the stats sheet. B and C are not weights of the
- * same idea; they are different claims about what the row is.
+ * THE ROW IS AN AXIS OF ITS OWN, NOT A WEIGHT. `.chip` and `.who button` are already
+ * objects AT REST -- a --control fill plus 0 1px 2px/.1 -- so selecting one raises
+ * something already raised. `.stat-sort-chip` at rest is `background:none` with no
+ * shadow: an outline drawn on the paper. Group B changes only the selected pill and
+ * leaves its four siblings as outlines; group C raises the whole row into structural
+ * parity with the .chips row, and risks turning filter chrome you are meant to look
+ * past into five pieces of furniture on the stats sheet. Not weights of one idea --
+ * different claims about what the row is. C lost; see SETTLED.
  *
- * A COMPANION RULE IS REQUIRED, and it is not optional dressing. There is no
- * `.stat-sort-chip.on:active` in the app at all today -- correct while the pill is
- * flat, since re-tapping the active filter is a no-op and there is nothing to drop.
+ * A COMPANION RULE IS REQUIRED, and it is not optional dressing. There was no
+ * `.stat-sort-chip.on:active` in the app before this work -- correct while the pill
+ * was flat, since re-tapping the active filter is a no-op and there was nothing to
+ * drop. It ships alongside the lip.
  * Every beveled control does set `box-shadow:none` on :active (the --bevel-* comment
  * relies on exactly this: "which drops the bevel with the lift"), and both pill-shaped
  * precedents also scale: `.chip.on:active` and `.who button.on:active`. So every
@@ -66,8 +70,36 @@
  * on a 32px control and a zoomed frame is precisely what lies about those -- the
  * app's first bevel value shipped from a zoomed render and did nothing in the hand.
  *
- * SETTLED -- B3 shipped: the three-layer shadow copied unmodified, and the row left
- * as outlines. Two things the rendering decided that the argument could not.
+ * SETTLED -- B1 shipped: the --bevel-* lip with NO lift, and the row left as
+ * outlines.
+ *
+ * B3 SHIPPED FIRST AND WAS TAKEN BACK OFF, which is the finding worth keeping here.
+ * Full parity looks correct in isolation -- it is byte-identical to two shipped
+ * precedents, needs no new value, and reads cleanly at 32px. What it costs does not
+ * appear in a diff or in any single frame: the seven controls carrying that stack
+ * all ACT (record, add, delete, confirm, commit a setting), and the lift is how the
+ * app says so. Adding a view filter as the eighth spends the signal. The report that
+ * killed it was "the bidder buttons changed" -- and they had not, provably: all six
+ * .who rules were text-identical and computed identically in both themes. What
+ * changed was that they stopped being one of the few things wearing that treatment.
+ *
+ * SO CONSISTENCY WAS THE WRONG AXIS TO MEASURE ON. The pill was never the odd one
+ * out for lacking depth; it was on the correct side of a line the app draws between
+ * controls that act and chrome that changes what you are looking at. Its own comment
+ * in index.html already said as much about the FILL -- "brass marks a SETTING you've
+ * committed to, whereas these only change what you're looking at" -- and that
+ * argument was read, noted, and then argued past on the grounds that only colour
+ * carried the distinction. It carried on the depth axis too. When an audit finds one
+ * member of a set missing a treatment, check whether the set is the real set.
+ *
+ * B1 is what that leaves: the lip gives the fill a top-lit edge and keeps it flush
+ * with the paper, so the pill gains dimension without standing up as an object. It
+ * is also why --bevel-* is now used two ways -- inside a raised stack for seven
+ * controls, alone as a flush edge for this one. Benign, unlike the cases the README
+ * collects: the optical ask is identical either way, a top-lit inner edge, so
+ * nothing is being asked of a token that was tuned for a different ground.
+ *
+ * Two more things the rendering decided that the argument could not.
  *
  * Group C lost, and it was the genuinely open question going in. Raising the row
  * means giving unselected pills a --control fill, which is LIGHTER than the sheet:
@@ -81,14 +113,8 @@
  * 1px lip is a larger share of a shorter edge. Recorded in index.html's --bevel-*
  * note as well, since that is where the range is asserted. It did not change the
  * outcome -- 32px took the shipped pair unmodified with room before the key-cap end
- * -- which is the argument for B3 over B4/B5: a lighter pair would be a new value
- * to name and defend for no gain.
- *
- * B1 IS THE RUNNER-UP AND WORTH KNOWING ABOUT: the lip with no lift, so the fill
- * gets a top-lit edge but stays flush with the paper. It is the more restrained
- * answer and the right one if this row should read flatter than the bidder tile.
- * It lost only because the question was consistency with that tile, which B1 by
- * definition does not deliver.
+ * -- which is the argument for using --bevel-* as it stands rather than B4/B5: a
+ * lighter pair would be a new value to name and defend for no gain.
  *
  * B6 does not earn its weight. A pill in a scrolling row seemed like it might want
  * .seat's two-layer card shadow rather than the button lift; it renders fine, softer
@@ -144,10 +170,11 @@ for (const k of SCREEN_KEYS) {
 }
 
 /* How far off the paper. The app's existing vocabulary: /.1 is what a control casts
-   AT REST (.chip, .who button, .step, and today's .seat), /.25 is the raised-fill
-   signature the seven beveled controls carry when active. `card` is the two-layer
-   treatment d389923 gave .seat -- a thin object lying on paper rather than a button
-   standing on it, which is arguably what a pill in a scrolling row is. */
+   AT REST (.chip, .who button, .step), /.25 is the raised-fill signature the seven
+   raised controls carry when active, and it is the layer B1 deliberately omits --
+   see the header. `card` is the two-layer treatment d389923 gave .seat, a thin
+   object lying on paper rather than a button standing on it, which seemed like it
+   might be what a pill in a scrolling row is. It is not; see B6. */
 const LIFT = {
   rest: "0 1px 2px rgba(0,0,0,.1)",
   soft: "0 1px 2px rgba(0,0,0,.18)",
@@ -164,6 +191,8 @@ const bevel = (hi, lo) =>
   `inset 0 1px 0 color-mix(in srgb, var(--cream) ${hi}%, transparent), ` +
   `inset 0 -1px 0 color-mix(in srgb, var(--ink) ${lo}%, transparent)`;
 const EDGE = {
+  /* The live token pair. B1 ships this ALONE; the seven raised controls ship it
+     stacked over LIFT.fill, which is what B3 restores. */
   ship: "inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo)",
   /* build-button.js's documented lower bound: a no-op at 44px, kept in that file for
      the reason it is re-asked here -- a value that does nothing still looks like a
@@ -175,8 +204,9 @@ const EDGE = {
   gloss: bevel(48, 40),
 };
 
-/* Emits the selected pill, the :active companion the app's convention requires (see
-   the header -- there is no .on:active rule today), and optionally the at-rest row. */
+/* Emits the selected pill, the :active companion the app's convention requires, and
+   optionally the at-rest row. The .on:active rule ships now (it did not before this
+   generator), so variants restate it rather than introduce it. */
 function pill(o) {
   const layers = [o.inset, o.lift].filter(Boolean).join(", ");
   let css = `.stat-sort-chip.on{box-shadow:${layers};}`;
@@ -193,7 +223,7 @@ function pill(o) {
 }
 
 const GA = "A - Where it stands today";
-const GB = "B - The PILL only: siblings stay flat outlines, one object rises out of the row";
+const GB = "B - The PILL only: siblings stay flat outlines. How far off the paper should the selected one come, if at all?";
 const GC = "C - The ROW: unselected pills become objects at rest too, as .chip and .who button already are";
 const GD = "D - Bounds, kept";
 
@@ -201,15 +231,18 @@ const VARIANTS = [
   { g: GA, t: "A1 - Current: box-shadow:none. The only filled pressable control in the app with no depth at all",
     css: `` },
 
-  { g: GB, t: "B1 - Inner lip only, no lift: the fill gets a top-lit edge but stays flush with the sheet  (still a drawn thing, not an object)",
-    css: pill({ inset: EDGE.ship }) },
-  { g: GB, t: "B2 - Lift only, no lip: 0 1px 2px/.25, the raised-fill weight  (isolates whether the lift or the lip is doing the work)",
-    css: pill({ lift: LIFT.fill }) },
   /* SHIPPED. Empty css so this row renders whatever index.html currently says
      rather than a copy of it that can rot -- same convention as build-button.js
      and build-seats.js. If the live rule changes, this row changes with it. */
-  { g: GB, t: "B3 - SHIPPED: the exact three-layer shadow .chip.on and .who button.on carry, unmodified. Renders live from index.html, not a copy",
+  { g: GB, t: "B1 - SHIPPED: the lip with NO lift. The fill gets a top-lit edge and stays flush with the paper, so the pill gains dimension without joining the set of controls that stand up off it. Renders live from index.html, not a copy",
     css: `` },
+  { g: GB, t: "B2 - Lift only, no lip: the mirror image of B1, and the pair worth comparing first -- B1 has the lip and no lift, this has the lift and no lip. One reads as an edge on the paper, the other as an object above it",
+    css: pill({ lift: LIFT.fill }) },
+  /* SHIPPED, THEN REJECTED -- the important row on this page. Kept explicit rather
+     than empty, because it is no longer what index.html says and the whole reason
+     it lost is invisible unless you can put it beside B1. See the header. */
+  { g: GB, t: "B3 - REJECTED: full parity, the exact three-layer stack .chip.on and .who button.on carry. Shipped to a preview and taken back off -- it looks right in isolation and dilutes what the lift MEANS. Compare with B1 above, which is what ships",
+    css: pill({ inset: EDGE.ship, lift: LIFT.fill }) },
   { g: GB, t: "B4 - Shipped lip, softer lift (/.18): same idea as B3 sized for a 32px control rather than a 44px one",
     css: pill({ inset: EDGE.ship, lift: LIFT.soft }) },
   { g: GB, t: "B5 - Lighter lip (22/18), full lift: build-button.js's documented no-op weight, re-asked at two thirds the height  (if this reads, the smaller control genuinely wants less)",
@@ -222,7 +255,7 @@ const VARIANTS = [
   { g: GC, t: "C2 - Row raised + softer lift on the selected pill: the same, with less distance between at-rest and selected",
     css: pill({ inset: EDGE.ship, lift: LIFT.soft, row: true }) },
 
-  { g: GD, t: "D1 - Lip at 48/40: past the ~45% ceiling the --bevel-* note names. The key-cap failure, at pill radius, kept so B3 is legible as a choice",
+  { g: GD, t: "D1 - Lip at 48/40: past the ~45% ceiling the --bevel-* note names. The key-cap failure at pill radius, kept so B1's lip weight is legible as a choice rather than as a number",
     css: pill({ inset: EDGE.gloss, lift: LIFT.fill }) },
   { g: GD, t: "D2 - Highlight only + full lift: no dark lower lip. The near-white-on-cream carve-out fa01439 made does NOT apply here (this fill is near-black), so this row is about the pill's own curve, not about grubbiness",
     css: pill({ inset: EDGE.hiOnly, lift: LIFT.fill }) },
@@ -241,7 +274,7 @@ const page = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SomeRSet &mdash; should the filter pill be raised?</title>
+<title>SomeRSet &mdash; should the filter pill be raised?  (no &mdash; a lip, not a lift)</title>
 <style>
   :root{color-scheme:dark}
   *{box-sizing:border-box} html,body{margin:0}
@@ -278,17 +311,19 @@ const page = `<!doctype html>
     <tr><th>control</th><th>size</th><th>radius</th><th>selected-state depth</th></tr>
     <tr><td><code>.who button.on</code> &mdash; bidder</td><td>179&times;44</td><td>8px</td><td>bevel + 0 1px 2px/.25</td></tr>
     <tr><td><code>.chip.on</code> &mdash; a setting</td><td>89&times;42</td><td>999px</td><td>bevel + 0 1px 2px/.25</td></tr>
-    <tr><td><code>.stat-sort-chip.on</code> &mdash; a filter</td><td>61&times;32</td><td>999px</td><td class="no">none</td></tr>
+    <tr><td><code>.stat-sort-chip.on</code> &mdash; a filter, as found</td><td>61&times;32</td><td>999px</td><td class="no">none</td></tr>
+    <tr><td><code>.stat-sort-chip.on</code> &mdash; <strong>what ships (B1)</strong></td><td>61&times;32</td><td>999px</td><td>bevel only &mdash; <em>no lift</em></td></tr>
   </table>
-  <p class="lede"><strong>The radius objection is already dead.</strong> <code>.chip.on</code> is <code>--r-pill</code> at radius 999px and has carried the identical bevel since <code>fa01439</code>, so a 1px lip on a fully-rounded shape is proven in shipped code. What is <em>not</em> settled is size: the bevel range was tuned on 44px controls and this is 32px, so <strong>B5</strong> re-asks the lower bound rather than assuming it transfers.</p>
-  <p class="lede"><strong>B versus C is the real decision, and it is not a weight.</strong> <code>.chip</code> and <code>.who button</code> are already objects at rest, so selecting one raises something already raised. <code>.stat-sort-chip</code> at rest is <code>background:none</code> with no shadow &mdash; an outline on the paper. Group B lets one object rise out of a row of flat outlines; group C raises the whole row into parity with the <code>.chips</code> row. Two different claims about what the row <em>is</em>.</p>
+  <p class="lede"><strong>Answered: no.</strong> Full parity (<strong>B3</strong>) shipped to a preview first and was taken back off. It is byte-identical to two shipped precedents and reads cleanly at 32px &mdash; and the seven controls carrying that stack all <em>act</em>: record, add, delete, confirm, commit a setting. The lift is how the app says so, and making a view filter the eighth member spends the signal. What ships is the lip alone: dimension, flush with the paper, without joining that set. <strong>Compare B1 against B2</strong> &mdash; lip-without-lift versus lift-without-lip &mdash; that pair is the whole decision.</p>
+  <p class="lede"><strong>The radius objection is dead.</strong> <code>.chip.on</code> is <code>--r-pill</code> at radius 999px and has carried the identical bevel since <code>fa01439</code>, so a 1px lip on a fully-rounded shape is proven in shipped code. Size was the live question: the bevel range was tuned on 44px controls and this is 32px, so <strong>B5</strong> re-asks the lower bound. It reads here, where at 44px it was a documented no-op &mdash; that bound is per size, not absolute.</p>
+  <p class="lede"><strong>B versus C is a second axis, and not a weight.</strong> <code>.chip</code> and <code>.who button</code> are already objects at rest, so selecting one raises something already raised. <code>.stat-sort-chip</code> at rest is <code>background:none</code> with no shadow &mdash; an outline on the paper. Group B changes the selected pill only; group C raises the whole row into parity with the <code>.chips</code> row. C lost: <code>--control</code> is <em>lighter</em> than the sheet, so the strip brightens into five buttons competing with the rank rows below it.</p>
   <p class="lede"><strong>Judge at this size.</strong> Frames are 390px and unscaled. The app's first bevel value shipped from a zoomed render and did nothing in the hand.</p>
   <p class="lede"><strong>The two columns differ here</strong>, unlike <code>seats.html</code>. Since <code>962ac26</code> the fill is <code>--ink</code> on light and <code>:root</code>'s <code>#2E1B3A</code> on dark, and <code>--bevel-lo</code> is mixed from <code>--ink</code> &mdash; so the lower lip has more to bite into on the warm fill than on the purple one.</p>
 </div>
 <div id="out"></div>
 <div class="foot">
   <p>Both rows are in every variant because the treatment lands on both and they keep different company: the Stats sort row sits above rank rows with their own gold progress bars, the log's filter row above date headers and game cards. A weight that reads as trim on one can read as a second row of buttons on the other.</p>
-  <p>Every depth variant also emits <code>.stat-sort-chip.on:active{transform:scale(.96);box-shadow:none}</code>. There is no such rule in the app today &mdash; correct while the pill is flat, since re-tapping the active filter is a no-op and there is nothing to drop. Without it the selected pill would be the one raised control in the app that stays raised when pressed.</p>
+  <p>Every depth variant also emits <code>.stat-sort-chip.on:active{transform:scale(.96);box-shadow:none}</code>. No such rule existed before this work &mdash; correct while the pill was flat, since re-tapping the active filter is a no-op and there was nothing to drop. It ships with the lip; without it the pill would be the one control in the app that keeps its edge under your thumb.</p>
 </div>
 <script>
 const APP_CSS=${js(CSS)}, SCREENS=${js(SCREEN_KEYS.map((k) => ({ k, title: SCREENS[k].title, html: SCREENS[k].html })))},
