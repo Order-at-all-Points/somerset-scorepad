@@ -47,7 +47,9 @@
     --font-display: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif;
     --font-text: -apple-system, system-ui, 'Helvetica Neue', sans-serif;
     /* Deep accent used as a FILL under --cream text: the VIEWER'S OWN team's
-       score bar and the active view-filter/sort pill. (Said "the leading team's"
+       score bar, the active view-filter/sort pill, and the selected bidder tile
+       (.who button.on, which took this on 2026-07-29 — see its rule for why the
+       change is visible in exactly two of the five themes). (Said "the leading team's"
        until 2026-07-29 and never meant it — renderScorePad picks the fill on
        teamViewOrder position, not on score, so plum is whichever team renders
        left: yours once you have identified, team 0 otherwise. The other team's
@@ -155,7 +157,16 @@
        prototype shipped no CSS at all — but the numbers above are a measurement
        AT A SIZE, so re-render before reusing them on something smaller.
        Nothing needed on :active: every one of these controls already sets
-       box-shadow:none when pressed, which drops the bevel with the lift. */
+       box-shadow:none when pressed, which drops the bevel with the lift.
+       THE PAIR COLLAPSES TO THE HIGHLIGHT ALONE ON AN --ink FILL, and that is
+       arithmetic, not a rendering subtlety: --bevel-lo is --ink at 26%, so over a
+       fill of --ink it composites to --ink exactly, 1.00:1. Two members used to
+       hit this. .who button.on no longer does (it moved to --plum on 2026-07-29);
+       .btn-add still does, in all five themes. Everything else here is filled
+       brass or red, where the lower lip darkens properly. Left alone because at
+       this alpha the lip is invisible on a phone either way — the point is only
+       that "highlight-first PAIR" above describes five of the seven controls, so
+       don't read a missing bottom edge on .btn-add as damage. */
     --bevel-hi:color-mix(in srgb, var(--cream) 32%, transparent);
     --bevel-lo:color-mix(in srgb, var(--ink) 26%, transparent);
   }
@@ -323,7 +334,10 @@
        the foreign hue was the only thing marking the pill as selected, so it
        read as ink that came out wrong rather than as an accent. The brass-vs-
        plum split .stat-sort-chip.on relies on survives: ink is still not brass.
-       Affects the score bar's own-team fill too, not just the pill. */
+       Affects the score bar's own-team fill too, not just the pill — and since
+       2026-07-29 the selected bidder tile, which is why that change is invisible
+       in this theme: the tile asked for plum, and here plum is what it already
+       had. The line above is doing real work in both directions now. */
     --plum:var(--ink);
     /* The other deviation from the dark copy, and the same miss as the wash
        above: a value that silently assumed a dark ground. The pad's edge reads
@@ -593,8 +607,41 @@
     box-shadow:0 1px 2px rgba(0,0,0,.1);
     transition:transform .08s ease; }
   .who button:active:not(.on) { transform:scale(.96); background:var(--cream-shade); box-shadow:none; }
-  .who button.on { border-color:var(--ink);
-    background:var(--ink);
+  /* --plum, matching .stat-sort-chip.on, and on dark that is the point: --plum
+     IS aubergine dark's --felt, so the selected tile stops being soot on paper
+     and becomes a window through the pad to the table (1.00:1 against the felt,
+     not "close to" it — the same value). Was --ink until 2026-07-29.
+     WHAT THIS ACTUALLY CHANGES, per theme, because the token is overridden four
+     times: aubergine gets the purple; Classic Dark gets its own --felt-deep
+     (#371318), the deep edge of its gradient rather than the centre, so the read
+     is the same one in its own wine; and BOTH light themes are byte-identical to
+     before, because their --plum is already var(--ink). That asymmetry is the
+     reason this is a token swap and not a new value: the request was for dark,
+     and plum's existing per-theme overrides already say "the deepest tone this
+     palette can carry cream text on", which on light IS ink. Verified as one
+     changed element out of ninety, across all four selectable themes, on every
+     paint property — see the sweep note in build-pills.js.
+     Contrast goes UP, which is worth stating because a purple fill sounds like
+     it should cost something: cream on the tile 12.94 -> 13.63 on aubergine and
+     11.96 -> 14.27 on Classic Dark, and the tile against the entry pane it sits
+     on 11.39 -> 12.00 and 10.42 -> 12.43.
+     The 1.00:1 is a relationship, not an adjacency problem — nothing felt-
+     coloured touches this tile. The nearest felt is ~28px away past the entry
+     pane's padding and the pad edge, so the tile reads as the table's colour
+     without ever merging into it. Contrast that with the score bar, where the
+     same token sits on a --rule track on the same pad.
+     One live consequence of the swap, and the reason --bevel-lo's note upstairs
+     now carries a caveat: this control's lower lip was previously invisible by
+     construction rather than by choice, since --bevel-lo is mixed FROM --ink and
+     the fill WAS --ink, compositing to exactly the fill at 1.00:1. On plum it
+     comes out 1.01:1 and very slightly the wrong way (lighter, because ink is
+     0.0036 lighter than plum). Both are below anything a screen can show; it is
+     recorded because it means the bevel here has always been the highlight
+     alone, never the pair. Deliberately NOT "fixed" — that would mean a new
+     token for a difference nobody can see, on a control whose depth was
+     re-litigated twice this month. */
+  .who button.on { border-color:var(--plum);
+    background:var(--plum);
     color:var(--cream);
     box-shadow:inset 0 1px 0 var(--bevel-hi), inset 0 -1px 0 var(--bevel-lo), 0 1px 2px rgba(0,0,0,.25); }
   .who button.on:active { transform:scale(.96); box-shadow:none; }
@@ -971,6 +1018,13 @@
      tournament format, Moon Shot mode — see .chip.on), whereas these only
      change what you're looking at. Keeping the two fills distinct keeps that
      read; it just no longer has to be near-black to do it.
+     That split is still brass-vs-plum, but plum stopped being this control's
+     alone on 2026-07-29, when .who button.on took the same fill. So read plum as
+     "the deepest tone the palette carries cream on" — a WEIGHT — and not as "the
+     view-filter colour", which it briefly looked like. The distinction this rule
+     needs is only that it isn't brass, and nothing about the bidder tile touches
+     that. Worth knowing before repainting either: they now move together, and on
+     dark they move to the felt.
      NO box-shadow, and that is a decision taken twice rather than an omission.
      This is the one filled pressable control in the app with no depth at all,
      which looks like a gap the moment you count: the other seven carry --bevel-*
