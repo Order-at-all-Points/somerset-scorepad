@@ -3524,8 +3524,8 @@ window.SOMERSET_FB_CONFIG = {
     return am.ri + "_" + am.mi;
   }
   // A series slot index alone is NOT a stable identity for a game: resetSharedGame
-  // and redrawSoloTeamsAndPlay both install a brand-new game into an EXISTING slot
-  // (same gi, same tourney.id, same syncCode), so without a generation counter the
+  // installs a brand-new game into an EXISTING slot (same gi, same tourney.id,
+  // same syncCode), so without a generation counter the
   // replacement collides with the game it replaced on matchUid — archivedMatches
   // then suppresses the new record entirely and reconcileArchivedRecord overwrites
   // the old record's deals with the new game's. `gen` rides the synced slot so
@@ -3537,12 +3537,13 @@ window.SOMERSET_FB_CONFIG = {
   }
   // The next unused generation for this series, as a tournament-wide high-water
   // mark rather than a per-slot counter. Slot INDICES get reused whenever games[]
-  // is rebuilt or truncated — redrawSoloTeamsAndPlay rebuilds it as a single slot,
-  // clearSeriesWinner slices off the trailing ones — so a per-slot counter can hand
-  // a freshly-pushed slot an (index, generation) pair that an orphaned History
-  // record from the discarded array already owns, which is the exact collision the
-  // generation exists to prevent. t.genHigh persists the mark independently of the
-  // array so truncation can't walk it backwards.
+  // is rebuilt or truncated — clearSeriesWinner slices off the trailing ones — so a
+  // per-slot counter can hand a freshly-pushed slot an (index, generation) pair that
+  // an orphaned History record from the discarded array already owns, which is the
+  // exact collision the generation exists to prevent. t.genHigh persists the mark
+  // independently of the array so truncation can't walk it backwards. Slots
+  // stamped by the since-removed solo redraw (which rebuilt games[] wholesale)
+  // still ride in synced/persisted tourneys, so the read side stays as it was.
   function nextSeriesGen(t) {
     var max = t.genHigh || 0;
     (t.games || []).forEach(function (s) { if (s && (s.gen || 0) > max) max = s.gen; });
@@ -5470,8 +5471,7 @@ window.SOMERSET_FB_CONFIG = {
       // without answering is dismissRematchOffer's job (backdrop, back, Escape).
       var rematchKids = [
         el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
-        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch, same teams?"]),
-        el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"])
+        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch, same teams?"])
       ];
       // Surfaced right here because this sheet is the first thing a player sees
       // when a game ends on a hand they got wrong, and the pad's own Edit
@@ -6991,9 +6991,10 @@ window.SOMERSET_FB_CONFIG = {
   }
   // dealerStartOverride: seat the new game's rotation starts from. Defaults to
   // continuing the finished game's rotation (see nextGameDealerStart) since the
-  // same four names carry over into the same seats; only redrawSoloTeamsAndPlay
-  // passes a value, because reshuffling the seats makes the carried seat someone
-  // else entirely.
+  // same four names carry over into the same seats. The one caller that passes a
+  // value is the "start a new game" confirm on an UNFINISHED game, which re-deals
+  // from where the discarded game began rather than rotating past hands that
+  // leave no History record.
   function newGame(dealerStartOverride) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) archiveCurrentGame(null);   // safety net — normally already auto-archived on completion
@@ -7181,37 +7182,14 @@ window.SOMERSET_FB_CONFIG = {
     persist();
   }
 
-  // Scrambles who's paired with whom (keeping the same 4 seats/names), then
-  // starts a fresh standalone game.
-  function redrawSoloTeamsAndPlay() {
-    if (gameHasTourneyLink()) {
-      var lastGame = liveSeriesSlot(tourney).game || liveSeriesSlot(tourney).completedGame;
-      var shuffled = shuffle(lastGame.players.slice());
-      tourney.teams[0].players = [shuffled[0], shuffled[2]];
-      tourney.teams[1].players = [shuffled[1], shuffled[3]];
-      tourney.champion = null;
-      // The rebuilt games[0] replaces the old games[0] under the same tourney.id
-      // and join code, so its generation must continue that slot's sequence rather
-      // than restart at 0 — otherwise the post-redraw game collides with the
-      // pre-redraw one on matchUid and reconcileArchivedRecord overwrites the
-      // earlier game's History record with this one's deals. Computed before the
-      // reassignment below drops every existing slot, so it clears their marks too.
-      var redrawGen = nextSeriesGen(tourney);
-      tourney.genHigh = redrawGen;
-      tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null, gen:redrawGen }];
-      // Seats just changed hands — carrying the rotation would be meaningless,
-      // matching the newGame(0) the local branch below uses. Explicit rather than
-      // relying on the rebuilt (empty) games array leaving lastSeriesGame null.
-      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney, 0));
-      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
-      ui.rematchOffer = null;
-      saveTourney();
-      render();
-      return;
-    }
-    soloGame.players = shuffle(soloGame.players.slice());
-    newGame(0);   // seats just changed hands — carrying the rotation would be meaningless
-  }
+  // A standalone game is two fixed pairs, so there was nothing for a random
+  // redraw to discover: with 4 players there are only 3 distinct pairings, and
+  // players who want to swap partners already know which swap they want. The
+  // post-game sheet's "Redraw Teams and Play Again?" (and redrawSoloTeamsAndPlay
+  // behind it) are gone; re-pairing is a seat edit, not a dice roll. The
+  // Tournament tab's own "Redraw teams & play again" (redrawAndReplay) stays —
+  // that draws from a roster that can be much larger than four, where the draw
+  // is doing real work.
 
   function renderSettings() {
     settingsPanelEl.innerHTML = "";   // confirm now lives in renderModal (ui.confirmReset)
