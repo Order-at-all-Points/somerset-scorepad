@@ -1005,7 +1005,6 @@
      red the transient lock/error states use so it reads as a note, not a fault. */
   .view-only-bar.archived { color:var(--ink-soft); }
   .match-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); }
-  .match-vs { font-size:13px; color:var(--ink); font-weight:600; text-align:right; }
 
   /* ---- sync / join code ---- */
   .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; background:var(--cream-shade); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
@@ -8992,7 +8991,6 @@ window.SOMERSET_FB_CONFIG = {
       el("div", { class:"view-head disp" }, [headLabel]),
       el("div", { class:"match-bar" }, [
         el("button", { class:"link-btn disp", onClick:leaveMatch }, ["← Back to bracket"]),
-        el("span", { class:"match-vs disp" }, [ tourney.teams[m.a].name + " vs " + tourney.teams[m.b].name ]),
         // Otherwise unreachable while actually playing a match: the Tournament
         // tab's own Options pill (see renderBracket) only shows on the bracket
         // screen, not this match-play sub-view.
