@@ -5007,6 +5007,21 @@ window.SOMERSET_FB_CONFIG = {
     window.scrollTo({ top:0, behavior:"smooth" });
   }
 
+  // Shared "[Team] Win!" banner markup — used both inline atop the score pad
+  // (solo/casual games) and, for a tournament match, in place of the "Round X
+  // Match" header (see renderMatchPlay) so the win doesn't get announced twice.
+  function buildWinBanner(winDetail, win) {
+    var bannerKids = [teamLabel(win).split(" & ").join(" and ") + " Win!"];
+    if (winDetail.tieBreak) {
+      bannerKids.push(el("span", { class:"banner-note disp" },
+        ["Both teams landed on the same score, so " + teamLabel(win) + " take it as the high bidder."]));
+    } else if (winDetail.instantDeath) {
+      bannerKids.push(el("span", { class:"banner-note disp" },
+        [teamLabel(1 - win) + " bid the moon and fell short — Instant Death."]));
+    }
+    return el("div", { class:"banner disp" }, bannerKids);
+  }
+
   function renderScorePad(target, mode) {
     var noFade = suppressFade; suppressFade = false;   // consume flag; reset for next call
     var isMatch = mode === "match";
@@ -5029,17 +5044,11 @@ window.SOMERSET_FB_CONFIG = {
 
     var pad = el("div", {});
 
-    // Winner banner
-    if (win !== null) {
-      var bannerKids = [teamLabel(win).split(" & ").join(" and ") + " Win!"];
-      if (winDetail.tieBreak) {
-        bannerKids.push(el("span", { class:"banner-note disp" },
-          ["Both teams landed on the same score, so " + teamLabel(win) + " take it as the high bidder."]));
-      } else if (winDetail.instantDeath) {
-        bannerKids.push(el("span", { class:"banner-note disp" },
-          [teamLabel(1 - win) + " bid the moon and fell short — Instant Death."]));
-      }
-      pad.appendChild(el("div", { class:"banner disp" }, bannerKids));
+    // Winner banner — for a tournament match this is shown by renderMatchPlay
+    // instead, standing in for the "Round X Match" header rather than adding
+    // a second banner row underneath it.
+    if (win !== null && !isMatch) {
+      pad.appendChild(buildWinBanner(winDetail, win));
     }
 
     // Totals — iterated in viewer-perspective order (teamViewOrder), so "my"
@@ -8987,8 +8996,14 @@ window.SOMERSET_FB_CONFIG = {
       : am.bracket === "series" ? ("Shared Game" + (isCompleted ? " complete" : ""))
       : (am.bracket === "rr" && am.isFinal) ? ("Championship Final" + (isCompleted ? " complete" : ""))
       : ("Round Robin · Match " + (am.idx + 1) + (isCompleted ? " complete" : ""));
+    // Once the loaded game has a winner (just clinched live, or reviewing an
+    // already-completed match), the win banner takes the header's place
+    // instead of stacking underneath the still-generic "Round X Match" line —
+    // see buildWinBanner and its skip of the inline copy for match mode.
+    var winDetail = winnerDetail(), win = winDetail.winner;
+    var headEl = win !== null ? buildWinBanner(winDetail, win) : el("div", { class:"view-head disp" }, [headLabel]);
     var card = el("div", { class:"pad" }, [
-      el("div", { class:"view-head disp" }, [headLabel]),
+      headEl,
       el("div", { class:"match-bar" }, [
         el("button", { class:"link-btn disp", onClick:leaveMatch }, ["← Back to bracket"]),
         // Otherwise unreachable while actually playing a match: the Tournament
