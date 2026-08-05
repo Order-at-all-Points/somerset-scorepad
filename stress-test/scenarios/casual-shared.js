@@ -86,9 +86,8 @@ const shareGameHostGuest = {
         logger,
         contextLabel: "host",
       });
-      // Shared games skip the "Play again?" offer entirely and instead show a
-      // "Continue" button that must be tapped to finalize the win -- see
-      // newGame.continueSharedGame's doc comment.
+      // Shared games show a "Continue" button that must be tapped to finalize
+      // the win -- see newGame.continueSharedGame's doc comment.
       const continued = await newGame.continueSharedGame(host.page);
       if (!continued) {
         await logger.record({
@@ -99,11 +98,6 @@ const shareGameHostGuest = {
           contextLabel: "host",
         });
       }
-      // For a bestOf=1 shared game, tapping Continue is what triggers the
-      // series-escalation "Play again?" offer (advanceSharedGame sets
-      // ui.offerSeries once priorBestOf===1) -- decline it to keep this
-      // scenario a plain 1-off game.
-      await newGame.dismissPlayAgainOffer(host.page);
 
       logger.step("Wait for sync, then check both devices' own History for exactly one auto-archived entry");
       await guest.page.waitForTimeout(config.syncSettleMs);
@@ -271,7 +265,7 @@ const loneSharedGameIsStandard = {
       await sync.shareFromGameOptions(host.page); // wraps the solo game as format:"series" bestOf:1
       await sync.identifyFromShareSheet(host.page, "S1");
 
-      logger.step("Play the shared game to completion, continue, decline the series offer");
+      logger.step("Play the shared game to completion, then continue past it");
       await simulator.playDealsToCompletion(host.page, {
         bidderFor: simulator.namedBidderFor,
         seed: 4242,
@@ -279,7 +273,6 @@ const loneSharedGameIsStandard = {
         contextLabel: "host",
       });
       await newGame.continueSharedGame(host.page);
-      await newGame.dismissPlayAgainOffer(host.page); // keep it a lone 1-off, no escalation
 
       await host.page.waitForTimeout(config.syncSettleMs);
       const recs = ((await storage.readKey(host.page, storage.KEYS.history)).value || []).filter((g) => g.winner != null);

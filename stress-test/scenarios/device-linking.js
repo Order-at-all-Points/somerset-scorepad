@@ -66,7 +66,6 @@ const offlineLocalOnlyFallback = {
         logger,
         contextLabel: "solo",
       });
-      await newGame.dismissPlayAgainOffer(device.page);
 
       const cloudSync = await storage.readKey(device.page, storage.KEYS.cloudSyncEnabled);
       if (cloudSync.value) {
@@ -121,7 +120,6 @@ const linkAndSyncHistory = {
         logger,
         contextLabel: "deviceA",
       });
-      await newGame.dismissPlayAgainOffer(deviceA.page);
 
       logger.step("Device A generates a link code, Device B redeems it");
       const code = await linking.linkDevices(deviceA, deviceB);
@@ -209,7 +207,6 @@ const linkAndSyncHistory = {
         logger,
         contextLabel: "deviceB",
       });
-      await newGame.dismissPlayAgainOffer(deviceB.page);
       const playedOnA = await stats.pollGamesPlayed(deviceA.page, "B1", 1);
       if (playedOnA !== 1) {
         await logger.record({
@@ -282,7 +279,7 @@ const sharedMatchNotDoubleCounted = {
       logger.step("Link host and guest as the same person (separate from the tournament join-code above)");
       await linking.linkDevices(host, guest);
 
-      logger.step("Host plays the game to completion and taps through Continue / decline the series offer");
+      logger.step("Host plays the game to completion and taps through Continue");
       await host.page.waitForTimeout(config.syncSettleMs);
       await simulator.playDealsToCompletion(host.page, {
         bidderFor: simulator.namedBidderFor,
@@ -291,7 +288,6 @@ const sharedMatchNotDoubleCounted = {
         contextLabel: "host",
       });
       await newGame.continueSharedGame(host.page);
-      await newGame.dismissPlayAgainOffer(host.page);
 
       logger.step("Wait for both devices' History to sync up and cross-merge, then check Stats");
       await guest.page.waitForTimeout(config.syncSettleMs);
@@ -355,7 +351,6 @@ const unlinkStopsMerging = {
         logger,
         contextLabel: "deviceA",
       });
-      await newGame.dismissPlayAgainOffer(deviceA.page);
       await linking.linkDevices(deviceA, deviceB);
 
       // Synchronize on the real precondition before B plays: A's membership
@@ -383,7 +378,6 @@ const unlinkStopsMerging = {
         logger,
         contextLabel: "deviceB",
       });
-      await newGame.dismissPlayAgainOffer(deviceB.page);
       const mergedBefore = await stats.pollGamesPlayed(deviceA.page, "UB1", 1);
       if (mergedBefore !== 1) {
         // Diagnostic: did A's membership listener ever see B? linkedUids is
@@ -643,7 +637,6 @@ const deletedSharedMatchStaysDeleted = {
         contextLabel: "host",
       });
       await newGame.continueSharedGame(host.page);
-      await newGame.dismissPlayAgainOffer(host.page);
       await guest.page.waitForTimeout(config.syncSettleMs);
       await host.page.waitForTimeout(config.syncSettleMs);
 

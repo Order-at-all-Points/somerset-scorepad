@@ -20,55 +20,16 @@ async function readWinnerBanner(page) {
 }
 
 /**
- * After ANY Standard-game win (solo Game tab, or a match game that just
- * completed) the app auto-opens a "Game Over" sheet -- rematch, fix the last
- * hand, or quit (see `renderModal`'s `ui.rematchOffer` branch). Dismissing it
- * (backdrop/back/Escape) leaves the finished game on the pad; only the
- * explicit "Quit" clears it. Every other UI action is blocked behind its
- * overlay until it's dismissed or answered.
- *
- * Two of the three alternatives are dead and kept as harmless no-matches, so a
- * run against an older build still resolves the sheet rather than hanging on
- * it: `aria-label="Play again?"` was this sheet's name before it was retitled,
- * and `aria-label^="Play Best of "` matched the best-of-3/5/7 escalation ladder
- * that went away with the series mode on 2026-07-22.
- */
-const OFFER_SERIES_SELECTOR = '[role="dialog"][aria-label="Game Over"], [role="dialog"][aria-label="Play again?"], [role="dialog"][aria-label^="Play Best of "]';
-
-async function playAgainOfferVisible(page) {
-  return (await page.locator(OFFER_SERIES_SELECTOR).count()) > 0;
-}
-
-async function dismissPlayAgainOffer(page) {
-  const dlg = page.locator(OFFER_SERIES_SELECTOR);
-  if ((await dlg.count()) === 0) return false;
-  await dlg.locator(".sheet-btn.ghost", { hasText: "Quit" }).click();
-  await page.waitForTimeout(80);
-  return true;
-}
-
-/** Accept the primary "Rematch? Best of N?" / "Yes, Best of N" escalation offer. */
-async function acceptRematchEscalation(page) {
-  const dlg = page.locator(OFFER_SERIES_SELECTOR);
-  await dlg.locator(".sheet-btn.primary").click({ timeout: config.actionTimeoutMs });
-  await page.waitForTimeout(120);
-}
-
-async function acceptRedrawEscalation(page) {
-  const dlg = page.locator(OFFER_SERIES_SELECTOR);
-  await dlg.locator(".sheet-btn", { hasText: "Redraw" }).click({ timeout: config.actionTimeoutMs });
-  await page.waitForTimeout(120);
-}
-
-/**
- * A shared/linked game (gameHasTourneyLink()) never shows the "Play again?"
- * escalation dialog or the plain post-win "New Game" button -- it shows a
- * "Continue" (or, for bestOf>1, "Play Game N"/"Continue") button wired to
- * `advanceSharedGame`, and keeps `.game` populated on the tourney record
- * until that's tapped. Other devices' auto-archive-to-History deliberately
- * waits for `.game` to be nulled (see syncMyHistoryFromTourney's `if
- * (m.game) return`), so skipping this tap leaves teammates' History
- * permanently missing the entry, not just delayed.
+ * A shared/linked game (gameHasTourneyLink()) never shows the plain post-win
+ * "New Game" button -- it shows a "Continue" (or, for bestOf>1, "Play Game
+ * N"/"Continue") button wired to `advanceSharedGame`, and keeps `.game`
+ * populated on the tourney record until that's tapped. Other devices'
+ * auto-archive-to-History deliberately waits for `.game` to be nulled (see
+ * syncMyHistoryFromTourney's `if (m.game) return`), so skipping this tap
+ * leaves teammates' History permanently missing the entry, not just delayed.
+ * Once tapped, the pad's own button switches to a plain "New Game" (see
+ * clickNewGameDirect) -- there's no separate offer/escalation dialog to
+ * answer first, for a shared game or a casual one.
  */
 async function continueSharedGame(page) {
   const btn = page.locator(".add-wrap .btn.btn-new:visible", { hasText: /Continue|Play Game \d+/ });
@@ -138,10 +99,6 @@ async function setInstantDeathMoon(page, { on = true, scope = "game" } = {}) {
 module.exports = {
   readTeamTotals,
   readWinnerBanner,
-  playAgainOfferVisible,
-  dismissPlayAgainOffer,
-  acceptRematchEscalation,
-  acceptRedrawEscalation,
   clickNewGameDirect,
   newGameViaOptions,
   setInstantDeathMoon,

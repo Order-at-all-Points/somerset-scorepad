@@ -92,7 +92,6 @@ async function establishMutualSharing(browser, logger, { seed = 4242 } = {}) {
     bidderFor: simulator.namedBidderFor, seed, logger, contextLabel: "alice",
   });
   await newGame.continueSharedGame(alice.page);
-  await newGame.dismissPlayAgainOffer(alice.page);
 
   const granted = await emulator.pollFor(async () => {
     const a = await emulator.dbGet(`statsProfiles/${alicePid}/allowed`);

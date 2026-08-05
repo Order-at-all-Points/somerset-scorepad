@@ -147,10 +147,7 @@ async function playDealsToCompletion(page, { bidderFor, seed, maxDeals = 25, log
  * already abstract over their differing UI (`.tnext`, `.mbox.ready`,
  * `.rr-row`). Returns the number of matches played.
  */
-async function playTournamentToChampion(
-  page,
-  { logger, contextLabel, maxMatches = 15, seedBase = 5000, dismissOffer = true } = {}
-) {
+async function playTournamentToChampion(page, { logger, contextLabel, maxMatches = 15, seedBase = 5000 } = {}) {
   let matchesPlayed = 0;
   while (matchesPlayed < maxMatches) {
     const opened = await bracket.openNextMatch(page);
@@ -165,16 +162,6 @@ async function playTournamentToChampion(
     });
     await bracket.returnToBracket(page);
   }
-  // A clinched series (bracket-driven `returnToBracket` -> offerSeriesEscalationOnBracketClinch,
-  // same as the Game tab's advanceSharedGame) auto-opens a "Play again?"/"Play
-  // Best of N?" escalation offer that would otherwise block any further
-  // navigation. NOTE: declining a *linked* (bracket-driven) offer calls
-  // declineSeriesOffer(), which sets `tourney = null` -- i.e. it doesn't just
-  // dismiss the offer, it locally leaves/clears the whole tournament (the
-  // Firebase record itself is untouched, so other devices are unaffected).
-  // Callers that want to inspect the decided bracket/series state afterward
-  // must pass `dismissOffer:false` and handle the dialog themselves.
-  if (dismissOffer) await newGame.dismissPlayAgainOffer(page);
   if (matchesPlayed >= maxMatches && logger) {
     await logger.record({
       severity: "high",
