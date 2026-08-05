@@ -4993,6 +4993,21 @@ window.SOMERSET_FB_CONFIG = {
     if (entryEl) entryEl.scrollIntoView({ behavior:"smooth", block:"start" });
   }
 
+  // The "Game Over" sheet's overlay is position:fixed (see .overlay), so it
+  // isn't anchored to any particular scroll position — whatever's sitting in
+  // the viewport at the moment it opens is what shows through its translucent
+  // backdrop. A long game can leave the page scrolled deep into the deal list
+  // (wherever the last hand's entry panel put it), which would put the win
+  // banner and final scoreboard off the top of the screen just as the sheet
+  // arrives to show them off. Scroll back to the top so they're what's behind
+  // the sheet. Called once, right where the offer is opened — same
+  // call-it-at-the-transition convention as scrollEntryIntoView above, not
+  // from inside render() (an unrelated re-render while the sheet is still up
+  // shouldn't yank the page back to the top again).
+  function scrollGameOverIntoView() {
+    window.scrollTo({ top:0, behavior:"smooth" });
+  }
+
   function renderScorePad(target, mode) {
     var noFade = suppressFade; suppressFade = false;   // consume flag; reset for next call
     var isMatch = mode === "match";
@@ -5466,12 +5481,12 @@ window.SOMERSET_FB_CONFIG = {
     modalRoot.innerHTML = "";
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
     if (ui.rematchOffer) {
-      // "No thanks" ends the game outright, so it reads as the destructive
-      // choice it is rather than as the way out of the sheet — backing out
-      // without answering is dismissRematchOffer's job (backdrop, back, Escape).
+      // "Quit" ends the game outright, so it reads as the destructive choice
+      // it is rather than as the way out of the sheet — backing out without
+      // answering is dismissRematchOffer's job (backdrop, back, Escape).
       var rematchKids = [
-        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
-        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch, same teams?"])
+        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Game Over"]),
+        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch"])
       ];
       // Surfaced right here because this sheet is the first thing a player sees
       // when a game ends on a hand they got wrong, and the pad's own Edit
@@ -5479,8 +5494,11 @@ window.SOMERSET_FB_CONFIG = {
       if (rematchOfferCanFix(ui.rematchOffer)) {
         rematchKids.push(el("button", { class:"sheet-btn disp", onClick:fixLastHandFromOffer }, ["Wait — fix the last hand"]));
       }
-      rematchKids.push(el("button", { class:"sheet-btn ghost disp", onClick:declineRematchOffer }, ["No thanks, end this game"]));
-      var rematchSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
+      rematchKids.push(el("button", { class:"sheet-btn ghost disp", onClick:declineRematchOffer }, ["Quit"]));
+      // Accessible name tracks the visible heading — a screen reader announcing
+      // "Play again?" over a sheet titled "Game Over" is the label-in-name
+      // mismatch that also breaks voice control ("tap Game Over" finding nothing).
+      var rematchSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Game Over",
         onClick:function(e){ e.stopPropagation(); } }, rematchKids);
       modalRoot.appendChild(el("div", { class:"overlay", onClick:dismissRematchOffer }, [rematchSheet]));
       return;
@@ -7079,7 +7097,10 @@ window.SOMERSET_FB_CONFIG = {
         saveHistory();
       }
     }
-    if (tourney.champion != null) ui.rematchOffer = { seedWinner:win, linked:true };
+    if (tourney.champion != null) {
+      ui.rematchOffer = { seedWinner:win, linked:true };
+      scrollGameOverIntoView();
+    }
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
     render();
@@ -7102,10 +7123,12 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
 
-  // Offer a rematch once a standalone casual game is won — same-teams rematch,
-  // redraw teams, or decline. Never offered twice for the same finished game.
+  // Offer a rematch once a standalone casual game is won — rematch, fix the
+  // last hand, or quit. Never offered twice for the same finished game.
   function offerRematch(win) {
-    if (!ui.rematchOffer) ui.rematchOffer = { seedWinner:win };
+    if (ui.rematchOffer) return;
+    ui.rematchOffer = { seedWinner:win };
+    scrollGameOverIntoView();
   }
 
   // Dismissing the offer is deliberately NOT the same as declining it. The
@@ -7152,7 +7175,7 @@ window.SOMERSET_FB_CONFIG = {
     newGame();
   }
 
-  // "No thanks" ends the just-finished game outright rather than leaving it
+  // "Quit" ends the just-finished game outright rather than leaving it
   // sitting there decided-but-idle: for a shared game that means ending the
   // live/synced session (same as the host's "End Game" action), and either way
   // a fresh unlinked solo game replaces it. The bottom seat (mySeatIndex(), or

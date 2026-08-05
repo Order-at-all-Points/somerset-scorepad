@@ -21,16 +21,19 @@ async function readWinnerBanner(page) {
 
 /**
  * After ANY Standard-game win (solo Game tab, or a match game that just
- * completed) the app auto-opens a "Play again?" sheet -- same teams, redraw,
- * or no thanks (see `renderModal`'s `ui.rematchOffer` branch). Every other UI
- * action is blocked behind its overlay until it's resolved.
+ * completed) the app auto-opens a "Game Over" sheet -- rematch, fix the last
+ * hand, or quit (see `renderModal`'s `ui.rematchOffer` branch). Dismissing it
+ * (backdrop/back/Escape) leaves the finished game on the pad; only the
+ * explicit "Quit" clears it. Every other UI action is blocked behind its
+ * overlay until it's dismissed or answered.
  *
- * The `aria-label^="Play Best of "` half of the selector is dead: it matched
- * the best-of-3/5/7 escalation ladder that went away with the series mode on
- * 2026-07-22. Kept as a harmless no-match so a run against an older build
- * still resolves the sheet rather than hanging on it.
+ * Two of the three alternatives are dead and kept as harmless no-matches, so a
+ * run against an older build still resolves the sheet rather than hanging on
+ * it: `aria-label="Play again?"` was this sheet's name before it was retitled,
+ * and `aria-label^="Play Best of "` matched the best-of-3/5/7 escalation ladder
+ * that went away with the series mode on 2026-07-22.
  */
-const OFFER_SERIES_SELECTOR = '[role="dialog"][aria-label="Play again?"], [role="dialog"][aria-label^="Play Best of "]';
+const OFFER_SERIES_SELECTOR = '[role="dialog"][aria-label="Game Over"], [role="dialog"][aria-label="Play again?"], [role="dialog"][aria-label^="Play Best of "]';
 
 async function playAgainOfferVisible(page) {
   return (await page.locator(OFFER_SERIES_SELECTOR).count()) > 0;
@@ -39,7 +42,7 @@ async function playAgainOfferVisible(page) {
 async function dismissPlayAgainOffer(page) {
   const dlg = page.locator(OFFER_SERIES_SELECTOR);
   if ((await dlg.count()) === 0) return false;
-  await dlg.locator(".sheet-btn.ghost", { hasText: "No thanks" }).click();
+  await dlg.locator(".sheet-btn.ghost", { hasText: "Quit" }).click();
   await page.waitForTimeout(80);
   return true;
 }
