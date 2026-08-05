@@ -134,10 +134,10 @@ const spectatorResumesMidSeries = {
     try {
       await setUpSpectatedGame(host, guest);
 
-      logger.step("Host plays game 1, continues, escalates to Best of 3 (now 1-0, series still live)");
+      logger.step("Host plays game 1, continues, starts game 2 under the same join code (series still live)");
       await simulator.playGameWithScriptedDeals(host.page, TEAM0_WIN_SCRIPT, { logger, contextLabel: "host" });
       await newGame.continueSharedGame(host.page);
-      await newGame.acceptRematchEscalation(host.page);
+      await newGame.clickNewGameDirect(host.page);
       await guest.page.waitForTimeout(config.syncSettleMs);
 
       logger.step("Spectator reopens the app mid-series -- it must resume, not clear");

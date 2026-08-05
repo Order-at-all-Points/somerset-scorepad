@@ -35,7 +35,6 @@ const fullGameToFifty = {
         logger,
         contextLabel: "solo",
       });
-      await newGame.dismissPlayAgainOffer(page);
     }),
 };
 
@@ -73,7 +72,6 @@ const moonAtNonNegativeScore = {
           page,
         });
       }
-      await newGame.dismissPlayAgainOffer(page);
     }),
 };
 
@@ -140,7 +138,6 @@ const instantDeathLossAtNonNegScore = {
           page,
         });
       }
-      await newGame.dismissPlayAgainOffer(page);
     }),
 };
 

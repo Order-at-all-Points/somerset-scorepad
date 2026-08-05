@@ -27,7 +27,6 @@ const roundTripAndDedup = {
           logger,
           contextLabel: "solo",
         });
-        await newGame.dismissPlayAgainOffer(device.page);
         await newGame.clickNewGameDirect(device.page).catch(() => {});
       }
 
