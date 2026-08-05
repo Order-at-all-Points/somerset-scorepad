@@ -3524,8 +3524,8 @@ window.SOMERSET_FB_CONFIG = {
     return am.ri + "_" + am.mi;
   }
   // A series slot index alone is NOT a stable identity for a game: resetSharedGame
-  // and redrawSoloTeamsAndPlay both install a brand-new game into an EXISTING slot
-  // (same gi, same tourney.id, same syncCode), so without a generation counter the
+  // installs a brand-new game into an EXISTING slot (same gi, same tourney.id,
+  // same syncCode), so without a generation counter the
   // replacement collides with the game it replaced on matchUid — archivedMatches
   // then suppresses the new record entirely and reconcileArchivedRecord overwrites
   // the old record's deals with the new game's. `gen` rides the synced slot so
@@ -3537,12 +3537,13 @@ window.SOMERSET_FB_CONFIG = {
   }
   // The next unused generation for this series, as a tournament-wide high-water
   // mark rather than a per-slot counter. Slot INDICES get reused whenever games[]
-  // is rebuilt or truncated — redrawSoloTeamsAndPlay rebuilds it as a single slot,
-  // clearSeriesWinner slices off the trailing ones — so a per-slot counter can hand
-  // a freshly-pushed slot an (index, generation) pair that an orphaned History
-  // record from the discarded array already owns, which is the exact collision the
-  // generation exists to prevent. t.genHigh persists the mark independently of the
-  // array so truncation can't walk it backwards.
+  // is rebuilt or truncated — clearSeriesWinner slices off the trailing ones — so a
+  // per-slot counter can hand a freshly-pushed slot an (index, generation) pair that
+  // an orphaned History record from the discarded array already owns, which is the
+  // exact collision the generation exists to prevent. t.genHigh persists the mark
+  // independently of the array so truncation can't walk it backwards. Slots
+  // stamped by the since-removed solo redraw (which rebuilt games[] wholesale)
+  // still ride in synced/persisted tourneys, so the read side stays as it was.
   function nextSeriesGen(t) {
     var max = t.genHigh || 0;
     (t.games || []).forEach(function (s) { if (s && (s.gen || 0) > max) max = s.gen; });
@@ -4992,6 +4993,21 @@ window.SOMERSET_FB_CONFIG = {
     if (entryEl) entryEl.scrollIntoView({ behavior:"smooth", block:"start" });
   }
 
+  // The "Game Over" sheet's overlay is position:fixed (see .overlay), so it
+  // isn't anchored to any particular scroll position — whatever's sitting in
+  // the viewport at the moment it opens is what shows through its translucent
+  // backdrop. A long game can leave the page scrolled deep into the deal list
+  // (wherever the last hand's entry panel put it), which would put the win
+  // banner and final scoreboard off the top of the screen just as the sheet
+  // arrives to show them off. Scroll back to the top so they're what's behind
+  // the sheet. Called once, right where the offer is opened — same
+  // call-it-at-the-transition convention as scrollEntryIntoView above, not
+  // from inside render() (an unrelated re-render while the sheet is still up
+  // shouldn't yank the page back to the top again).
+  function scrollGameOverIntoView() {
+    window.scrollTo({ top:0, behavior:"smooth" });
+  }
+
   function renderScorePad(target, mode) {
     var noFade = suppressFade; suppressFade = false;   // consume flag; reset for next call
     var isMatch = mode === "match";
@@ -5250,9 +5266,33 @@ window.SOMERSET_FB_CONFIG = {
     } else if (ui.showEntry) {
       pad.appendChild(renderEntry(dealNo));
     } else if (gameOver) {
+      // Every button in this arm is a one-way door — Return to Bracket retires the
+      // match's live game (leaving the pad read-only for good, see isReadOnly),
+      // Continue advances the series past it, New Game clears the sheet — and the
+      // hand that ENDED the game is the likeliest one to have been misrecorded
+      // (a bid entered as the take, say, ends the game on the spot). The deal rows
+      // above stay editable here, but swiping a row or tapping it open isn't
+      // something you find while staring at a winner banner, so name the action.
+      // Opens the last deal at step 1, the bid — same entry point the end-of-game
+      // offer sheet's "fix the last hand" uses.
+      //
+      // Only offered while the result is still THIS pad's to change. A shared
+      // slot that's been continued past (champion set, .game nulled, so the pad
+      // is rendering .completedGame) has already had its winner written into the
+      // series by setSeriesWinner and broadcast to every other device; editing
+      // the deals under it could flip a winner the bracket has already banked.
+      // The isMatch arm needs no such guard — a match whose game is retired
+      // fails the isReadOnly check above and never reaches this branch at all.
+      var padGameIsLive = !gameHasTourneyLink() || liveSeriesSlot(tourney).game === game;
+      var lastFixDeal = padGameIsLive ? lastDealOfGame(game) : null;
+      var fixLastHandLink = lastFixDeal
+        ? el("button", { class:"link-btn disp", style:"margin-top:10px;",
+            onClick:function(e){ e.stopPropagation(); startEditDeal(lastFixDeal, 1); } }, ["Edit the last hand"])
+        : null;
       if (isMatch) {
         pad.appendChild(el("div", { class:"add-wrap" }, [
-          el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"])
+          el("button", { class:"btn btn-new disp", onClick:returnToBracket }, ["Return to Bracket"]),
+          fixLastHandLink
         ]));
       } else if (gameHasTourneyLink()) {
         // A shared game always clinches (tourney.champion gets set) the instant
@@ -5261,11 +5301,13 @@ window.SOMERSET_FB_CONFIG = {
         // past, otherwise "Continue".
         pad.appendChild(el("div", { class:"add-wrap" }, [
           el("button", { class:"btn btn-new disp", onClick: tourney.champion != null ? startNextSharedGame : advanceSharedGame },
-            [tourney.champion != null ? "New Game" : "Continue"])
+            [tourney.champion != null ? "New Game" : "Continue"]),
+          fixLastHandLink
         ]));
       } else {
         pad.appendChild(el("div", { class:"add-wrap" }, [
-          el("button", { class:"btn btn-new disp", onClick:function(){ newGame(); } }, ["New Game"])
+          el("button", { class:"btn btn-new disp", onClick:function(){ newGame(); } }, ["New Game"]),
+          fixLastHandLink
         ]));
       }
     } else {
@@ -5439,14 +5481,26 @@ window.SOMERSET_FB_CONFIG = {
     modalRoot.innerHTML = "";
     var sheetCls = noFade ? "sheet" : "sheet fade";   // skip fade replay on softRender
     if (ui.rematchOffer) {
-      var rematchSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Play again?",
-        onClick:function(e){ e.stopPropagation(); } }, [
-        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Play again?"]),
-        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch, same teams?"]),
-        el("button", { class:"sheet-btn disp", onClick:redrawSoloTeamsAndPlay }, ["Redraw Teams and Play Again?"]),
-        el("button", { class:"sheet-btn ghost disp", onClick:declineRematchOffer }, ["No thanks"])
-      ]);
-      modalRoot.appendChild(el("div", { class:"overlay", onClick:declineRematchOffer }, [rematchSheet]));
+      // "Quit" ends the game outright, so it reads as the destructive choice
+      // it is rather than as the way out of the sheet — backing out without
+      // answering is dismissRematchOffer's job (backdrop, back, Escape).
+      var rematchKids = [
+        el("h3", { class:"disp", style:"margin-bottom:10px;" }, ["Game Over"]),
+        el("button", { class:"sheet-btn primary disp", onClick:acceptRematchOffer }, ["Rematch"])
+      ];
+      // Surfaced right here because this sheet is the first thing a player sees
+      // when a game ends on a hand they got wrong, and the pad's own Edit
+      // affordances (swipe a row, or tap to expand) sit behind it.
+      if (rematchOfferCanFix(ui.rematchOffer)) {
+        rematchKids.push(el("button", { class:"sheet-btn disp", onClick:fixLastHandFromOffer }, ["Wait — fix the last hand"]));
+      }
+      rematchKids.push(el("button", { class:"sheet-btn ghost disp", onClick:declineRematchOffer }, ["Quit"]));
+      // Accessible name tracks the visible heading — a screen reader announcing
+      // "Play again?" over a sheet titled "Game Over" is the label-in-name
+      // mismatch that also breaks voice control ("tap Game Over" finding nothing).
+      var rematchSheet = el("div", { class:sheetCls, role:"dialog", "aria-modal":"true", "aria-label":"Game Over",
+        onClick:function(e){ e.stopPropagation(); } }, rematchKids);
+      modalRoot.appendChild(el("div", { class:"overlay", onClick:dismissRematchOffer }, [rematchSheet]));
       return;
     }
     if (ui.confirmReset) {
@@ -6955,9 +7009,10 @@ window.SOMERSET_FB_CONFIG = {
   }
   // dealerStartOverride: seat the new game's rotation starts from. Defaults to
   // continuing the finished game's rotation (see nextGameDealerStart) since the
-  // same four names carry over into the same seats; only redrawSoloTeamsAndPlay
-  // passes a value, because reshuffling the seats makes the carried seat someone
-  // else entirely.
+  // same four names carry over into the same seats. The one caller that passes a
+  // value is the "start a new game" confirm on an UNFINISHED game, which re-deals
+  // from where the discarded game began rather than rotating past hands that
+  // leave no History record.
   function newGame(dealerStartOverride) {
     dismissUndoToast();   // pending deal-undo would restore into the old game object
     if (!soloGame.archivedId) archiveCurrentGame(null);   // safety net — normally already auto-archived on completion
@@ -7042,7 +7097,10 @@ window.SOMERSET_FB_CONFIG = {
         saveHistory();
       }
     }
-    if (tourney.champion != null) ui.rematchOffer = { seedWinner:win, linked:true };
+    if (tourney.champion != null) {
+      ui.rematchOffer = { seedWinner:win, linked:true };
+      scrollGameOverIntoView();
+    }
     ui.confirmReset = false; ui.showSettings = false; ui.showEntry = false; ui.entryStep = 1;
     saveTourney();
     render();
@@ -7065,10 +7123,49 @@ window.SOMERSET_FB_CONFIG = {
     render();
   }
 
-  // Offer a rematch once a standalone casual game is won — same-teams rematch,
-  // redraw teams, or decline. Never offered twice for the same finished game.
+  // Offer a rematch once a standalone casual game is won — rematch, fix the
+  // last hand, or quit. Never offered twice for the same finished game.
   function offerRematch(win) {
-    if (!ui.rematchOffer) ui.rematchOffer = { seedWinner:win };
+    if (ui.rematchOffer) return;
+    ui.rematchOffer = { seedWinner:win };
+    scrollGameOverIntoView();
+  }
+
+  // Dismissing the offer is deliberately NOT the same as declining it. The
+  // finished game stays on the pad — banner, totals and every deal row — so a
+  // misrecorded hand can still be corrected (rows keep their swipe/expand Edit,
+  // and recordDeal un-archives then re-archives around the change). This is the
+  // landing spot for backdrop taps, hardware back and Escape, because those are
+  // reflexes, and until now all three ran declineRematchOffer, which wipes the
+  // pad for a fresh game. Losing a whole game to a stray tap on the backdrop is
+  // exactly the "no way to go back" the offer sheet used to create.
+  function dismissRematchOffer() {
+    ui.rematchOffer = null;
+    softRender();
+  }
+
+  // Whether the offer can send you back into the finished game to fix it. Only
+  // a solo/casual offer qualifies: a linked one is raised by advanceSharedGame,
+  // which has already retired the live slot (.game null, champion set), so
+  // there's no live game left on the pad to reopen. Frozen sessions are out for
+  // the usual reason — every write behind the edit would be rejected server-side.
+  function rematchOfferCanFix(o) {
+    return !!o && !o.linked && !frozenAppliesHere() && !!lastDealOfGame(game);
+  }
+  function lastDealOfGame(g) {
+    return (g && g.deals && g.deals.length) ? g.deals[g.deals.length - 1] : null;
+  }
+
+  // The last deal is where this mistake lands: bid and take are entered back to
+  // back, so a wrong bid usually only announces itself when the game abruptly
+  // ends on it (bid 14 recorded as both bid and take is a made moon, an instant
+  // win). Reopens that deal at step 1 so the bid itself is the first thing in
+  // reach; the take follows in the same sheet — see renderEntry's editing branch.
+  function fixLastHandFromOffer() {
+    var d = lastDealOfGame(game);
+    ui.rematchOffer = null;
+    if (!d) { softRender(); return; }
+    startEditDeal(d, 1);
   }
 
   function acceptRematchOffer() {
@@ -7078,7 +7175,7 @@ window.SOMERSET_FB_CONFIG = {
     newGame();
   }
 
-  // "No thanks" ends the just-finished game outright rather than leaving it
+  // "Quit" ends the just-finished game outright rather than leaving it
   // sitting there decided-but-idle: for a shared game that means ending the
   // live/synced session (same as the host's "End Game" action), and either way
   // a fresh unlinked solo game replaces it. The bottom seat (mySeatIndex(), or
@@ -7108,37 +7205,14 @@ window.SOMERSET_FB_CONFIG = {
     persist();
   }
 
-  // Scrambles who's paired with whom (keeping the same 4 seats/names), then
-  // starts a fresh standalone game.
-  function redrawSoloTeamsAndPlay() {
-    if (gameHasTourneyLink()) {
-      var lastGame = liveSeriesSlot(tourney).game || liveSeriesSlot(tourney).completedGame;
-      var shuffled = shuffle(lastGame.players.slice());
-      tourney.teams[0].players = [shuffled[0], shuffled[2]];
-      tourney.teams[1].players = [shuffled[1], shuffled[3]];
-      tourney.champion = null;
-      // The rebuilt games[0] replaces the old games[0] under the same tourney.id
-      // and join code, so its generation must continue that slot's sequence rather
-      // than restart at 0 — otherwise the post-redraw game collides with the
-      // pre-redraw one on matchUid and reconcileArchivedRecord overwrites the
-      // earlier game's History record with this one's deals. Computed before the
-      // reassignment below drops every existing slot, so it clears their marks too.
-      var redrawGen = nextSeriesGen(tourney);
-      tourney.genHigh = redrawGen;
-      tourney.games = [{ a:0, b:1, winner:null, game:null, completedGame:null, gen:redrawGen }];
-      // Seats just changed hands — carrying the rotation would be meaningless,
-      // matching the newGame(0) the local branch below uses. Explicit rather than
-      // relying on the rebuilt (empty) games array leaving lastSeriesGame null.
-      setLiveSeriesGame(tourney, freshGameForTourneyTeams(tourney, 0));
-      if (fb && syncCode) tourney._createdAt = firebase.database.ServerValue.TIMESTAMP;
-      ui.rematchOffer = null;
-      saveTourney();
-      render();
-      return;
-    }
-    soloGame.players = shuffle(soloGame.players.slice());
-    newGame(0);   // seats just changed hands — carrying the rotation would be meaningless
-  }
+  // A standalone game is two fixed pairs, so there was nothing for a random
+  // redraw to discover: with 4 players there are only 3 distinct pairings, and
+  // players who want to swap partners already know which swap they want. The
+  // post-game sheet's "Redraw Teams and Play Again?" (and redrawSoloTeamsAndPlay
+  // behind it) are gone; re-pairing is a seat edit, not a dice roll. The
+  // Tournament tab's own "Redraw teams & play again" (redrawAndReplay) stays —
+  // that draws from a roster that can be much larger than four, where the draw
+  // is doing real work.
 
   function renderSettings() {
     settingsPanelEl.innerHTML = "";   // confirm now lives in renderModal (ui.confirmReset)
@@ -9621,6 +9695,9 @@ window.SOMERSET_FB_CONFIG = {
       return true;
     }
     if (ui.info != null) { ui.info = null; softRender(); return true; }
+    // Backing out of the end-of-game offer leaves the finished game on the pad
+    // (see dismissRematchOffer) — it must never fall through to declining it.
+    if (ui.rematchOffer) { dismissRematchOffer(); return true; }
     if (ui.confirmReset) { ui.confirmReset = false; softRender(); return true; }
     if (ui.moonShotSheet != null) {
       ui.moonShotSheet = (ui.moonShotSheet.step === "scope") ? { step:"pick" } : null;
@@ -9670,6 +9747,7 @@ window.SOMERSET_FB_CONFIG = {
     else if (ui.identityEditor) { ui.identityEditor = false; softRender(); }
     else if (ui.mergeSheet) { ui.mergeSheet = null; softRender(); }
     else if (ui.info) { ui.info = null; softRender(); }
+    else if (ui.rematchOffer) { dismissRematchOffer(); }
     else if (ui.matchMenu) { ui.matchMenu = null; softRender(); }
     else if (ui.seatMenu !== null) { ui.seatMenu = null; ui.seatMenuMode = "menu"; softRender(); }
     else if (ui.pendingDealer !== null) { ui.pendingDealer = null; softRender(); }
