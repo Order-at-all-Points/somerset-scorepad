@@ -1413,9 +1413,13 @@ window.SOMERSET_FB_CONFIG = {
     return teamIdx === mt ? "We" : "They";
   }
   // Compact, non-truncating label for a team's narrow score column in the hand
-  // tables. Prefers the two players' initials ("K&D"); falls back to one initial,
-  // then to the team name's own initials ("Smith Family" -> "SF", "Rockets" ->
-  // "R"). Deliberately never the "We"/"They" pronoun — orientation (the viewer's
+  // tables. Prefers the two players' initials ("K&D"), but only once BOTH of that
+  // team's seats are named — a half-filled roster would otherwise show one side as
+  // a player initial and the other as its team-name initial ("K" vs "T"), reading
+  // as two different kinds of label. Falls back to the team name's own initials
+  // ("Smith Family" -> "SF", "Rockets" -> "R"). Each team is judged on its own
+  // seats, so one fully-named team still gets initials while the other waits.
+  // Deliberately never the "We"/"They" pronoun — orientation (the viewer's
   // own team is always the left column, see teamViewOrder/scoreViewOrder) already
   // carries the perspective, so the header only needs a short, stable identity
   // that fits above a two-digit score.
@@ -1426,7 +1430,6 @@ window.SOMERSET_FB_CONFIG = {
   function teamBadge(teams, players, teamIdx) {
     var i0 = nameInitial(players[teamIdx]), i1 = nameInitial(players[teamIdx + 2]);
     if (i0 && i1) return i0 + "&" + i1;
-    if (i0 || i1) return i0 || i1;
     var name = (teams[teamIdx] || "").trim();
     var parts = name.split(/[\s&]+/).filter(function (p) { return p; });
     if (parts.length > 1) return parts.map(nameInitial).join("");
