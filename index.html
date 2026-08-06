@@ -1427,10 +1427,20 @@ window.SOMERSET_FB_CONFIG = {
     var s = (name || "").trim();
     return s ? s.charAt(0).toUpperCase() : "";
   }
+  // A tournament match's team name isn't typed, it's derived live from the two
+  // seats (see syncMatchTeamNames), so an unfilled seat leaves its "Seat 3"
+  // placeholder sitting in the name: "Keith & Seat 3". Taking initials off that
+  // would smuggle the one named player back into the badge as "K" — precisely
+  // what the both-seats rule above exists to prevent — so a name still carrying a
+  // placeholder counts as no name at all and falls through to the neutral 1/2.
+  function hasSeatPlaceholder(name) {
+    return /(?:^|&)\s*Seat \d+\s*(?:&|$)/.test(name);
+  }
   function teamBadge(teams, players, teamIdx) {
     var i0 = nameInitial(players[teamIdx]), i1 = nameInitial(players[teamIdx + 2]);
     if (i0 && i1) return i0 + "&" + i1;
     var name = (teams[teamIdx] || "").trim();
+    if (hasSeatPlaceholder(name)) return teamIdx === 0 ? "1" : "2";
     var parts = name.split(/[\s&]+/).filter(function (p) { return p; });
     if (parts.length > 1) return parts.map(nameInitial).join("");
     return nameInitial(name) || (teamIdx === 0 ? "1" : "2");
