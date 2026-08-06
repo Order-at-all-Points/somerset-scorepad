@@ -173,10 +173,12 @@
   /* KNOWN, DELIBERATE: --cream on --brass measures 2.50:1 on every filled brass
      control (.btn-record, .btn-new, .sheet-btn.primary, .chip.on, .hist-win-badge,
      .mbox-slot.win, the RR champion row, the GF header, the undo toast, the two
-     edit buttons). AA wants 4.5. Reviewed 2026-07-29 and kept as-is: it reads
-     fine in the hand, and both alternatives were built, looked at, and rejected.
-     Don't "fix" this without reading the rest of this note — it has been fixed
-     twice already and reverted twice.
+     edit buttons, and — as of 2026-08-05 — .banner, moved off --brass-text to
+     match .btn-new's fill so the win banner and the New Game button underneath
+     it read as the same gold). AA wants 4.5. Reviewed 2026-07-29 and kept as-is:
+     it reads fine in the hand, and both alternatives were built, looked at, and
+     rejected. Don't "fix" this without reading the rest of this note — it has
+     been fixed twice already and reverted twice.
      There are exactly three states, because the arithmetic leaves no fourth:
        gold ground + cream label   2.50   <- shipped, this one
        gold ground + near-black    5.19   <- the label has to go almost to black
@@ -189,8 +191,8 @@
      green (#2F5D48) and carries cream at 7.30 with no help; Classic Dark sits at
      3.22. See build-brass.js, which renders all three states.
      --brass-text remains the separate, darker brass for TEXT on the cream pad
-     (5.02 there) and for the fills that want that tone in their own right —
-     .banner, the Stats bars. That split is not affected by any of the above. */
+     (5.02 there) and for the fills that still want that deeper tone in their own
+     right — the Stats bars. That split is not affected by any of the above. */
   /* Theme key naming convention (internal [data-theme] values, NOT the
      user-facing Display-sheet chip labels, which churn freely and are just
      documented inline where they're set):
@@ -467,7 +469,7 @@
   @keyframes fade { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
   @media (prefers-reduced-motion: reduce) { .fade { animation:none; } }
 
-  .banner { background:var(--brass-text); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
+  .banner { background:var(--brass); color:var(--cream); font-family:var(--font-display); text-align:center; padding:12px; font-size:17px; font-weight:600; }
   .banner-note { display:block; font-size:12px; font-weight:400; margin-top:3px; opacity:.85; }
 
   .totals { display:grid; grid-template-columns:1fr 1px 1fr; border-bottom:1px solid var(--rule); }
